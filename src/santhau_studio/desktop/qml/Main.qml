@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Window
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import "UiText.js" as T
 
 Window {
     id: root
@@ -19,7 +20,7 @@ Window {
     property string operationMessage: ""
     function startAction(action, source) {
         var result = root.parse(backend.startMaintenance(action, source || ""))
-        operationMessage = result.ok ? "Đang thực hiện…" : (result.error || "Không khởi chạy được")
+        operationMessage = T.result(result)
         operation = root.parse(backend.maintenanceStatus())
     }
     onClosing: function(close) {
@@ -34,25 +35,23 @@ Window {
         running: root.operation.running
         onTriggered: {
             root.operation = root.parse(backend.maintenanceStatus())
-            if (root.operation.progress) root.operationMessage = "Import · " + JSON.stringify(root.operation.progress)
+            if (root.operation.progress) root.operationMessage = T.result(root.operation)
             if (!root.operation.running) {
-                root.operationMessage = root.operation.ok
-                    ? "Hoàn tất · " + (root.operation.path || JSON.stringify(root.operation))
-                    : "Không hoàn tất · " + (root.operation.error || JSON.stringify(root.operation))
+                root.operationMessage = T.result(root.operation)
                 page10.reload()
                 if (root.pageIndex === 6) page7.reload()
             }
         }
     }
     property var navItems: [
-        "01 · Onboarding", "02 · Control Center", "03 · Sources", "04 · Collection Jobs",
-        "05 · Coverage Matrix", "06 · Data Explorer", "07 · Record Detail",
-        "08 · Deep Collection", "09 · Data Integrity", "10 · Settings / Backup"
+        "01 · Bắt đầu", "02 · Tổng quan", "03 · Nguồn dữ liệu", "04 · Tác vụ thu thập",
+        "05 · Mức độ thu thập", "06 · Tra cứu hồ sơ", "07 · Chi tiết hồ sơ",
+        "08 · Thu thập chi tiết", "09 · Kiểm tra dữ liệu", "10 · Cài đặt và sao lưu"
     ]
 
     function parse(text) {
         try { return JSON.parse(text) }
-        catch (error) { return { error: "bad json: " + error } }
+        catch (error) { return { error: "Không đọc được phản hồi: " + error } }
     }
 
     Connections {
@@ -60,8 +59,9 @@ Window {
         function onReadReady(key, serial, text) {
             var pages = {page1:page1,page2:page2,page3:page3,page4:page4,page5:page5,page8:page8,page9:page9,page10:page10}
             if (pages[key]) pages[key].state = root.parse(text)
-            if (key === "proof") { evidenceText.text = JSON.stringify(root.parse(text), null, 2); evidenceDialog.open() }
-            if (key === "jobAction") { page4.enqueueResult = text; page4.reload() }
+            if (key === "integrityRaw") { evidenceText.text=T.rawPreview(root.parse(text)); evidenceDialog.open() }
+            if (key === "proof") { evidenceText.text = T.pretty(root.parse(text)); evidenceDialog.open() }
+            if (key === "jobAction") { page4.enqueueResult = T.result(root.parse(text)); page4.reload() }
         }
         function onDataRootChanged() {
             root.detailRecordId = 0
@@ -81,7 +81,11 @@ Window {
 
     Dialog {
         id:evidenceDialog; title:"Bằng chứng / cấu hình"; width:Math.min(root.width-60,850); height:Math.min(root.height-80,620)
-        anchors.centerIn:parent; modal:true; standardButtons:Dialog.Close
+        anchors.centerIn:parent; modal:true
+        footer: DialogButtonBox {
+            Button { text:"Đóng"; DialogButtonBox.buttonRole:DialogButtonBox.RejectRole }
+            onRejected:evidenceDialog.close()
+        }
         ScrollView { anchors.fill:parent; TextArea { id:evidenceText; readOnly:true; selectByMouse:true; wrapMode:TextEdit.WrapAnywhere } }
     }
     RowLayout {
@@ -109,7 +113,7 @@ Window {
                     font.bold: true
                 }
                 Text {
-                    text: "Data Studio"
+                    text: "Kho dữ liệu"
                     color: "#8b959f"
                     font.pixelSize: 12
                     bottomPadding: 12
@@ -181,12 +185,12 @@ Window {
                         width: parent.width
                         spacing: 10
                         RowLayout {
-                            Button { text: "Tạo kho / khởi tạo collector"; onClicked: { root.pageIndex = 3; backend.requestRead("jobAction", "start_worker", "{}") } }
-                            Button { text: "Import kho harvester cũ"; onClicked: root.pageIndex = 9 }
+                            Button { text: "Tạo kho / bật bộ thu thập"; onClicked: { root.pageIndex = 3; backend.requestRead("jobAction", "start_worker", "{}") } }
+                            Button { text: "Nhập kho dữ liệu cũ"; onClicked: root.pageIndex = 9 }
                         }
 
 
-                        Text { text: "Data root"; color: "#9aa4ae"; font.pixelSize: 12 }
+                        Text { text: "Thư mục dữ liệu"; color: "#9aa4ae"; font.pixelSize: 12 }
                         RowLayout {
                             TextField {
                                 id: rootPath
@@ -200,15 +204,15 @@ Window {
                                 onClicked: {
                                     var result = root.parse(backend.validateDataRoot(rootPath.text))
                                     validation.text = result.ok
-                                        ? "OK · free " + Math.round(result.free_bytes / 1048576) + " MB"
-                                        : "KHÔNG DÙNG ĐƯỢC · " + (result.error || "")
+                                        ? "Thư mục dùng được · còn trống " + Math.round(result.free_bytes / 1048576) + " MB"
+                                        : "Không dùng được thư mục · " + T.message(result.error)
                                 }
                             }
                             Button {
                                 text: "Dùng thư mục này"
                                 onClicked: {
                                     var result = root.parse(backend.selectDataRoot(rootPath.text))
-                                    validation.text = result.ok ? "Đã chọn · " + result.path : result.error
+                                    validation.text = result.ok ? "Đã chọn · " + result.path : T.message(result.error)
                                 }
                             }
                         }
@@ -217,19 +221,19 @@ Window {
                         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: "#2a333d" }
 
                         Text {
-                            text: "Warehouse: " + (page1.state.warehouse_present ? "có" : "chưa")
-                                  + "   ·   Serving snapshot: " + (page1.state.serving_present ? "có" : "chưa")
-                                  + "   ·   Jobs chờ: " + (page1.state.queued_jobs || 0)
+                            text: "Kho dữ liệu: " + (page1.state.warehouse_present ? "có" : "chưa")
+                                  + "   ·   Dữ liệu hiển thị: " + (page1.state.serving_present ? "có" : "chưa")
+                                  + "   ·   Tác vụ đang chờ: " + (page1.state.queued_jobs || 0)
                             color: "#c8d0d8"
                             font.pixelSize: 13
                         }
                         Text {
-                            text: "Worker: " + (page1.state.worker && page1.state.worker.running
-                                  ? ("chạy · pid " + page1.state.worker.pid) : "không chạy")
+                            text: "Bộ thu thập: " + (page1.state.worker && page1.state.worker.running
+                                  ? ("đang chạy · mã tiến trình " + page1.state.worker.pid) : "không chạy")
                             color: page1.state.worker && page1.state.worker.running ? "#7fd1a4" : "#d1a47f"
                             font.pixelSize: 13
                         }
-                        Text { text: page1.state.policy_note || ""; color: "#8b959f"; font.pixelSize: 11 }
+                        Text { text: T.message(page1.state.policy_note); color: "#8b959f"; font.pixelSize: 11 }
                         Button { text: "Tải lại"; onClicked: page1.reload() }
                         Item { Layout.preferredHeight: 8 }
                         }
@@ -261,10 +265,10 @@ Window {
                         Text {
                             text: {
                                 var snap = page2.state.snapshot || {}
-                                if (!snap.present) return "Chưa có serving snapshot"
-                                return "Snapshot " + (snap.built_at || "?")
-                                     + (snap.stale ? ("  ·  STALE" + (snap.degraded ? " / DEGRADED" : "")) : "  ·  tươi")
-                                     + (snap.degraded ? ("  ·  thiếu " + JSON.stringify(snap.degradation)) : "")
+                                if (!snap.present) return "Chưa có bản dữ liệu hiển thị"
+                                return "Dữ liệu hiển thị cập nhật lúc " + (snap.built_at || "?")
+                                     + (snap.stale ? ("  ·  Cần cập nhật" + (snap.degraded ? " / Dữ liệu bị thiếu hoặc lỗi" : "")) : "  ·  Đã cập nhật")
+                                     + (snap.degraded ? ("  ·  thiếu " + T.pretty(snap.degradation)) : "")
                             }
                             color: (page2.state.snapshot && page2.state.snapshot.stale) ? "#e0b46a" : "#7fd1a4"
                             font.pixelSize: 12
@@ -273,16 +277,16 @@ Window {
                             text: {
                                 var worker = page2.state.worker || {}
                                 var disk = page2.state.disk || {}
-                                return "Worker: " + (worker.running ? "chạy" : "dừng")
-                                     + " · pipe " + (worker.pipe_ok ? "OK" : "—")
+                                return "Bộ thu thập: " + (worker.running ? "chạy" : "dừng")
+                                     + " · kết nối " + (worker.pipe_ok ? "đã thông" : "chưa có")
                                      + " · đĩa " + Math.round((disk.bytes || 0) / 1048576) + " MB"
-                                     + (disk.sampled ? " (mẫu " + disk.limit + " file)" : "")
+                                     + (disk.sampled ? " (mẫu " + disk.limit + " tệp)" : "")
                             }
                             color: "#9aa4ae"
                             font.pixelSize: 12
                         }
 
-                        Text { text: "family"; color: "#6f7a84"; font.pixelSize: 11 }
+                        Text { text: "Loại hồ sơ"; color: "#6f7a84"; font.pixelSize: 11 }
                         Repeater {
                             model: page2.state.families || []
                             delegate: Rectangle {
@@ -296,13 +300,13 @@ Window {
                                     anchors.left: parent.left
                                     anchors.leftMargin: 10
                                     spacing: 26
-                                    Text { text: modelData.family; color: "#e6e9ec"; font.pixelSize: 13; width: 90 }
-                                    Text { text: modelData.records + " records"; color: "#c8d0d8"; font.pixelSize: 12; width: 120 }
-                                    Text { text: modelData.versions + " versions"; color: "#c8d0d8"; font.pixelSize: 12; width: 120 }
-                                    Text { text: modelData.raw_revisions + " raw rev"; color: "#c8d0d8"; font.pixelSize: 12; width: 120 }
-                                    Text { text: modelData.observations + " obs"; color: "#c8d0d8"; font.pixelSize: 12; width: 100 }
+                                    Text { text: T.familyShort(modelData.family); color: "#e6e9ec"; font.pixelSize: 13; width: 90 }
+                                    Text { text: modelData.records + " hồ sơ"; color: "#c8d0d8"; font.pixelSize: 12; width: 120 }
+                                    Text { text: modelData.versions + " phiên bản nội dung"; color: "#c8d0d8"; font.pixelSize: 12; width: 120 }
+                                    Text { text: modelData.raw_revisions + " lần đổi dữ liệu gốc"; color: "#c8d0d8"; font.pixelSize: 12; width: 120 }
+                                    Text { text: modelData.observations + " lần ghi nhận"; color: "#c8d0d8"; font.pixelSize: 12; width: 100 }
                                     Text {
-                                        text: modelData.last_verified_at_utc ? ("verified " + modelData.last_verified_at_utc) : "chưa có proof"
+                                        text: modelData.last_verified_at_utc ? ("Xác minh lúc " + modelData.last_verified_at_utc) : "chưa có bằng chứng"
                                         color: modelData.last_verified_at_utc ? "#7fd1a4" : "#d1a47f"
                                         font.pixelSize: 12
                                     }
@@ -311,13 +315,13 @@ Window {
                         }
                         Text {
                             visible: !(page2.state.families || []).length
-                            text: "Chưa có dữ liệu trong serving snapshot."
+                            text: "Chưa có dữ liệu hiển thị. Hãy thu thập hoặc nhập kho dữ liệu cũ."
                             color: "#8b959f"
                             font.pixelSize: 12
                         }
                         Text {
                             visible: !!page2.state.error
-                            text: page2.state.error || ""
+                            text: T.message(page2.state.error)
                             color: "#e07a7a"
                             font.pixelSize: 11
                         }
@@ -346,10 +350,10 @@ Window {
                             delegate: Label {
                                 required property var modelData
                                 Layout.fillWidth:true; wrapMode:Text.Wrap; color:modelData.blocked_reason ? "#edbc8b" : "#9dd9b4"
-                                text:modelData.family + " · " + modelData.state + " · " + (modelData.blocked_reason ? "BLOCKED · " + modelData.blocked_reason : "rule có bằng chứng")
+                                text:T.family(modelData.family) + " · " + T.label(modelData.state) + " · " + (modelData.blocked_reason ? T.message(modelData.blocked_reason) : "Quy tắc đã có bằng chứng")
                             }
                         }
-                        Button { text:"Lịch sử canary / access"; onClicked: { evidenceText.text=JSON.stringify(page3.state.access_events || [],null,2); evidenceDialog.open() } }
+                        Button { text:"Lịch sử kiểm tra nguồn"; onClicked: { evidenceText.text=T.pretty(page3.state.access_events || []); evidenceDialog.open() } }
                         Text { text: "Kênh nguồn"; color: "#9aa4ae"; font.pixelSize: 12 }
                         Repeater {
                             model: page3.state.registry || []
@@ -364,10 +368,10 @@ Window {
                                     anchors.left: parent.left
                                     anchors.leftMargin: 10
                                     spacing: 22
-                                    Text { text: modelData.source_key; color: "#e6e9ec"; font.pixelSize: 13; width: 170 }
-                                    Text { text: modelData.display_name; color: "#c8d0d8"; font.pixelSize: 12; width: 260 }
+                                    Text { text: T.label(modelData.source_key); color: "#e6e9ec"; font.pixelSize: 13; width: 170 }
+                                    Text { text: T.label(modelData.display_name); color: "#c8d0d8"; font.pixelSize: 12; width: 260 }
                                     Text {
-                                        text: modelData.access_state
+                                        text: T.label(modelData.access_state)
                                         color: modelData.access_state === "ALLOWED_AND_VERIFIED" ? "#7fd1a4"
                                              : (modelData.access_state === "BLOCKED" ? "#e07a7a" : "#d1a47f")
                                         font.pixelSize: 12
@@ -379,7 +383,7 @@ Window {
                         }
 
                         Text {
-                            text: "Hợp đồng biên filter (canary-verified = điều kiện để chạy)"
+                            text: "Quy tắc lọc thời gian — cần xác minh với nguồn trước khi chạy"
                             color: "#9aa4ae"
                             font.pixelSize: 12
                             topPadding: 8
@@ -397,11 +401,11 @@ Window {
                                     anchors.left: parent.left
                                     anchors.leftMargin: 10
                                     spacing: 22
-                                    Text { text: modelData.family; color: "#e6e9ec"; font.pixelSize: 12; width: 90 }
-                                    Text { text: modelData.boundary_kind + " · " + modelData.precision; color: "#c8d0d8"; font.pixelSize: 12; width: 200 }
-                                    Text { text: "v" + modelData.rule_version; color: "#8b959f"; font.pixelSize: 12; width: 50 }
+                                    Text { text: T.familyShort(modelData.family); color: "#e6e9ec"; font.pixelSize: 12; width: 90 }
+                                    Text { text: T.label(modelData.boundary_kind) + " · " + T.label(modelData.precision); color: "#c8d0d8"; font.pixelSize: 12; width: 200 }
+                                    Text { text: "Bản " + modelData.rule_version; color: "#8b959f"; font.pixelSize: 12; width: 50 }
                                     Text {
-                                        text: modelData.canary_verified ? "canary OK" : "CHƯA VERIFY"
+                                        text: modelData.canary_verified ? "Đã xác minh" : "Chưa xác minh"
                                         color: modelData.canary_verified ? "#7fd1a4" : "#e07a7a"
                                         font.pixelSize: 12
                                     }
@@ -431,9 +435,9 @@ Window {
                         spacing: 8
 
                         Text {
-                            text: "Worker: " + (page4.state.worker && page4.state.worker.running
-                                  ? "chạy · pipe " + (page4.state.worker.pipe_ok ? "OK" : "—")
-                                  : "không chạy — job sẽ chờ trong hàng đợi")
+                            text: "Bộ thu thập: " + (page4.state.worker && page4.state.worker.running
+                                  ? "chạy · kết nối " + (page4.state.worker.pipe_ok ? "đã thông" : "chưa có")
+                                  : "chưa chạy — tác vụ sẽ chờ trong hàng đợi")
                             color: page4.state.worker && page4.state.worker.running ? "#7fd1a4" : "#d1a47f"
                             font.pixelSize: 12
                         }
@@ -444,12 +448,14 @@ Window {
                             rowSpacing: 8
                             ComboBox {
                                 id: kindBox
-                                model: ["BACKFILL", "INCREMENTAL", "RECONCILE"]
+                                objectName: "collectionMode"
+                                textRole: "label"; valueRole: "value"
+                                model: T.options(["BACKFILL", "INCREMENTAL", "RECONCILE"])
                                 Layout.fillWidth: true
                             }
                             TextField {
                                 id: familyField
-                                placeholderText: "family (vd TBMT)"
+                                placeholderText: "Loại hồ sơ (ví dụ: TBMT)"
                                 text: "TBMT"
                                 Layout.fillWidth: true
                                 color: "#e6e9ec"
@@ -457,23 +463,23 @@ Window {
                             }
                             TextField {
                                 id: fromField
-                                placeholderText: "from (ISO Z)"
+                                placeholderText: "Từ: 2026-11-01T17:00:00Z"
                                 Layout.fillWidth: true
                                 color: "#e6e9ec"
                                 background: Rectangle { color: "#20262d"; border.color: "#333c45"; radius: 4 }
                             }
                             TextField {
                                 id: toField
-                                placeholderText: "to (ISO Z)"
+                                placeholderText: "Đến: 2026-11-02T17:00:00Z"
                                 Layout.fillWidth: true
                                 color: "#e6e9ec"
                                 background: Rectangle { color: "#20262d"; border.color: "#333c45"; radius: 4 }
                             }
                             Button {
-                                text: "Xếp hàng job"
+                                text: "Thêm tác vụ"
                                 onClicked: {
                                     backend.requestRead("jobAction", "enqueue_collection", JSON.stringify({
-                                        job_kind: kindBox.currentText,
+                                        job_kind: kindBox.currentValue,
                                         family: familyField.text,
                                         from: fromField.text,
                                         to: toField.text,
@@ -485,14 +491,14 @@ Window {
                         }
                         GridLayout {
                             columns: 4; Layout.fillWidth: true
-                            Label { text: "Pages / job"; color:"#a9b4bf" }
-                            SpinBox { id: pageBudget; from:1; to:10000; value:1000; editable:true; Accessible.name:"Ngân sách trang" }
-                            Label { text: "Requests / job"; color:"#a9b4bf" }
-                            SpinBox { id: requestBudget; from:1; to:30000; value:3000; editable:true; Accessible.name:"Ngân sách request" }
+                            Label { text: "Giới hạn số trang"; color:"#a9b4bf" }
+                            SpinBox { id: pageBudget; from:1; to:10000; value:1000; editable:true; Accessible.name:"Số trang tối đa" }
+                            Label { text: "Giới hạn yêu cầu"; color:"#a9b4bf" }
+                            SpinBox { id: requestBudget; from:1; to:30000; value:3000; editable:true; Accessible.name:"Số yêu cầu tối đa" }
                             Label { text: "Thời gian (s)"; color:"#a9b4bf" }
-                            SpinBox { id: timeBudget; from:1; to:86400; value:3600; editable:true; Accessible.name:"Ngân sách giây" }
-                            Label { text: "Pacing (s)"; color:"#a9b4bf" }
-                            SpinBox { id: pacingBudget; from:3; to:300; value:3; editable:true; Accessible.name:"Pacing giây" }
+                            SpinBox { id: timeBudget; from:1; to:86400; value:3600; editable:true; Accessible.name:"Thời gian tối đa tính bằng giây" }
+                            Label { text: "Giãn cách yêu cầu (giây)"; color:"#a9b4bf" }
+                            SpinBox { id: pacingBudget; from:3; to:300; value:3; editable:true; Accessible.name:"Khoảng cách giữa hai yêu cầu, tính bằng giây" }
                         }
                         Label {
                             Layout.fillWidth:true; Layout.preferredHeight:68; wrapMode:Text.WrapAnywhere
@@ -500,45 +506,45 @@ Window {
                             text: {
                                 var status = page4.state.active_status || {}; var runs = status.runs || []
                                 var latest = runs.length ? runs[runs.length-1] : {}; var p = status.progress || {}
-                                return (status.job_id || "Chưa có job") + " · " + (latest.lifecycle || "") + " · " + (latest.status || "")
-                                    + (p.family ? "\n" + p.family + " · " + p.from + " → " + p.to + " · " + p.granularity + "\nPages " + p.pages + " · rows " + p.rows + " · requests " + p.requests : "")
+                                return (status.job_id || "Chưa có tác vụ") + " · " + T.label(latest.lifecycle) + " · " + T.label(latest.status)
+                                    + (p.family ? "\n" + T.family(p.family) + " · " + p.from + " → " + p.to + " · " + T.label(p.granularity) + "\nSố trang: " + p.pages + " · số dòng: " + p.rows + " · số yêu cầu: " + p.requests : "")
                             }
                         }
                         Text { Layout.fillWidth: true; wrapMode: Text.WrapAnywhere; text: page4.enqueueResult; color: "#d1a47f"; font.pixelSize: 11 }
 
-                        ComboBox { id:jobTarget; Layout.fillWidth:true; model:(page4.state.active || []).map(j=>j.job_id); Accessible.name:"Job điều khiển" }
+                        ComboBox { id:jobTarget; Layout.fillWidth:true; model:(page4.state.active || []).map(j=>j.job_id); Accessible.name:"Chọn tác vụ để điều khiển" }
                         RowLayout {
                             spacing: 8
                             Button {
-                                text: "Khởi động worker"
+                                text: "Bật bộ thu thập"
                                 onClicked: {
                                     backend.requestRead("jobAction", "start_worker", "{}")
                                     page4.reload()
                                 }
                             }
                             Button {
-                                text: "PAUSE"
+                                text: "Tạm dừng"
                                 onClicked: {
                                     var active = page4.state.active || []
                                     if (active.length) backend.requestRead("jobAction", "worker_command", JSON.stringify({command:"PAUSE",job_id:jobTarget.currentText || active[0].job_id}))
                                 }
                             }
                             Button {
-                                text: "RESUME"
+                                text: "Tiếp tục"
                                 onClicked: {
                                     var active = page4.state.active || []
                                     if (active.length) backend.requestRead("jobAction", "worker_command", JSON.stringify({command:"RESUME",job_id:jobTarget.currentText || active[0].job_id}))
                                 }
                             }
                             Button {
-                                text: "STOP_GRACEFUL"
+                                text: "Dừng an toàn"
                                 onClicked: {
                                     var active = page4.state.active || []
                                     if (active.length) backend.requestRead("jobAction", "worker_command", JSON.stringify({command:"STOP_GRACEFUL",job_id:jobTarget.currentText || active[0].job_id}))
                                 }
                             }
                             Button {
-                                text: "FORCE_TERMINATE"
+                                text: "Tắt bộ thu thập"
                                 onClicked: backend.requestRead("jobAction", "worker_command", JSON.stringify({command:"FORCE_TERMINATE"}))
                             }
                             Button { text: "Tải lại"; onClicked: page4.reload() }
@@ -565,9 +571,9 @@ Window {
                                     anchors.left: parent.left
                                     anchors.leftMargin: 10
                                     spacing: 20
-                                    Text { text: modelData.job_kind; color: "#e6e9ec"; font.pixelSize: 12; width: 110 }
+                                    Text { text: T.label(modelData.job_kind); color: "#e6e9ec"; font.pixelSize: 12; width: 110 }
                                     Text { text: modelData.job_id; color: "#c8d0d8"; font.pixelSize: 12; width: 190 }
-                                    Text { text: (modelData.families || []).join(","); color: "#9aa4ae"; font.pixelSize: 12; width: 120 }
+                                    Text { text: (modelData.families || []).map(T.familyShort).join(", "); color: "#9aa4ae"; font.pixelSize: 12; width: 120 }
                                     Text {
                                         text: modelData.scope ? (modelData.scope.from + " → " + modelData.scope.to) : ""
                                         color: "#8b959f"
@@ -595,7 +601,7 @@ Window {
                         width: parent.width
                         spacing: 8
 
-                        Label { text:"Coverage theo ngày Việt Nam · resolver 7 ngày gần nhất"; color:"#a9b4bf" }
+                        Label { text:"Mức độ thu thập theo ngày Việt Nam — 7 ngày gần nhất"; color:"#a9b4bf" }
                         GridLayout {
                             columns:7; Layout.fillWidth:true; rowSpacing:4; columnSpacing:4
                             Repeater {
@@ -603,10 +609,10 @@ Window {
                                 delegate:Button {
                                     required property var modelData
                                     Layout.fillWidth:true; Layout.preferredHeight:64; Layout.minimumWidth:70
-                                    text:modelData.family + "\n" + modelData.day.slice(5) + "\n" + modelData.status
+                                    text:T.familyShort(modelData.family) + "\n" + modelData.day.slice(5) + "\n" + T.label(modelData.status)
                                     font.pixelSize:10
                                     background:Rectangle { radius:3; color:parent.modelData.status === "COMPLETE" ? "#205039" : (parent.modelData.status === "BLOCKED" ? "#5a3030" : "#30383e") }
-                                    onClicked:{ evidenceText.text=JSON.stringify(modelData,null,2); evidenceDialog.open() }
+                                    onClicked:{ evidenceText.text=T.pretty(modelData); evidenceDialog.open() }
                                 }
                             }
                         }
@@ -623,32 +629,32 @@ Window {
                                     anchors.left: parent.left
                                     anchors.leftMargin: 10
                                     spacing: 22
-                                    Text { text: modelData.family; color: "#e6e9ec"; font.pixelSize: 13; width: 80 }
-                                    Text { text: "claimed " + modelData.claimed; color: "#c8d0d8"; font.pixelSize: 12; width: 110 }
-                                    Text { text: "walked " + modelData.walked; color: "#7fd1a4"; font.pixelSize: 12; width: 110 }
-                                    Text { text: "partial " + modelData.partial; color: "#d1a47f"; font.pixelSize: 12; width: 100 }
-                                    Text { text: "blocked " + modelData.blocked; color: "#e07a7a"; font.pixelSize: 12; width: 100 }
-                                    Text { text: "fail " + modelData.failed; color: "#c8d0d8"; font.pixelSize: 12 }
+                                    Text { text: T.familyShort(modelData.family); color: "#e6e9ec"; font.pixelSize: 13; width: 80 }
+                                    Text { text: "Đã ghi nhận: " + modelData.claimed; color: "#c8d0d8"; font.pixelSize: 12; width: 110 }
+                                    Text { text: "Có bằng chứng: " + modelData.walked; color: "#7fd1a4"; font.pixelSize: 12; width: 110 }
+                                    Text { text: "Chưa đủ: " + modelData.partial; color: "#d1a47f"; font.pixelSize: 12; width: 100 }
+                                    Text { text: "Bị chặn: " + modelData.blocked; color: "#e07a7a"; font.pixelSize: 12; width: 100 }
+                                    Text { text: "Lỗi: " + modelData.failed; color: "#c8d0d8"; font.pixelSize: 12 }
                                 }
                             }
                         }
                         Text {
                             visible: !(page5.state.summary || []).length
-                            text: "Chưa có coverage interval nào."
+                            text: "Chưa có khoảng thời gian nào được thu thập."
                             color: "#8b959f"
                             font.pixelSize: 12
                         }
 
-                        Text { text: "Interval gần nhất"; color: "#9aa4ae"; font.pixelSize: 12; topPadding: 6 }
+                        Text { text: "Các khoảng thời gian gần nhất"; color: "#9aa4ae"; font.pixelSize: 12; topPadding: 6 }
                         Repeater {
                             model: (page5.state.intervals || []).slice(0, 60)
                             delegate: Rectangle {
                                 required property var modelData
                                 Layout.fillWidth: true
                                 height: 36
-                                Button { anchors.fill:parent; flat:true; Accessible.name:modelData.family + " " + modelData.status + " proof"; onClicked: {
+                                Button { anchors.fill:parent; flat:true; Accessible.name:T.family(modelData.family) + " " + T.label(modelData.status) + " — bằng chứng"; onClicked: {
                                     if (modelData.proof_id) backend.requestRead("proof","coverage_proof",JSON.stringify({proof_id:modelData.proof_id}))
-                                    else { evidenceText.text=JSON.stringify(modelData,null,2); evidenceDialog.open() }
+                                    else { evidenceText.text=T.pretty(modelData); evidenceDialog.open() }
                                 } }
                                 color: modelData.status === "COMPLETE" ? "#193d30" : (modelData.status === "BLOCKED" ? "#472c2c" : "#302c23")
                                 radius: 4
@@ -657,27 +663,27 @@ Window {
                                     anchors.left: parent.left
                                     anchors.leftMargin: 10
                                     spacing: 16
-                                    Text { text: modelData.family; color: "#e6e9ec"; font.pixelSize: 11; width: 70 }
+                                    Text { text: T.familyShort(modelData.family); color: "#e6e9ec"; font.pixelSize: 11; width: 70 }
                                     Text {
                                         text: modelData.interval_from_utc + " → " + modelData.interval_to_utc
                                         color: "#c8d0d8"; font.pixelSize: 11; width: 340
                                     }
-                                    Text { text: modelData.granularity; color: "#8b959f"; font.pixelSize: 11; width: 80 }
+                                    Text { text: T.label(modelData.granularity); color: "#8b959f"; font.pixelSize: 11; width: 80 }
                                     Text {
-                                        text: modelData.status
+                                        text: T.label(modelData.status)
                                         color: modelData.status === "COMPLETE" ? "#7fd1a4"
                                              : (modelData.status === "BLOCKED" ? "#e07a7a" : "#d1a47f")
                                         font.pixelSize: 11; width: 90
                                     }
                                     Text {
-                                        text: modelData.proof_id ? ("proof · " + modelData.distinct_ids + " ids") : (modelData.reason || "")
+                                        text: modelData.proof_id ? ("Bằng chứng: " + modelData.distinct_ids + " hồ sơ riêng biệt") : T.message(modelData.reason)
                                         color: modelData.proof_id ? "#7fd1a4" : "#d1a47f"
                                         font.pixelSize: 11
                                     }
                                 }
                             }
                         }
-                        Button { text:"Coverage legacy (chưa xác minh)"; onClicked: { evidenceText.text=JSON.stringify(page5.state.legacy || [],null,2); evidenceDialog.open() } }
+                        Button { text:"Mức đầy đủ do kho cũ ghi nhận (chưa xác minh)"; onClicked: { evidenceText.text=T.pretty(page5.state.legacy || []); evidenceDialog.open() } }
                         Item { Layout.preferredHeight: 8 }
                         }
                     }
@@ -717,7 +723,7 @@ Window {
                             text: {
                                 var lanes = page8.state.lanes || []
                                 return lanes.length
-                                    ? "Lane: " + lanes.map(function (l) { return l.lane + "=" + l.state }).join(" · ")
+                                    ? "Nội dung thu thập: " + lanes.map(function (l) { return T.label(l.lane) + ": " + T.label(l.state) }).join(" · ")
                                     : ""
                             }
                             color: "#8b959f"
@@ -725,10 +731,10 @@ Window {
                             wrapMode: Text.WrapAnywhere
                         }
                         Text {
-                            text: "FULL " + ((page8.state.summary || {}).FULL || 0)
-                                  + " · PARTIAL " + ((page8.state.summary || {}).PARTIAL || 0)
-                                  + " · NOT_COLLECTED " + ((page8.state.summary || {}).NOT_COLLECTED || 0)
-                                  + " · stale " + ((page8.state.summary || {}).stale || 0)
+                            text: "Đầy đủ: " + ((page8.state.summary || {}).FULL || 0)
+                                  + " · Chưa đầy đủ: " + ((page8.state.summary || {}).PARTIAL || 0)
+                                  + " · Chưa thu thập: " + ((page8.state.summary || {}).NOT_COLLECTED || 0)
+                                  + " · Cần cập nhật: " + ((page8.state.summary || {}).stale || 0)
                             color: "#9aa4ae"
                             font.pixelSize: 12
                         }
@@ -745,21 +751,21 @@ Window {
                                     anchors.left: parent.left
                                     anchors.leftMargin: 10
                                     spacing: 18
-                                    Text { text: modelData.family; color: "#e6e9ec"; font.pixelSize: 11; width: 70 }
+                                    Text { text: T.familyShort(modelData.family); color: "#e6e9ec"; font.pixelSize: 11; width: 70 }
                                     Text { text: modelData.natural_key; color: "#c8d0d8"; font.pixelSize: 11; width: 200 }
-                                    Text { text: modelData.lane + "/" + modelData.endpoint_kind; color: "#9aa4ae"; font.pixelSize: 11; width: 170 }
+                                    Text { text: T.label(modelData.lane); color: "#9aa4ae"; font.pixelSize: 11; width: 170 }
                                     Text {
-                                        text: modelData.completeness
+                                        text: T.label(modelData.completeness)
                                         color: modelData.completeness === "FULL" ? "#7fd1a4" : "#d1a47f"
                                         font.pixelSize: 11; width: 110
                                     }
                                     Text {
-                                        text: modelData.stale ? ("STALE " + modelData.stale_reason)
-                                             : (modelData.needs_refresh ? "cần refresh" : "fresh")
+                                        text: modelData.stale ? ("Cần cập nhật: " + T.message(modelData.stale_reason))
+                                             : (modelData.needs_refresh ? "cần cập nhật" : "đã cập nhật")
                                         color: modelData.stale || modelData.needs_refresh ? "#d1a47f" : "#7fd1a4"
                                         font.pixelSize: 11; width: 170
                                     }
-                                    Text { text: "captured " + modelData.captured_at_utc; color: "#8b959f"; font.pixelSize: 11 }
+                                    Text { text: "Thu thập lúc " + modelData.captured_at_utc; color: "#8b959f"; font.pixelSize: 11 }
                                 }
                             }
                         }
@@ -782,15 +788,24 @@ Window {
                         width: parent.width
                         spacing: 8
 
+                        RowLayout {
+                            Button { text:"Kiểm tra toàn vẹn"; enabled:!root.operation.running; onClicked:root.startAction("verify", "") }
+                            Button { text:"Chi tiết lỗi và kho cũ"; onClicked:{ evidenceText.text=T.pretty({inspection:page9.state.inspection,quarantine:page9.state.quarantine,scans:page9.state.markers}); evidenceDialog.open() } }
+                        }
+                        RowLayout {
+                            TextField { id:integrityHash; Layout.fillWidth:true; placeholderText:"Mã SHA256 của dữ liệu gốc cần kiểm tra"; Accessible.name:placeholderText }
+                            Button { text:"Xem dữ liệu gốc"; onClicked:backend.requestRead("integrityRaw","raw_object",JSON.stringify({sha:integrityHash.text})) }
+                        }
+                        Label { Layout.fillWidth:true; wrapMode:Text.Wrap; color:"#a9b4bf"; text:"Chi tiết hiển thị tối đa 50 lỗi và 20 lần nhập kho gần nhất; tổng đếm bên dưới là toàn kho." }
                         Text {
-                            text: "Raw objects: " + JSON.stringify(page9.state.raw_objects || {})
-                                  + "   · unresolved open: " + ((page9.state.unresolved || {}).open || 0)
-                                  + " / resolved: " + ((page9.state.unresolved || {}).resolved || 0)
+                            text: "Dữ liệu gốc: " + T.pretty(page9.state.raw_objects || {})
+                                  + "   · Chưa xác định: " + ((page9.state.unresolved || {}).open || 0)
+                                  + " / Đã xác định: " + ((page9.state.unresolved || {}).resolved || 0)
                             color: "#c8d0d8"
                             font.pixelSize: 12
                         }
                         Text {
-                            text: "Quarantine (không bao giờ ẩn khỏi UI): " + (page9.state.quarantine_total || 0)
+                            text: "Dữ liệu được cách ly để kiểm tra: " + (page9.state.quarantine_total || 0)
                             color: (page9.state.quarantine || []).length ? "#e07a7a" : "#7fd1a4"
                             font.pixelSize: 12
                         }
@@ -798,24 +813,24 @@ Window {
                             model: page9.state.quarantine || []
                             delegate: Text {
                                 required property var modelData
-                                text: "  · " + modelData.failure + " · " + modelData.sha12 + "… · " + modelData.quarantined_at_utc
+                                text: "  · " + T.message(modelData.failure) + " · " + modelData.sha12 + "… · " + modelData.quarantined_at_utc
                                 color: "#d1a47f"
                                 font.pixelSize: 11
                             }
                         }
-                        Text { text: "Reconcile gaps (chưa acknowledge)"; color: "#6f7a84"; font.pixelSize: 11; topPadding: 4 }
+                        Text { text: "Khoảng dữ liệu chênh lệch chưa được xác nhận"; color: "#6f7a84"; font.pixelSize: 11; topPadding: 4 }
                         Repeater {
                             model: page9.state.gaps || []
                             delegate: Text {
                                 required property var modelData
-                                text: "  · " + modelData.kind + " × " + modelData.count
+                                text: "  · " + T.label(modelData.kind) + " × " + modelData.count
                                 color: "#d1a47f"
                                 font.pixelSize: 11
                             }
                         }
                         Text {
                             visible: (page9.state.markers || []).length > 0
-                            text: "Marker: " + JSON.stringify(page9.state.markers || [])
+                            text: "Ghi nhận kiểm tra: " + T.pretty(page9.state.markers || [])
                             color: "#e0b46a"
                             font.pixelSize: 11
                             wrapMode: Text.WrapAnywhere
@@ -837,9 +852,13 @@ Window {
                         title: "Khôi phục kho dữ liệu"
                         modal: true
                         anchors.centerIn: parent
-                        standardButtons: Dialog.Ok | Dialog.Cancel
+                        footer: DialogButtonBox {
+                            Button { text:"Khôi phục dữ liệu"; DialogButtonBox.buttonRole:DialogButtonBox.AcceptRole }
+                            Button { text:"Hủy"; DialogButtonBox.buttonRole:DialogButtonBox.RejectRole }
+                            onAccepted:restoreConfirm.accept(); onRejected:restoreConfirm.reject()
+                        }
                         Text {
-                            text: "Dừng worker trước khi khôi phục. Warehouse hiện tại được giữ làm bản dự phòng.\nChỉ tiếp tục khi đúng thư mục backup và Data Root đang hiển thị."
+                            text: "Dừng bộ thu thập trước khi khôi phục. Kho hiện tại được giữ lại làm bản dự phòng.\nChỉ tiếp tục khi đúng bản sao lưu và thư mục dữ liệu đang hiển thị."
                             wrapMode: Text.WordWrap
                             width: 480
                         }
@@ -854,14 +873,13 @@ Window {
                         spacing: 8
 
                         Text {
-                            text: "Data root: " + (page10.state.data_root || "")
-                                  + " · app " + (page10.state.app_version || "")
-                                  + " · pipe " + (page10.state.worker_pipe || "")
+                            text: "Thư mục dữ liệu: " + (page10.state.data_root || "")
+                                  + " · phiên bản " + (page10.state.app_version || "")
                             color: "#c8d0d8"
                             font.pixelSize: 12
                         }
                         RowLayout {
-                            Button { text: "Tạo backup"; enabled: !root.operation.running; onClicked: root.startAction("backup", "") }
+                            Button { text: "Tạo bản sao lưu"; enabled: !root.operation.running; onClicked: root.startAction("backup", "") }
                             Button { text: "Kiểm tra dữ liệu"; enabled: !root.operation.running; onClicked: root.startAction("verify", "") }
                             Button { text: "Xuất CSV"; enabled: !root.operation.running; onClicked: root.startAction("export", "") }
                         }
@@ -869,7 +887,7 @@ Window {
                             TextField {
                                 id: restorePath
                                 Layout.fillWidth: true
-                                placeholderText: "Đường dẫn thư mục backup cần khôi phục"
+                                placeholderText: "Đường dẫn chứa bản sao lưu cần khôi phục"
                             }
                             Button { text: "Khôi phục…"; enabled: !root.operation.running && restorePath.text.trim().length > 0; onClicked: restoreConfirm.open() }
                         }
@@ -880,7 +898,7 @@ Window {
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: "Lịch chỉ thu tăng dần các family đã có quyền truy cập và quy tắc canary được xác minh."
+                            text: "Lịch tự động chỉ cập nhật các loại hồ sơ có quyền truy cập và quy tắc thu thập đã được xác minh."
                             color: "#8b959f"
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
@@ -896,38 +914,38 @@ Window {
                             text: {
                                 var snap = page10.state.snapshot || {}
                                 return snap.present
-                                    ? ("Snapshot " + (snap.built_at || "?") + (snap.stale ? " · STALE" : " · tươi"))
-                                    : "Chưa có snapshot"
+                                    ? ("Dữ liệu hiển thị cập nhật lúc " + (snap.built_at || "?") + (snap.stale ? " · Cần cập nhật" : " · Đã cập nhật"))
+                                    : "Chưa có dữ liệu hiển thị"
                             }
                             color: "#9aa4ae"
                             font.pixelSize: 12
                         }
 
                         RowLayout {
-                            TextField { id: legacyPath; Layout.fillWidth: true; placeholderText: "Thư mục harvester cũ / export bundle"; Accessible.name: placeholderText }
+                            TextField { id: legacyPath; Layout.fillWidth: true; placeholderText: "Thư mục kho cũ hoặc gói dữ liệu đã xuất"; Accessible.name: placeholderText }
                             Button { text: "Kiểm tra kho cũ"; enabled: !root.operation.running && legacyPath.text.length > 0; onClicked: root.startAction("inspect-legacy", legacyPath.text) }
-                            Button { text: "Import"; enabled: !root.operation.running && legacyPath.text.length > 0; onClicked: root.startAction("import-legacy", legacyPath.text) }
+                            Button { text: "Nhập dữ liệu"; enabled: !root.operation.running && legacyPath.text.length > 0; onClicked: root.startAction("import-legacy", legacyPath.text) }
                         }
-                        Text { Layout.fillWidth: true; wrapMode: Text.WordWrap; color: "#d1a47f"; text: "Legacy giữ lịch sử và nguồn gốc. COMPLETE cũ chưa có proof mới luôn là LEGACY_UNVERIFIED." }
+                        Text { Layout.fillWidth: true; wrapMode: Text.WordWrap; color: "#d1a47f"; text: "Dữ liệu nhập từ kho cũ giữ nguyên lịch sử và nguồn gốc. Thông tin từng được kho cũ ghi nhận là đầy đủ vẫn cần bằng chứng mới để xác minh." }
                         RowLayout {
-                            Button { text:"Host policy / storage"; onClicked: { evidenceText.text=JSON.stringify({host_policy:page10.state.host_policy,snapshot:page10.state.snapshot,data_root:page10.state.data_root},null,2); evidenceDialog.open() } }
-                            Button { text:"Logs"; onClicked: { evidenceText.text=JSON.stringify(page10.state.logs || [],null,2); evidenceDialog.open() } }
-                            Button { text:"Version / license"; onClicked: { evidenceText.text=page10.state.app_version + "\n" + page10.state.licensing; evidenceDialog.open() } }
+                            Button { text:"Quy định truy cập và lưu trữ"; onClicked: { evidenceText.text=T.pretty({host_policy:page10.state.host_policy,snapshot:page10.state.snapshot,data_root:page10.state.data_root}); evidenceDialog.open() } }
+                            Button { text:"Nhật ký hoạt động"; onClicked: { evidenceText.text=T.pretty(page10.state.logs || []); evidenceDialog.open() } }
+                            Button { text:"Phiên bản và giấy phép"; onClicked: { evidenceText.text=page10.state.app_version + "\n" + T.message(page10.state.licensing); evidenceDialog.open() } }
                         }
-                        Button { visible:root.operation.running && root.operation.action === "import-legacy"; text:"Dừng import sau event hiện tại"; onClicked:backend.cancelMaintenance() }
-                        Text { text: "Settings"; color: "#6f7a84"; font.pixelSize: 11; topPadding: 4 }
+                        Button { visible:root.operation.running && root.operation.action === "import-legacy"; text:"Dừng nhập sau mục đang xử lý"; onClicked:backend.cancelMaintenance() }
+                        Text { text: "Cấu hình"; color: "#6f7a84"; font.pixelSize: 11; topPadding: 4 }
                         Repeater {
                             model: page10.state.settings || []
                             delegate: Text {
                                 required property var modelData
-                                text: "  · " + modelData.key + " = " + modelData.value_json.slice(0, 140)
+                                text: "  · " + (T.fields[modelData.key] || T.label(modelData.key)) + ": " + T.pretty(root.parse(modelData.value_json))
                                 color: "#c8d0d8"
                                 font.pixelSize: 11
                                 wrapMode: Text.WrapAnywhere
                             }
                         }
 
-                        Text { text: "Backup"; color: "#6f7a84"; font.pixelSize: 11; topPadding: 6 }
+                        Text { text: "Bản sao lưu"; color: "#6f7a84"; font.pixelSize: 11; topPadding: 6 }
                         Repeater {
                             model: page10.state.backups || []
                             delegate: Text {
@@ -939,7 +957,7 @@ Window {
                         }
                         Text {
                             visible: !(page10.state.backups || []).length
-                            text: "  (chưa có bản backup nào trong data root)"
+                            text: "  (chưa có bản sao lưu nào trong thư mục dữ liệu)"
                             color: "#8b959f"
                             font.pixelSize: 11
                         }

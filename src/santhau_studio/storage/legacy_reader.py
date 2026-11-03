@@ -5,6 +5,7 @@ import gzip
 import hashlib
 import json
 import sqlite3
+import zlib
 from pathlib import Path
 
 from santhau_studio.domain.identity import canonical_bytes
@@ -151,7 +152,7 @@ class LegacyReader:
                         self.cache.execute("UPDATE events SET payload=?,legacy_raw_hash=? WHERE raw_file=? AND raw_line=?",
                                            (payload, original_hash, reference, number))
                 self.cache.execute("UPDATE events SET error='RAW_LINE_MISSING' WHERE raw_file=? AND payload IS NULL", (reference,))
-            except (OSError, EOFError, ValueError) as exc:
+            except (OSError, EOFError, ValueError, zlib.error) as exc:
                 self.fingerprint.update(str(reference).encode() + type(exc).__name__.encode())
                 self.cache.execute("UPDATE events SET payload=NULL,error=? WHERE raw_file IS ?",
                                    (f"{type(exc).__name__}: {exc}", reference))

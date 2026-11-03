@@ -1,0 +1,70 @@
+{
+  "page": {
+    "content": [
+      {
+        "bidCloseDate": "2026-10-22T09:00:00",
+        "bidField": "HH",
+        "bidForm": "CHCT",
+        "bidId": "70db0e1a-3ae3-44c7-869d-56c5fe7fce7f",
+        "bidMode": "1_MTHS",
+        "bidName": [
+          "Gói thầu số 1:   Máy phân tích Protein nhanh Sprint"
+        ],
+        "bidOpenDate": "2026-10-22T09:00:00",
+        "bidOpenId": "39d699ee-ea65-44ad-9acf-14ed87993b0a",
+        "bidPrice": [
+          1447200000.0
+        ],
+        "bidRealityOpenDate": "2026-10-22T09:04:00",
+        "createdBy": "vn4200338918",
+        "id": "8c9e5323-2118-4ab7-b23c-79e1d4e328c4",
+        "investField": [
+          "HH"
+        ],
+        "investorCode": "vn4200338918",
+        "investorName": "CÔNG TY TNHH NHÀ NƯỚC MỘT THÀNH VIÊN YẾN SÀO KHÁNH HÒA",
+        "isDomestic": 1,
+        "isInternet": 1,
+        "isMedicine": 0,
+        "locations": [
+          {
+            "districtCode": "22390",
+            "districtName": "Phường Tây Nha Trang",
+            "provCode": "56",
+            "provName": "Tỉnh Khánh Hòa"
+          }
+        ],
+        "notifyId": "8c9e5323-2118-4ab7-b23c-79e1d4e328c4",
+        "notifyNo": "IB2600572157",
+        "notifyNoStand": "IB2600572157-00",
+        "notifyVersion": "00",
+        "numBidderJoin": 1,
+        "numBidderTech": 0,
+        "numClarifyReq": 0,
+        "numPetition": 0,
+        "numPetitionHsmt": 0,
+        "numPetitionKqlcnt": 0,
+        "numPetitionLcnt": 0,
+        "originalPublicDate": "2026-10-13T10:54:34.551",
+        "planNo": "PL2600331389",
+        "planType": "TX",
+        "processApply": "LDT",
+        "publicDate": "2026-10-13T10:54:34.551",
+        "publicDateKqmt": "2026-10-13T10:54:34.551",
+        "score": "NaN",
+        "status": "OPEN_BID",
+        "statusForNotify": "DXT",
+        "stepCode": "notify-contractor-step-2-kqmt",
+        "type": "es-notify-contractor"
+      }
+    ],
+    "currentPage": 0,
+    "empty": false,
+    "first": true,
+    "last": false,
+    "pageSize": 10,
+    "sort": null,
+    "totalElements": 1,
+    "totalPages": 1
+  }
+}

@@ -60,6 +60,30 @@ def test_newer_archive_then_older_overlap_keeps_latest_and_full_history(tmp_path
     assert import_legacy(full,target)['status'] == 'ALREADY_IMPORTED'
 
 
+def test_unknown_legacy_family_retains_readable_raw_without_invented_records(tmp_path):
+    from santhau_studio.storage.import_legacy import import_legacy
+    from santhau_studio.storage.rawstore import RawObjectStore
+    source = make_legacy(tmp_path / 'legacy')
+    with sqlite3.connect(source / 'warehouse.sqlite') as conn:
+        conn.execute("UPDATE records SET record_type='UNMAPPED_LEGACY'")
+        conn.execute("UPDATE observations SET record_type='UNMAPPED_LEGACY'")
+    root = tmp_path / 'studio'
+    result = import_legacy(source,root)
+    assert result['status'] == 'PARTIAL'
+    assert counts(root) == (0,0,0,0)
+    with sqlite3.connect(root/'warehouse.sqlite') as conn:
+        rows = conn.execute("SELECT value_json FROM settings WHERE key LIKE 'legacy:rejected:%'").fetchall()
+        assert len(rows) == 9
+        store = RawObjectStore(root,read_only=True)
+        try:
+            for row in rows:
+                receipt = json.loads(row[0])
+                assert receipt['classification'] == 'LEGACY_UNVERIFIED'
+                assert 'raw_payload' in json.loads(store.read(receipt['response_sha']))
+        finally:
+            store.close()
+
+
 @pytest.mark.parametrize("problem", ["missing", "corrupt", "traversal"])
 def test_bad_raw_is_reported_without_fabricating_records(tmp_path: Path, problem: str) -> None:
     from santhau_studio.storage.import_legacy import import_legacy

@@ -250,3 +250,16 @@ def test_canary_plan_lists_every_family() -> None:
     assert result.returncode == 0
     for family in FAMILY_ORDER:
         assert f"## {family}" in result.stdout
+
+def test_failed_probe_blocks_current_access_without_erasing_historical_proof(tmp_path):
+    from contextlib import closing
+
+    from santhau_studio.collectors.canary import record_probe_failure
+    from santhau_studio.desktop.diagnostics import source_evidence
+    with closing(WarehouseWriter.open(tmp_path/'data',create_schema=True)) as writer:
+        seed_rule(writer,'TBMT')
+        run_day(writer,'TBMT',FakePortal())
+        record_probe_failure(writer.conn,source_key=SOURCE_EGP_HOME,family='TBMT',adapter_sha=ADAPTER_SHA,reason_kind='CAPTCHA',detail='blocked')
+        assert writer.conn.execute('SELECT access_state FROM source_registry WHERE source_key=?',(SOURCE_EGP_HOME,)).fetchone()[0] == 'BLOCKED'
+        assert canary_state(writer.conn,SOURCE_EGP_HOME,'TBMT',ADAPTER_SHA)['state'] == COLLECTION_PROVEN
+        assert source_evidence(writer.conn)['families'][0]['blocked_reason'].startswith('BLOCKED')

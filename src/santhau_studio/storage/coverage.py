@@ -92,9 +92,11 @@ def load_rows(
     window: Interval,
 ) -> tuple[CoverageRow, ...]:
     """Interval rows overlapping `window`, with proof version and drift flags attached."""
+    from santhau_studio.collectors.source_registry import query_contract_matches
+
     sql = (
         " SELECT ci.id, ci.interval_from_utc, ci.interval_to_utc, ci.granularity, ci.status,"
-        "        ci.proof_id, cp.proof_version,"
+        "        ci.proof_id, cp.proof_version, br.conversion_params,"
         "        EXISTS (SELECT 1 FROM reconcile_gaps g"
         "                WHERE g.source_key = ci.source_key AND g.family = ci.family"
         "                  AND g.kind IN ({})"
@@ -103,6 +105,7 @@ def load_rows(
         "                  AND g.interval_to_utc > ci.interval_from_utc) AS drifted"
         "   FROM coverage_intervals ci"
         "   LEFT JOIN coverage_proofs cp ON cp.id = ci.proof_id"
+        "   LEFT JOIN filter_boundary_rules br ON br.id = cp.boundary_rule_id"
         "  WHERE ci.source_key = ? AND ci.family = ?"
         "    AND ci.interval_from_utc < ? AND ci.interval_to_utc > ?"
         "  ORDER BY ci.interval_from_utc".format(",".join("?" for _ in DRIFT_KINDS))
@@ -118,7 +121,7 @@ def load_rows(
             granularity=row["granularity"],
             proof_id=row["proof_id"],
             proof_version=row["proof_version"],
-            data_revised_after_proof=bool(row["drifted"]),
+            data_revised_after_proof=bool(row["drifted"]) or not query_contract_matches(family, row["conversion_params"]),
         )
         for row in rows
     )
@@ -143,15 +146,17 @@ def resolve(
 
 def boundary_rule(conn: sqlite3.Connection, *, source_key: str, family: str, endpoint: str, adapter_sha: str) -> dict | None:
     """The newest canary-verified boundary contract for this exact endpoint+adapter (§4.1 item 1)."""
-    row = conn.execute(
+    from santhau_studio.collectors.source_registry import query_contract_matches
+
+    rows = conn.execute(
         "SELECT id, rule_key, rule_version, boundary_kind, precision, source_timezone, offset_minutes,"
-        " canary_verified, verified_at_utc"
+        " canary_verified, verified_at_utc, conversion_params"
         " FROM filter_boundary_rules"
         " WHERE source_key=? AND family=? AND endpoint=? AND adapter_sha=? AND canary_verified=1"
-        " ORDER BY rule_version DESC, verified_at_utc DESC LIMIT 1",
+        " ORDER BY rule_version DESC, verified_at_utc DESC",
         (source_key, family, endpoint, adapter_sha),
-    ).fetchone()
-    return dict(row) if row else None
+    )
+    return next((dict(row) for row in rows if query_contract_matches(family, row["conversion_params"])), None)
 
 
 def record_interval(
@@ -276,7 +281,17 @@ def watermark_for(conn: sqlite3.Connection, source_key: str, family: str) -> dat
     row = conn.execute(
         "SELECT watermark_to_utc FROM watermarks WHERE source_key=? AND family=?", (source_key, family)
     ).fetchone()
-    return _parse(row["watermark_to_utc"]) if row else None
+    if not row:
+        return None
+    watermark = _parse(row["watermark_to_utc"])
+    if family == "KQLCNT":
+        start = conn.execute("SELECT MIN(interval_from_utc) FROM coverage_intervals WHERE source_key=? AND family=?",
+                             (source_key, family)).fetchone()[0]
+        if start is None or _parse(start) >= watermark:
+            return None
+        if resolve(conn, source_key, family, _parse(start), watermark).status != "COMPLETE":
+            return None
+    return watermark
 
 
 def granularity_rank(granularity: str) -> int:

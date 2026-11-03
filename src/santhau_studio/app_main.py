@@ -36,7 +36,7 @@ from santhau_studio.platform_win.shutdown_signal import (
     shutdown_requested,
 )
 
-APP_TITLE = "Săn Thầu Data Studio"
+APP_TITLE = "Săn Thầu — Kho dữ liệu"
 
 
 def force_utf8_stdout() -> None:
@@ -139,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
 
     engine = QQmlApplicationEngine(app)
     engine.rootContext().setContextProperty("backend", backend)
-    engine.rootContext().setContextProperty("appTitle", APP_TITLE + (" — SYNTHETIC OFFLINE" if synthetic_label else ""))
+    engine.rootContext().setContextProperty("appTitle", APP_TITLE + (" — DỮ LIỆU THỬ NGHIỆM NGOẠI TUYẾN" if synthetic_label else ""))
     engine.addImportPath(str(qml_path.parent))
     engine.load(qml_path.as_uri())
     if not engine.rootObjects():
@@ -155,7 +155,7 @@ def main(argv: list[str] | None = None) -> int:
     metrics = None
     if os.environ.get("SANTHAU_UI_METRICS_PATH"):
         from santhau_studio.desktop.performance import PerformanceProbe
-        metrics = PerformanceProbe(root, os.environ["SANTHAU_UI_METRICS_PATH"], started)
+        metrics = PerformanceProbe(root, os.environ["SANTHAU_UI_METRICS_PATH"], started, backend)
         app.aboutToQuit.connect(metrics.flush)
     if smoke_shot is not None:
         if smoke_record:

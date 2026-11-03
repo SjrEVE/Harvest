@@ -88,7 +88,7 @@ def family_of(body: object) -> str:
     es_type = next((f["fieldValues"][0] for f in filters if f.get("fieldName") == "type"), "")
     case_filter = next((f for f in filters if f.get("fieldName") == "caseKHKQ"), None)
     if es_type == "es-notify-contractor":
-        # TBMT excludes caseKHKQ=1 (searchType not_in); KQLCNT selects it (searchType in).
+        # TBMT excludes direct-result notices; KQLCNT includes both cases and uses its own date.
         return "TBMT" if case_filter and case_filter.get("searchType") == "not_in" else "KQLCNT"
     return ES_TYPE_TO_FAMILY[es_type]
 

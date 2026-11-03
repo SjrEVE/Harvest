@@ -12,6 +12,7 @@ registry exists to make impossible.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 
 from santhau_studio.collectors.extraction import FamilySpec
@@ -67,11 +68,14 @@ def _project(title_from: tuple[str, ...], keep: tuple[str, ...]):
 
     def normalize(record: dict) -> dict:
         out: dict = {name: record.get(name) for name in keep if name in record}
+        # The public search returns titles as singleton arrays on real records.
+        # Unwrap only that representation; do not discard alternate titles.
+        titles = [record.get(candidate) for candidate in title_from]
+        titles = [value[0] if isinstance(value, list) and len(value) == 1 else value
+                  for value in titles]
         out["title"] = next(
             (
-                record[candidate].strip()
-                for candidate in title_from
-                if isinstance(record.get(candidate), str) and record[candidate].strip()
+                value.strip() for value in titles if isinstance(value, str) and value.strip()
             ),
             None,
         )
@@ -92,7 +96,7 @@ _FAMILY_SHAPE: dict[str, tuple[str, str | None, tuple[str, ...], tuple[str, ...]
     ),
     "KQLCNT": (
         "es-notify-contractor",
-        "1",
+        None,  # caseKHKQ=1 excludes results published against a preceding TBMT.
         ("bidName", "name", "pname"),
         ("notifyNo", "notifyVersion", "inputResultId", "investorName", "winningContractorName",
          "contractorName", "winningCode", "bidWinningPrice", "bidPrice", "decisionDate",
@@ -146,6 +150,7 @@ def _spec(family: str) -> FamilySpec:
         natural_key_field=natural,
         version_field=version,
         normalize=_project(title_from, keep),
+        required_date_field="publicDateKqlcnt" if family == "KQLCNT" else None,
     )
 
 
@@ -156,6 +161,7 @@ class SearchShape:
     es_type: str
     case_khkq: str | None
     title_fields: tuple[str, ...]
+    date_field: str = "publicDate"
 
     @property
     def known_fields(self) -> tuple[str, ...]:
@@ -164,7 +170,26 @@ class SearchShape:
 
 def search_shape_for(family: str) -> SearchShape:
     es_type, case_khkq, title_fields, _keep = _FAMILY_SHAPE[family]
-    return SearchShape(es_type=es_type, case_khkq=case_khkq, title_fields=title_fields)
+    return SearchShape(es_type=es_type, case_khkq=case_khkq, title_fields=title_fields,
+                       date_field="publicDateKqlcnt" if family == "KQLCNT" else "publicDate")
+
+
+def query_contract_for(family: str) -> str | None:
+    """Changed query semantics require fresh boundary proof, not a reused legacy rule."""
+    return "KQLCNT_RESULT_DATE_V2" if family == "KQLCNT" else None
+
+
+def query_contract_matches(family: str, params: object) -> bool:
+    required = query_contract_for(family)
+    if required is None:
+        return True
+    if isinstance(params, str):
+        try:
+            params = json.loads(params)
+        except ValueError:
+            return False
+    return (isinstance(params, dict) and params.get("query_contract") == required
+            and params.get("date_field") == search_shape_for(family).date_field)
 
 SOURCES: dict[str, SourceSpec] = {
     SOURCE_EGP_HOME: SourceSpec(
@@ -222,7 +247,7 @@ for _family in FAMILY_ORDER:
             page_size=10,  # portal clamp: pageSize > 10 is refused with HTTP 400
             max_pages=450,
             max_records=4000,
-            date_filter_field="publicDate",
+            date_filter_field=search_shape_for(_family).date_field,
         )
     )
 del _family

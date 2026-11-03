@@ -67,6 +67,8 @@ def perform(action: str, root: Path, source: str | None = None) -> dict:
                 result = writer.store.recover(writer.conn)
                 integrity = writer.conn.execute("PRAGMA integrity_check").fetchone()[0]
                 foreign_keys = len(writer.conn.execute("PRAGMA foreign_key_check").fetchall())
+                writer.conn.execute("INSERT OR REPLACE INTO settings(key,value_json,updated_at_utc) VALUES('last_integrity_scan',?,strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+                    (json.dumps({"recovery":asdict(result),"integrity":integrity,"foreign_key_errors":foreign_keys}),))
                 publish = build_serving_db(root / "warehouse.sqlite", root / "serving.sqlite")
             return {"ok": result.clean and integrity == "ok" and foreign_keys == 0 and publish.published,
                     "recovery": asdict(result), "integrity": integrity, "foreign_key_errors": foreign_keys}

@@ -208,6 +208,15 @@ def test_portal_tls_keeps_the_same_security_policy_as_other_hosts() -> None:
     assert build_ssl_context("MUASAMCONG.MOF.GOV.VN").get_ciphers()[0]["name"] == portal.get_ciphers()[0]["name"]
 
 
+def test_tls_does_not_offer_finite_field_dh_to_portal() -> None:
+    """The portal selects undersized finite-field DH when offered it (live RC3 probe)."""
+    context = build_ssl_context("muasamcong.mof.gov.vn")
+    ciphers = context.get_ciphers()
+    assert not any(c["kea"] == "kx-dhe" for c in ciphers)
+    assert any(c["kea"] == "kx-ecdhe" for c in ciphers)
+    assert all(c["aead"] for c in ciphers)
+
+
 # ------------------------------------------------------------------ credential hygiene
 
 def test_cookies_are_discarded_after_every_response() -> None:

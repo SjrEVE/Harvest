@@ -1,0 +1,83 @@
+{
+  "page": {
+    "content": [
+      {
+        "bidCloseDate": "2026-10-15T11:00:00",
+        "bidField": "HH",
+        "bidForm": "CGTTRG",
+        "bidId": "baaeeec8-7143-47f6-bcec-ae381025dbc0",
+        "bidMode": "1_MTHS",
+        "bidName": [
+          "Gói 1: mua vật tư - hóa chất phục vụ công tác khám sức khỏe toàn dân năm 2026"
+        ],
+        "bidNo": "BP2600856906",
+        "bidOpenDate": "2026-10-14T08:00:00",
+        "bidPrice": [
+          1999166500.0
+        ],
+        "bidWinningPrice": [
+          429890000.0,
+          337554000.0,
+          280503500.0,
+          526000000.0,
+          375130000.0
+        ],
+        "contractorName": [
+          "CÔNG TY TNHH THIẾT BỊ ANH PHÁT",
+          "CÔNG TY TNHH TRANG THIẾT BỊ Y TẾ HÀ NỘI",
+          "CÔNG TY CỔ PHẦN PHÁT TRIỂN DỊCH VỤ THIÊN BÌNH",
+          "CÔNG TY TNHH THIẾT BỊ VẠN AN"
+        ],
+        "createdBy": "vn0104000942",
+        "decisionDate": "2026-10-20T15:58:04",
+        "id": "79362589-0b0e-471d-ad61-66723b691ea6",
+        "inputResultId": "f50ba760-ec8f-4752-9f4e-8bcfc2fbb7a8",
+        "investField": [
+          "HH"
+        ],
+        "investorCode": "vn0104000942",
+        "investorName": "BỆNH VIỆN ĐA KHOA CHƯƠNG MỸ",
+        "isDomestic": 1,
+        "isInternet": 1,
+        "isMultiLot": 1,
+        "locations": [
+          {
+            "districtCode": "10015",
+            "districtName": "Phường Chương Mỹ",
+            "provCode": "01",
+            "provName": "Thành phố Hà Nội"
+          }
+        ],
+        "notifyId": "79362589-0b0e-471d-ad61-66723b691ea6",
+        "notifyNo": "IB2600570777",
+        "notifyNoStand": "IB2600570777-01",
+        "notifyVersion": "01",
+        "originalPublicDate": "2026-10-07T17:05:45.828",
+        "planNo": "PL2600339792",
+        "planType": "TX",
+        "processApply": "LDT",
+        "publicDate": "2026-10-08T14:10:20.486",
+        "publicDateKqlcnt": "2026-10-20T15:59:24",
+        "score": "NaN",
+        "status": "01",
+        "statusForNotify": "CNTTT",
+        "stepCode": "notify-contractor-step-4-kqlcnt",
+        "type": "es-notify-contractor",
+        "winningCode": [
+          "vn0107622998",
+          "vn0110513124",
+          "vn5701616043",
+          "vn0104233640"
+        ]
+      }
+    ],
+    "currentPage": 0,
+    "empty": false,
+    "first": true,
+    "last": false,
+    "pageSize": 10,
+    "sort": null,
+    "totalElements": 1,
+    "totalPages": 1
+  }
+}

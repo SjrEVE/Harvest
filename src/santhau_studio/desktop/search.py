@@ -11,6 +11,7 @@ from datetime import date
 from pathlib import Path
 
 from santhau_studio.domain.text import fold_vietnamese
+from santhau_studio.storage.read_model import province_key
 
 SORTS = {"record_id": "r.record_id", "natural_key": "r.natural_key", "title": "r.title_sort",
          "published_date": "COALESCE(r.published_date,'')", "updated": "r.last_seen_at_utc",
@@ -48,8 +49,12 @@ def search(conn: sqlite3.Connection, path: Path, payload: dict) -> dict:
             clauses.append(f"r.{column}=?")
             params.append(str(payload[field]).strip())
     if payload.get("province"):
-        clauses.append("r.province_fold=?")
-        params.append(fold_vietnamese(str(payload["province"])))
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='record_provinces'").fetchone():
+            clauses.append("r.record_id IN (SELECT record_id FROM record_provinces WHERE province_fold=? OR province_code=?)")
+            params.extend((province_key(payload["province"]), str(payload["province"]).strip()))
+        else:
+            clauses.append("r.province_fold=?")
+            params.append(fold_vietnamese(str(payload["province"])))
     if payload.get("investor"):
         clauses.append("r.investor_sort LIKE ? ESCAPE '\\'")
         value = fold_vietnamese(str(payload["investor"]))

@@ -269,20 +269,25 @@ class StudioBackend:
         return {"ok": True, "job_id": request.job_id, "queued_as": path.name}
 
     def _verified_rule(self, source_key: str, family: str) -> dict[str, Any] | None:
+        from santhau_studio.collectors.source_registry import query_contract_matches
+
         conn = self._serving()
         if conn is None:
             return None
         try:
             with closing(conn):
-                row = conn.execute(
-                    "SELECT source_key, endpoint, adapter_sha FROM filter_boundary_rules"
+                rows = conn.execute(
+                    "SELECT source_key, endpoint, adapter_sha, conversion_params FROM filter_boundary_rules"
                     " WHERE source_key=? AND family=? AND canary_verified=1"
-                    " ORDER BY rule_version DESC, verified_at_utc DESC LIMIT 1",
+                    " ORDER BY rule_version DESC, verified_at_utc DESC",
                     (source_key, family),
-                ).fetchone()
+                )
+                row = next((dict(r) for r in rows if query_contract_matches(family, r["conversion_params"])), None)
         except sqlite3.Error:
             return None
-        return dict(row) if row else None
+        if row:
+            row.pop("conversion_params", None)
+        return row
 
     def worker_command(self, command: str, job_id: str | None = None) -> dict[str, Any]:
         try:
@@ -743,7 +748,7 @@ class StudioBackend:
                 quarantine = [
                     dict(row)
                     for row in conn.execute(
-                        "SELECT failure, substr(response_object_sha, 1, 12) AS sha12, quarantined_at_utc"
+                        "SELECT failure, response_object_sha, detail, substr(response_object_sha, 1, 12) AS sha12, quarantined_at_utc"
                         " FROM quarantined_responses ORDER BY quarantined_at_utc DESC LIMIT 50"
                     )
                 ]
@@ -762,11 +767,18 @@ class StudioBackend:
                         " WHERE acknowledged_at_utc IS NULL GROUP BY kind ORDER BY kind"
                     )
                 ]
+                quarantine_total = conn.execute("SELECT COUNT(*) FROM quarantined_responses").fetchone()[0]
+                inspection = {
+                    "unresolved": [dict(r) for r in conn.execute("SELECT id,family,reason,record_object_sha FROM unresolved_records WHERE resolved_at_utc IS NULL LIMIT 50")],
+                    "raw_failures": [dict(r) for r in conn.execute("SELECT sha256,integrity_status FROM raw_objects WHERE integrity_status<>'OK' LIMIT 50")],
+                    "legacy_imports": [dict(r) for r in conn.execute("SELECT batch_key,rows_seen,rows_imported,rows_rejected,state FROM import_batches ORDER BY id DESC LIMIT 20")],
+                    "legacy_rejections": [json.loads(r[0]) for r in conn.execute("SELECT value_json FROM settings WHERE key LIKE 'legacy:rejected:%' LIMIT 20")],
+                }
                 markers = [
                     dict(row)
                     for row in conn.execute(
                         "SELECT key, value_json, updated_at_utc FROM settings"
-                        " WHERE key IN ('serving_stale') OR key LIKE 'legacy:coverage:%' ORDER BY key LIMIT 50"
+                        " WHERE key IN ('serving_stale','last_integrity_scan') OR key LIKE 'legacy:coverage:%' ORDER BY key LIMIT 50"
                     )
                 ]
             except sqlite3.Error as exc:
@@ -774,7 +786,7 @@ class StudioBackend:
                         "unresolved": {}, "gaps": [], "markers": []}
         return {"present": True, "raw_objects": raw, "quarantine": quarantine,
                 "unresolved": unresolved, "gaps": gaps, "markers": markers,
-                "quarantine_total": len(quarantine)}
+                "quarantine_total": quarantine_total, "inspection": inspection}
 
     # ------------------------------------------------------------------ UI-10 settings
 

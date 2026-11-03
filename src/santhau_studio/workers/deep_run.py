@@ -20,6 +20,7 @@ from typing import Any
 
 from santhau_studio.collectors.deep import (
     DeepLaneSpec,
+    DeepResponse,
     DetailShapeError,
     detail_spec,
     hsmt_spec,
@@ -33,7 +34,7 @@ from santhau_studio.storage.deep import (
 )
 from santhau_studio.storage.warehouse import WarehouseWriter
 
-DeepFetcher = Callable[[str, str], dict]  # (family, natural_key) -> detail payload
+DeepFetcher = Callable[[str, str], dict | DeepResponse]  # (family, natural_key) -> response
 SpecProvider = Callable[[str, str], DeepLaneSpec | None]  # (family, lane) -> spec
 Clock = Callable[[], datetime]
 
@@ -106,8 +107,10 @@ def run_deep_batch(
     failures: list[dict[str, str]] = []
     for record in _targets(writer, family, scope, limit):
         try:
-            payload = fetcher(family, str(record["natural_key"]))
-            parsed = parse_detail(provided, payload)
+            fetched = fetcher(family, str(record["natural_key"]))
+            payload = fetched.response_payload if isinstance(fetched, DeepResponse) else fetched
+            detail = fetched.detail if isinstance(fetched, DeepResponse) else fetched
+            parsed = parse_detail(provided, detail)
         except (DetailShapeError, KeyError, TypeError, ValueError) as exc:
             failures.append({"record_id": str(record["id"]), "error": f"{type(exc).__name__}: {exc}"[:160]})
             continue
@@ -123,7 +126,7 @@ def run_deep_batch(
             spec=provided,
             completeness=completeness,
             response_payload=payload,
-            detail=payload,
+            detail=detail,
             now=now,
             refresh_after_days=provided.refresh_after_days,
         )

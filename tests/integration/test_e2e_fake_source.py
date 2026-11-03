@@ -51,7 +51,8 @@ def make_writer(root: Path) -> WarehouseWriter:
             " adapter_sha, boundary_kind, precision, source_timezone, offset_minutes, conversion_params,"
             " canary_verified, verified_at_utc) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (f"e2e-{family}", 1, SOURCE_EGP_HOME, family, ENDPOINT, ADAPTER_SHA,
-             "CLOSED_LOCAL", "DAY", "Asia/Ho_Chi_Minh", 420, '{"to_minus":"1s"}', 1,
+             "CLOSED_LOCAL", "DAY", "Asia/Ho_Chi_Minh", 420,
+             '{"to_minus":"1s","query_contract":"KQLCNT_RESULT_DATE_V2","date_field":"publicDateKqlcnt"}', 1,
              "2026-10-31T00:00:00Z"),
         )
     writer.conn.commit()

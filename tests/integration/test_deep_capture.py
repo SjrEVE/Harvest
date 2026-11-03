@@ -104,6 +104,30 @@ def capture(writer, record_id: int, *, version: str = "00", completeness: str = 
     )
 
 
+def test_multiple_lots_have_unique_record_row_ordinals(writer, record_id):
+    capture(writer, record_id, extra={"lots": [
+        {"lotNo": "L1", "goods": [{"goodsName": "A", "quantity": 2}]},
+        {"lotNo": "L2", "goods": [{"goodsName": "B", "quantity": 3}]},
+    ]})
+    rows = writer.conn.execute("SELECT row_ordinal,name FROM goods_rows ORDER BY row_ordinal").fetchall()
+    assert [tuple(r) for r in rows] == [(0, "A"), (1, "B")]
+
+
+def test_member_only_capture_preserves_goods_and_goods_only_preserves_members(writer, record_id):
+    from dataclasses import replace
+
+    goods_spec = replace(SPEC, lane="HSMT", members_path=None)
+    member_spec = replace(SPEC, lane="REOFFER", lots_path=None, goods_path=None, member_role="OFFEROR")
+    goods = detail(lots=[{"lotNo": "L1", "goods": [{"goodsName": "A", "quantity": 2}]}])
+    members = detail(contractors=[{"contractorName": "Supplier A", "taxCode": "VN-A"}])
+    for spec, payload in [(goods_spec, goods), (member_spec, members), (goods_spec, goods)]:
+        deep.record_deep_capture(writer, run_id="run-d1", source_record_id=record_id, spec=spec,
+                                 completeness="FULL", response_payload=payload, detail=payload, now=NOW)
+    assert writer.conn.execute("SELECT COUNT(*) FROM goods_rows").fetchone()[0] == 1
+    assert writer.conn.execute("SELECT COUNT(*) FROM contractor_memberships").fetchone()[0] == 1
+    assert writer.conn.execute("SELECT COUNT(*) FROM deep_capture_history").fetchone()[0] == 3
+
+
 # ------------------------------------------------------------------ capture + history (B6)
 
 def test_first_capture_writes_latest_and_history(writer, record_id) -> None:

@@ -58,7 +58,7 @@ def process_counters():
 
 
 class PerformanceProbe(QObject):
-    def __init__(self, window, path, started):
+    def __init__(self, window, path, started, bridge=None):
         super().__init__(window)
         self.path = Path(path)
         self.started = started
@@ -68,7 +68,14 @@ class PerformanceProbe(QObject):
             "first_frame_ms": None,
             "max_event_stall_ms": 0,
             "event_samples": 0,
+            "request_to_frame_ms": {},
         }
+        self.window = window
+        self.reads = {}
+        self.paint_pending = []
+        if bridge is not None:
+            bridge.readStarted.connect(self.read_started)
+            bridge.readReady.connect(self.read_ready)
         self.timer = QTimer(self)
         self.timer.setInterval(16)
         self.timer.timeout.connect(self.tick)
@@ -79,8 +86,26 @@ class PerformanceProbe(QObject):
         self.flush_timer.start()
         window.frameSwapped.connect(self.first_frame)
 
+    @Slot(str, int, str)
+    def read_started(self, key, serial, method):
+        self.reads[key] = (serial, method, time.perf_counter())
+
+    @Slot(str, int, str)
+    def read_ready(self, key, serial, _value):
+        measurement = self.reads.pop(key, None)
+        page = {"page2": 1, "explorer": 5, "detail": 6, "history": 6}.get(key)
+        if measurement and measurement[0] == serial and self.window.property("pageIndex") == page:
+            self.paint_pending.append(measurement[1:])
+            self.window.update()
+
     @Slot()
     def first_frame(self):
+        now = time.perf_counter()
+        for method, started in self.paint_pending:
+            samples = self.report["request_to_frame_ms"].setdefault(method, [])
+            samples.append((now - started) * 1000)
+            del samples[:-1000]
+        self.paint_pending.clear()
         if self.report["first_frame_ms"] is None:
             self.report["first_frame_ms"] = (time.perf_counter() - self.started) * 1000
             self.flush()

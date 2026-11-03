@@ -151,9 +151,13 @@ def _write_derived(
         provenance["hsmt_columns"] = list(spec.hsmt_columns)
     provenance_json = _json(provenance)
 
-    conn.execute("DELETE FROM goods_rows WHERE source_record_id=?", (source_record_id,))
-    conn.execute("DELETE FROM lots WHERE source_record_id=?", (source_record_id,))
-    conn.execute("DELETE FROM contractor_memberships WHERE source_record_id=?", (source_record_id,))
+    # A capture owns only the projections declared by its parser. Fetching bidders
+    # must not erase a separately captured HSMT goods table, or vice versa.
+    if spec.lots_path is not None:
+        conn.execute("DELETE FROM goods_rows WHERE source_record_id=?", (source_record_id,))
+        conn.execute("DELETE FROM lots WHERE source_record_id=?", (source_record_id,))
+    if spec.members_path is not None:
+        conn.execute("DELETE FROM contractor_memberships WHERE source_record_id=?", (source_record_id,))
 
     for member in parsed.members:
         member_ref = writer.store.put(canonical_bytes(member.raw))
@@ -169,6 +173,7 @@ def _write_derived(
                 provenance_json,
             ),
         )
+    record_row_ordinal = 0
     for lot in parsed.lots:
         cur = conn.execute(
             "INSERT INTO lots (source_record_id, lot_no_raw, lot_label, lot_version, goods_count,"
@@ -185,10 +190,11 @@ def _write_derived(
                 " unit, quantity_presence, quantity, quantity_raw, provenance_json)"
                 " VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (
-                    lot_id, source_record_id, row.row_ordinal, row.name, row.specification, row.unit,
+                    lot_id, source_record_id, record_row_ordinal, row.name, row.specification, row.unit,
                     row.quantity_presence, row.quantity, row.quantity_raw, provenance_json,
                 ),
             )
+            record_row_ordinal += 1
 
 
 # ------------------------------------------------------------------ staleness decisions

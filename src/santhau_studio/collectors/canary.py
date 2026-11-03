@@ -21,7 +21,7 @@ from typing import Any
 
 from santhau_studio.collectors.egp_home import EgpHomeLane, Page, SearchWindow
 from santhau_studio.collectors.http_client import AccessBlocked, FetchFailed, FetchLane
-from santhau_studio.collectors.source_registry import SOURCES, source_for
+from santhau_studio.collectors.source_registry import SOURCES, query_contract_matches, source_for
 from santhau_studio.storage.warehouse import WarehouseWriter
 
 PROBE_UNVERIFIED = "PROBE_UNVERIFIED"
@@ -72,6 +72,7 @@ def record_probe_success(
     """Evidence of a probe = reachability + readable shape, never a collection claim."""
     stamp = now or _now()
     _ensure_registry_row(conn, source_key, source_key, "ALLOWED_AND_VERIFIED")
+    conn.execute("UPDATE source_registry SET access_state='ALLOWED_AND_VERIFIED',verified_at_utc=?,notes=NULL WHERE source_key=?", (stamp,source_key))
     conn.execute(
         "INSERT INTO adapter_health (source_key, family, adapter_sha, last_canary_ok_at_utc,"
         " consecutive_failures, last_error_kind, updated_at_utc) VALUES (?,?,?,?,0,NULL,?)"
@@ -107,6 +108,7 @@ def record_probe_failure(
 ) -> None:
     stamp = now or _now()
     _ensure_registry_row(conn, source_key, source_key, "UNVERIFIED")
+    conn.execute("UPDATE source_registry SET access_state='BLOCKED',notes=? WHERE source_key=?", (reason_kind,source_key))
     conn.execute(
         "INSERT INTO adapter_health (source_key, family, adapter_sha, last_canary_ok_at_utc,"
         " consecutive_failures, last_error_kind, updated_at_utc) VALUES (?,?,?,NULL,1,?,?)"
@@ -137,28 +139,28 @@ def canary_state(conn, source_key: str, family: str, adapter_sha: str | None = N
     if adapter_sha is not None:
         sha_clause = " AND adapter_sha=?"
         params = (*params, adapter_sha)
-    proven = conn.execute(
-        "SELECT 1 FROM coverage_intervals ci"
+    proven_rows = conn.execute(
+        "SELECT r.conversion_params FROM coverage_intervals ci"
         " JOIN coverage_proofs cp ON cp.id = ci.proof_id"
         " JOIN filter_boundary_rules r ON r.id = cp.boundary_rule_id"
         " WHERE ci.status='COMPLETE' AND ci.family=? AND ci.source_key=?"
-        "   AND r.canary_verified=1" + (" AND cp.adapter_sha=?" if adapter_sha is not None else "") + " LIMIT 1",
+        "   AND r.canary_verified=1" + (" AND cp.adapter_sha=?" if adapter_sha is not None else ""),
         (family, source_key, adapter_sha) if adapter_sha is not None else (family, source_key),
-    ).fetchone()
-    if proven:
+    )
+    if any(query_contract_matches(family, r["conversion_params"]) for r in proven_rows):
         return {"state": COLLECTION_PROVEN, "rule_verified": True, "probe_ok": True}
     health = conn.execute(
         "SELECT last_canary_ok_at_utc FROM adapter_health"
         " WHERE source_key=? AND family=?" + sha_clause,
         params,
     ).fetchone()
-    rule = conn.execute(
-        "SELECT 1 FROM filter_boundary_rules WHERE source_key=? AND family=? AND canary_verified=1"
-        + (" AND adapter_sha=?" if adapter_sha is not None else "") + " LIMIT 1",
+    rules = conn.execute(
+        "SELECT conversion_params FROM filter_boundary_rules WHERE source_key=? AND family=? AND canary_verified=1"
+        + (" AND adapter_sha=?" if adapter_sha is not None else ""),
         params,
-    ).fetchone()
+    )
     probe_ok = health is not None and health["last_canary_ok_at_utc"] is not None
-    rule_verified = rule is not None
+    rule_verified = any(query_contract_matches(family, r["conversion_params"]) for r in rules)
     state = RULE_VERIFIED if (probe_ok and rule_verified) else PROBE_UNVERIFIED
     return {"state": state, "rule_verified": rule_verified, "probe_ok": probe_ok,
             "probe_at": health["last_canary_ok_at_utc"] if health else None}

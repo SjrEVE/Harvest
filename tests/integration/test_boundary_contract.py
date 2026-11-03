@@ -174,7 +174,7 @@ def test_same_natural_key_in_two_families_stays_two_records(writer) -> None:
 
     kq_payload = {"page": {"content": [
         {"notifyNo": "IB-SHARED", "notifyVersion": "01", "bidName": "Kết quả gói chung",
-         "winningContractorName": "Nhà thầu X"},
+         "winningContractorName": "Nhà thầu X", "publicDateKqlcnt": "2026-11-01T09:00:00"},
     ], "totalElements": 1}}
     kq_ref = writer.store_response(kq_payload)
     kq_attempt = writer.ensure_attempt(

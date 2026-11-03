@@ -100,13 +100,13 @@ def build_search_body(
         filters.append({"fieldName": "caseKHKQ", "searchType": "in", "fieldValues": ["1"]})
     if window and window.active:
         filters.append(
-            {"fieldName": SORT_FIELD, "searchType": "range", "from": window.from_local, "to": window.to_local}
+            {"fieldName": shape.date_field, "searchType": "range", "from": window.from_local, "to": window.to_local}
         )
     return [
         {
             "pageSize": page_size,
             "pageNumber": page_no,
-            "sortBy": SORT_FIELD,
+            "sortBy": shape.date_field,
             # Sent for parity with the portal's own client. The portal ignores it (verified
             # 2026-11-01), which is why nothing downstream may depend on ordering.
             "sortType": "ASC" if sort_asc else "DESC",
@@ -115,7 +115,7 @@ def build_search_body(
                     "index": ES_INDEX,
                     "keyWord": "",
                     "matchType": "all-1",
-                    "matchFields": [f"{SORT_FIELD}^10"],
+                    "matchFields": [f"{shape.date_field}^10"],
                     "filters": filters,
                 }
             ],
@@ -184,13 +184,15 @@ class EgpHomeLane:
         )
         outcome = self.lane.post(body, min_interval=self.pacing_seconds)
         rows, total = read_rows(outcome.payload)
+        family_matches = all(isinstance(row, dict) and self.binding.spec.accepts_record(row) for row in rows)
+        family_scoped = self.binding.spec.required_date_field is None or (self.window.active and family_matches)
         return Page(
             payload=outcome.payload,
             page_no=page_no,
             rows=len(rows),
             has_more=len(rows) >= self.page_size,
             total_hint=total,
-            total_hint_trusted=total is not None and total < ES_MAX_RESULT_WINDOW,
+            total_hint_trusted=total is not None and total < ES_MAX_RESULT_WINDOW and family_scoped,
             http_status=outcome.http_status,
             attempt_log=tuple(outcome.attempts),
         )

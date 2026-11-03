@@ -1,8 +1,7 @@
 """e-GP home lane: request shape, pagination, terminal proof and the ported `or "00"` removal.
 
 The filter bodies here are asserted field by field because a wrong `type` or a missing
-`caseKHKQ` filter silently mixes two families into one identity space, and the response still
-looks like valid data.
+result publication date can silently omit awards or mix pending notices into results.
 """
 
 from __future__ import annotations
@@ -44,7 +43,7 @@ def filters_of(body: list[dict]) -> dict[str, dict]:
     ("family", "es_type", "case_khkq"),
     [
         ("TBMT", "es-notify-contractor", "not1"),
-        ("KQLCNT", "es-notify-contractor", "1"),
+        ("KQLCNT", "es-notify-contractor", None),
         ("HOP_DONG", "es-ct-contract", None),
         ("KHLCNT", "es-plan-project-p", None),
         ("DU_AN", "es-bidp-project-p", None),
@@ -63,12 +62,14 @@ def test_each_family_selects_its_own_slice_of_the_shared_index(family: str, es_t
         assert "caseKHKQ" not in filters_of(body), f"{family} must not carry a result-status filter"
 
 
-def test_tbmt_and_kqlcnt_are_the_same_endpoint_split_by_case_khkq() -> None:
-    """One index serves both; getting this wrong merges two identity spaces."""
+def test_tbmt_and_kqlcnt_share_an_index_but_result_query_includes_both_cases() -> None:
+    """Award identity is separate; having a prior TBMT must not exclude its result."""
     tbmt = filters_of(build_search_body(0, shape=search_shape_for("TBMT")))
     kqlcnt = filters_of(build_search_body(0, shape=search_shape_for("KQLCNT")))
     assert tbmt["type"] == kqlcnt["type"]
-    assert tbmt["caseKHKQ"]["searchType"] != kqlcnt["caseKHKQ"]["searchType"]
+    assert tbmt["caseKHKQ"]["searchType"] == "not_in"
+    assert "caseKHKQ" not in kqlcnt
+    assert search_shape_for("KQLCNT").date_field == "publicDateKqlcnt"
 
 
 def test_page_size_above_the_portal_clamp_is_refused_locally() -> None:
@@ -204,7 +205,8 @@ def test_every_page_carries_the_family_filter() -> None:
     for body in portal.bodies:
         filters = {f["fieldName"]: f for f in body[0]["query"][0]["filters"]}
         assert filters["type"]["fieldValues"] == ["es-notify-contractor"]
-        assert filters["caseKHKQ"]["fieldValues"] == ["1"]
+        assert "caseKHKQ" not in filters
+        assert body[0]["sortBy"] == "publicDateKqlcnt"
 
 
 def test_total_elements_at_the_es_cap_is_flagged_untrusted() -> None:

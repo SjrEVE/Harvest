@@ -106,6 +106,10 @@ def build_ssl_context(host: str) -> ssl.SSLContext:
     del host
     context = ssl.create_default_context()
     context.minimum_version = ssl.TLSVersion.TLSv1_2
+    # The portal can select finite-field DHE with an undersized group. Offer modern
+    # ECDHE AEAD suites instead, without lowering the security level or certificate
+    # checks. TLS 1.3 suites remain managed by OpenSSL.
+    context.set_ciphers("ECDHE+AESGCM:ECDHE+CHACHA20")
     return context
 
 

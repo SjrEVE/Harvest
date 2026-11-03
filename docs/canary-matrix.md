@@ -7,7 +7,7 @@ phản ánh đúng sự thật của repo.
 | # | Nguồn | Endpoint | Family | Boundary / filter | Quyền truy cập | Bằng chứng cần lưu | Kỳ vọng | Trạng thái hiện tại |
 |---|---|---|---|---|---|---|---|---|
 | C1 | egp_home | `/o/egp-portal-home/services/smart/search` | TBMT | `publicDate` range, rule DAY `CLOSED_LOCAL` `to_minus=1s` | Public, không token | response sha + proof row + `filter_boundary_rules.canary_verified=1` | 1 ngày COMPLETE; total_first=total_last<10.000; terminal SHORT/EMPTY | **BLOCKED** — chưa chạy canary thật |
-| C2 | egp_home | như trên | KQLCNT | như trên, filter `caseKHKQ in [1]` | Public | như trên | như C1 | **BLOCKED** |
+| C2 | egp_home | như trên | KQLCNT | `publicDateKqlcnt` range; không giới hạn `caseKHKQ`; chỉ nhận dòng có ngày công bố kết quả hợp lệ | Public | Như C1, quy tắc phải ghi `query_contract=KQLCNT_RESULT_DATE_V2`, `date_field=publicDateKqlcnt` trong `conversion_params` | Không bỏ sót kết quả gắn với TBMT; không nhận gói đang xét thầu | **BLOCKED** — sửa và kiểm tra offline bằng phản hồi thật đã lưu; chưa chạy canary truy vấn mới |
 | C3 | egp_home | như trên | HOP_DONG | như trên | Public | như trên | như C1 | **BLOCKED** |
 | C4 | egp_home | như trên | KHLCNT | như trên | Public | như trên | như C1 | **BLOCKED** |
 | C5 | egp_home | như trên | DU_AN | như trên | Public | như trên | như C1 | **BLOCKED** |

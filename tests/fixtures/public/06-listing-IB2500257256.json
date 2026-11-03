@@ -1,0 +1,92 @@
+{
+  "page": {
+    "content": [
+      {
+        "bidCloseDate": "2025-06-28T10:00:00",
+        "bidField": "HH",
+        "bidForm": "DTRR",
+        "bidId": "533f7c5b-7e05-4c6e-b568-267e4a51a445",
+        "bidMode": "1_MTHS",
+        "bidName": [
+          "Các vật tư thay thế và phụ trợ"
+        ],
+        "bidOpenDate": "2025-06-28T10:00:00",
+        "bidOpenId": "9c143d72-f999-4b39-af7f-6fcbd15dfedf",
+        "bidPrice": [
+          1851207200.0
+        ],
+        "bidRealityOpenDate": "2025-06-28T10:42:36",
+        "bidWinningPrice": [
+          1678984700.0
+        ],
+        "contractorName": [
+          "LIÊN DANH HOÀNG HÀ – ACCUTECH - PHƯƠNG ĐÔNG "
+        ],
+        "createdBy": "vn0101563009-01",
+        "decisionDate": "2025-09-10T23:59:59",
+        "id": "e9a49716-5619-4d0f-b1f9-6505b92214c2",
+        "inputResultId": "ed911c6f-c668-45ec-958d-9a806cd3f122",
+        "investField": [
+          "HH"
+        ],
+        "investorCode": "vn0101563009",
+        "investorName": "Bệnh viện Đa khoa Đống Đa",
+        "isDomestic": 1,
+        "isInternet": 1,
+        "isMedicine": 0,
+        "isPass": 0,
+        "locations": [
+          {
+            "districtCode": "10109",
+            "districtName": "Quận Đống Đa",
+            "provCode": "101",
+            "provName": "Thành phố Hà Nội"
+          }
+        ],
+        "notifyId": "e9a49716-5619-4d0f-b1f9-6505b92214c2",
+        "notifyNo": "IB2500257256",
+        "notifyNoStand": "IB2500257256-00",
+        "notifyVersion": "00",
+        "numBidderJoin": 1,
+        "numBidderTech": 0,
+        "numClarifyReq": 0,
+        "numPetition": 0,
+        "numPetitionHsmt": 0,
+        "numPetitionKqlcnt": 0,
+        "numPetitionLcnt": 0,
+        "originalPublicDate": "2025-06-13T15:03:48.066",
+        "planNo": "PL2500116469",
+        "planType": "TX",
+        "processApply": "LDT",
+        "procuringEntityCode": "vn0101563009",
+        "procuringEntityName": "Bệnh viện Đa khoa Đống Đa",
+        "publicDate": "2025-06-13T15:03:48.066",
+        "publicDateKqlcnt": "2025-09-10T16:09:11",
+        "publicDateKqmt": "2025-06-13T15:03:48.066",
+        "score": "NaN",
+        "status": "IS_PUBLISH",
+        "statusForNotify": "CNTTT",
+        "stepCode": "notify-contractor-step-4-kqlcnt",
+        "type": "es-notify-contractor",
+        "winningCode": [
+          "vn0101981969",
+          "vn0106318579",
+          "vn0101088272"
+        ],
+        "winningContractorName": [
+          "CÔNG TY TNHH THÔNG MINH HOÀNG HÀ",
+          "CÔNG TY TNHH THIẾT BỊ Y TẾ PHƯƠNG ĐÔNG",
+          "CÔNG TY CỔ PHẦN ACCUTECH VIỆT NAM"
+        ]
+      }
+    ],
+    "currentPage": 0,
+    "empty": false,
+    "first": true,
+    "last": false,
+    "pageSize": 10,
+    "sort": null,
+    "totalElements": 1,
+    "totalPages": 1
+  }
+}

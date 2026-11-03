@@ -9,10 +9,13 @@ from santhau_studio.collectors.source_registry import FAMILY_ORDER, SOURCE_EGP_H
 
 def source_evidence(conn):
     families = []
+    access = conn.execute('SELECT access_state,notes FROM source_registry WHERE source_key=?',(SOURCE_EGP_HOME,)).fetchone()
     for family in FAMILY_ORDER:
         state = canary_state(conn, SOURCE_EGP_HOME, family)
         state.update(family=family, source_key=SOURCE_EGP_HOME)
         state['blocked_reason'] = None if state['rule_verified'] else 'BOUNDARY_RULE_UNVERIFIED: cần owner duyệt canary và hợp đồng biên'
+        if access and access[0] in ('BLOCKED','DISABLED','NEEDS_USER_SESSION'):
+            state['blocked_reason'] = access[0] + ': ' + (access[1] or 'SOURCE_ACCESS_NOT_GRANTED')
         families.append(state)
     events = [dict(r) for r in conn.execute('SELECT family,reason_kind,detail_scrubbed,observed_at_utc FROM source_access_events ORDER BY id DESC LIMIT 50')]
     return {'families': families, 'access_events': events}

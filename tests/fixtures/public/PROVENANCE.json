@@ -1,0 +1,19 @@
+{
+  "source": "https://muasamcong.mof.gov.vn/o/egp-portal-home/services/smart/search",
+  "captured_utc": "2026-11-03",
+  "owner_approved_batch": "three public tenders, 30 requests, no credentials",
+  "files": [
+    {
+      "file": "04-listing-IB2600570777.json",
+      "sha256": "4ca65036fb91a9200f2015035e71262aaa1a41454b09a8623c1d6b20ff61d619"
+    },
+    {
+      "file": "05-listing-IB2600572157.json",
+      "sha256": "29ed9b3c7e08fb21a7408639a91d7b4dfeee6cdb3f428da68772eda5de41981a"
+    },
+    {
+      "file": "06-listing-IB2500257256.json",
+      "sha256": "982436cdbd812a0154af2c10f1b0b928d8b92c85d2786b374a0d368eb82441ad"
+    }
+  ]
+}

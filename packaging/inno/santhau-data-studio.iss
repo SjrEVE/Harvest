@@ -1,6 +1,5 @@
-; G0-A / A8 packaging spike - Inno Setup 6 script.
-; ASCII-only source: ISPP reads .iss as ANSI unless a BOM is present, and Vietnamese
-; strings here would be mis-decoded. Product-facing Vietnamese text lives in the QML.
+﻿; G0-A / A8 packaging spike - Inno Setup 6 script.
+; UTF-8 BOM preserves Vietnamese text in both ISPP and installer dialogs.
 ;
 ; Layout follows Master Spec v1.3 §2.2: the program installs per-user under
 ; %LocalAppData%\Programs so no elevation is required, and the data root is chosen by
@@ -8,7 +7,7 @@
 ;
 ; Build:  iscc /DStageDir=<absolute path to build\stage> packaging\inno\santhau-data-studio.iss
 
-#define MyAppName      "San Thau Data Studio"
+#define MyAppName      "Săn Thầu — Kho dữ liệu"
 #define MyAppVersion   "0.0.1"
 #define MyAppPublisher "Gia Su AI"
 #define MyAppExeName   "SanThauDataStudio.exe"
@@ -49,10 +48,10 @@ RestartApplications=no
 ; Both GUI and worker register a runtime mutex. [Code] waits for graceful shutdown.
 
 [Languages]
-Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "vietnamese"; MessagesFile: "Vietnamese.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional:"; Flags: unchecked
+Name: "desktopicon"; Description: "Tạo biểu tượng trên màn hình"; GroupDescription: "Tùy chọn thêm:"; Flags: unchecked
 
 [Files]
 ; Whole Nuitka standalone folder: exe + Qt runtime + Python runtime + QML modules.
@@ -63,11 +62,11 @@ Source: "..\..\THIRD_PARTY_NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
+Name: "{group}\Gỡ {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent unchecked
+Filename: "{app}\{#MyAppExeName}"; Description: "Mở {#MyAppName}"; Flags: nowait postinstall skipifsilent unchecked
 
 [UninstallDelete]
 ; Intentionally empty. Removing user data during uninstall is forbidden; the data root
@@ -105,14 +104,14 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   Result := '';
   if not SignalAppShutdown then
-    Result := 'Collector is still saving data. Stop it from Collection Jobs, then retry.';
+    Result := 'Bộ thu thập đang lưu dữ liệu. Hãy dừng tại màn Tác vụ thu thập rồi thử lại.';
 end;
 
 function InitializeUninstall: Boolean;
 begin
   Result := SignalAppShutdown;
   if not Result then
-    MsgBox('Collector is still saving data. Stop it from Collection Jobs, then retry.', mbError, MB_OK);
+    MsgBox('Bộ thu thập đang lưu dữ liệu. Hãy dừng tại màn Tác vụ thu thập rồi thử lại.', mbError, MB_OK);
 end;
 
 procedure DeinitializeSetup;

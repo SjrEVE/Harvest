@@ -13,6 +13,7 @@ import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from hashlib import sha256
 from typing import Any
 
@@ -73,6 +74,21 @@ class FamilySpec:
     version_field: str
     normalize: Callable[[dict[str, Any]], dict[str, Any]]
     unparseable_version: tuple[str, ...] = ("",)
+    required_date_field: str | None = None
+
+    def accepts_record(self, record: dict[str, Any]) -> bool:
+        if self.required_date_field is None:
+            return True
+        value = record.get(self.required_date_field)
+        if isinstance(value, list) and len(value) == 1:
+            value = value[0]
+        if not isinstance(value, str) or not value.strip():
+            return False
+        try:
+            datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        return True
 
     def natural_key_of(self, record: dict[str, Any]) -> str | None:
         value = record.get(self.natural_key_field)
@@ -107,6 +123,7 @@ class ExtractionReport:
     records: list[ExtractedRecord] = field(default_factory=list)
     unresolved: list[ExtractedRecord] = field(default_factory=list)
     malformed_members: int = 0
+    filtered_members: int = 0
 
     @property
     def ingestible(self) -> list[ExtractedRecord]:
@@ -123,6 +140,9 @@ def extract_page(response: Any, spec: FamilySpec) -> ExtractionReport:
         if not isinstance(member, dict):
             # A member we cannot even treat as an object is page-level damage, not a record.
             report.malformed_members += 1
+            continue
+        if not spec.accepts_record(member):
+            report.filtered_members += 1
             continue
         payload = _as_json_object(member)
         sha = record_object_sha(payload)

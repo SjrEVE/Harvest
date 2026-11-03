@@ -30,7 +30,7 @@ from santhau_studio.collectors.boundary import (
 from santhau_studio.collectors.egp_home import ES_MAX_RESULT_WINDOW, Page
 from santhau_studio.collectors.extraction import extract_page, verify_extraction
 from santhau_studio.collectors.http_client import AccessBlocked, Attempt, FetchFailed
-from santhau_studio.collectors.source_registry import binding_for
+from santhau_studio.collectors.source_registry import binding_for, query_contract_for
 from santhau_studio.domain.coverage import Interval, vn_calendar_day
 from santhau_studio.storage import coverage
 from santhau_studio.storage.coverage import ProofRecord
@@ -239,7 +239,9 @@ class Runner:
             outcome.records_updated += committed.records_updated
             outcome.records_raw_only += committed.records_raw_only
             outcome.records_unresolved += committed.records_unresolved
-            outcome.malformed += report.malformed_members
+            # Off-family rows mean the source did not honour the expected result slice.
+            # Keep the raw response, but never certify the filtered subset as COMPLETE.
+            outcome.malformed += report.malformed_members + report.filtered_members
             outcome.identity_keys.update(_identity_keys(self.family, report.records))
             seen_records += len(report.records)
             if self.progress:
@@ -547,6 +549,8 @@ def _identity_keys(family: str, records) -> set[str]:
 
 def _query_fingerprint(source_key: str, family: str, endpoint: str, interval: Interval) -> str:
     canonical = f"idq1:{source_key}|{family}|{endpoint}|{_iso(interval.from_utc)}|{_iso(interval.to_utc)}"
+    if contract := query_contract_for(family):
+        canonical += f"|{contract}"
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 

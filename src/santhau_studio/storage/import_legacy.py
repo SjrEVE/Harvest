@@ -204,6 +204,14 @@ def import_legacy(source: Path, target: Path, *, progress: Callable[[dict], None
                         imported += not receipt.get("duplicate")
                     except (ValueError, KeyError, TypeError) as exc:
                         rejected += 1
+                        # A mapping failure must not discard readable legacy source bytes.
+                        # They remain explicitly unverified, without fabricated records/proof.
+                        if event['payload']:
+                            rejected_raw = writer.store_response(json.loads(event['payload']))
+                            writer.register_object(rejected_raw)
+                            _setting(writer.conn, 'legacy:rejected:' + event['event_key'],
+                                     {'classification':'LEGACY_UNVERIFIED','response_sha':rejected_raw.sha256,
+                                      'reason':str(exc),'metadata':json.loads(event['metadata'])})
                         if len(errors) < 50:
                             errors.append({"event": event["event_key"], "reason": str(exc)})
                     if progress:

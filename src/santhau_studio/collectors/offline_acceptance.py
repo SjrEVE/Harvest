@@ -33,8 +33,9 @@ def initialize(root):
         writer.conn.execute("INSERT OR IGNORE INTO source_registry(source_key,display_name,endpoint_family,access_state,notes) VALUES('egp_home','SYNTHETIC OFFLINE','egp','ALLOWED_AND_VERIFIED',?)", (PROFILE,))
         writer.conn.execute("INSERT OR REPLACE INTO settings VALUES('evidence_class',?,'2026-11-04T00:00:00Z')", (json.dumps({'class': PROFILE, 'live_proof': False}),))
         for family in FAMILY_ORDER:
-            writer.conn.execute("INSERT OR IGNORE INTO filter_boundary_rules(rule_key,rule_version,source_key,family,endpoint,adapter_sha,boundary_kind,precision,source_timezone,offset_minutes,conversion_params,canary_verified,verified_at_utc) VALUES(?,1,'egp_home',?,?,?,'CLOSED_LOCAL','DAY','Asia/Ho_Chi_Minh',420,'{\"to_minus\":\"1s\"}',1,'2026-11-04T00:00:00Z')",
-                ('SYNTHETIC-' + family, family, SOURCES['egp_home'].endpoint, ADAPTER))
+            writer.conn.execute("INSERT OR IGNORE INTO filter_boundary_rules(rule_key,rule_version,source_key,family,endpoint,adapter_sha,boundary_kind,precision,source_timezone,offset_minutes,conversion_params,canary_verified,verified_at_utc) VALUES(?,2,'egp_home',?,?,?,'CLOSED_LOCAL','DAY','Asia/Ho_Chi_Minh',420,?,1,'2026-11-04T00:00:00Z')",
+                ('SYNTHETIC-' + family, family, SOURCES['egp_home'].endpoint, ADAPTER,
+                 json.dumps({'to_minus':'1s','query_contract':'KQLCNT_RESULT_DATE_V2','date_field':'publicDateKqlcnt'})))
     return build_serving_db(root / 'warehouse.sqlite', root / 'serving.sqlite')
 
 
@@ -53,6 +54,9 @@ def builder(_writer, request):
                 'pname':f'Synthetic {page}-{i}','ctName':f'Synthetic {page}-{i}',
                 'investorName':'Đơn vị thử nghiệm offline','province':'Hà Nội','bidPrice':1000+i,'currency':'VND',
                 'publicDate':'2026-11-01T02:00:00Z','fixture':PROFILE} for i in range(3)]
+            if family == 'KQLCNT':
+                for row in records:
+                    row['publicDateKqlcnt'] = interval.from_utc.isoformat()
             assert spec.family == family
             yield Page(payload={'page':{'content':records,'totalElements':36}},page_no=page,rows=3,
                        has_more=page < 11,total_hint=36,total_hint_trusted=True,http_status=200,attempt_log=())

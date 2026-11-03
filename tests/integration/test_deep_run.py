@@ -119,6 +119,27 @@ def test_default_specs_are_unverified_and_block(tmp_path: Path) -> None:
         writer.close()
 
 
+def test_normalized_deep_capture_retains_original_response(tmp_path: Path):
+    from santhau_studio.collectors.deep import DeepResponse
+    from santhau_studio.domain.identity import canonical_bytes
+
+    writer = seed_records(tmp_path / "data")
+    try:
+        raw = {"portal": "original", "nestedForm": "{\"originalColumn\":42}"}
+        detail = payload_for("IB-0")
+        record_id = writer.conn.execute("SELECT id FROM source_records WHERE natural_key='IB-0'").fetchone()[0]
+        result = run_deep_batch(writer, run_id="run-detail", family="TBMT", lane="DETAIL",
+                                scope={"record_ids": [record_id]},
+                                fetcher=lambda _f, _k: DeepResponse(raw, detail),
+                                spec_provider=lambda _f, _l: spec_for("TBMT"))
+        assert result.detail["captured"] == 1
+        row = writer.conn.execute("SELECT response_object_sha,record_object_sha FROM deep_captures").fetchone()
+        assert writer.store.read(row[0]) == canonical_bytes(raw)
+        assert writer.store.read(row[1]) == canonical_bytes(detail)
+    finally:
+        writer.close()
+
+
 def test_batch_captures_lots_goods_and_members(tmp_path: Path) -> None:
     writer = seed_records(tmp_path / "data")
     try:

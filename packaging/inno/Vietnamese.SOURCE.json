@@ -1,0 +1,7 @@
+{
+  "source": "https://raw.githubusercontent.com/jrsoftware/issrc/refs/heads/main/Files/Languages/Unofficial/Vietnamese.isl",
+  "listing": "https://jrsoftware.org/files/istrans/",
+  "upstream_status": "Community translation listed by Inno Setup",
+  "local_changes": ["Vietnamese attribution label", "Vietnamese OK button"],
+  "sha256": "ff5a799371b7f77cf0f797987775b03709391b73343b15f19169eb5672175b01"
+}

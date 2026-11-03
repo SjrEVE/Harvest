@@ -40,6 +40,14 @@ class DetailShapeError(ValueError):
 
 
 @dataclass(frozen=True)
+class DeepResponse:
+    """Original response plus its explicit table projection, both retained by the writer."""
+
+    response_payload: Any
+    detail: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class DeepLaneSpec:
     """One deep lane on one family: where to look and what may be read.
 

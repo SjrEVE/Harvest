@@ -25,6 +25,7 @@ from santhau_studio.platform_win.process import (
 class BackendBridge(QObject):
     dataRootChanged = Signal()  # noqa: N815 - QML signal naming
     readReady = Signal(str, int, str)  # noqa: N815 - QML signal
+    readStarted = Signal(str, int, str)  # noqa: N815 - opt-in UI timing
 
     def __init__(self, backend: StudioBackend, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -48,6 +49,7 @@ class BackendBridge(QObject):
         from santhau_studio.desktop.async_reads import ReadTask
         self.serial += 1
         self.latest[key] = self.serial
+        self.readStarted.emit(key, self.serial, method)
         task = ReadTask(self.backend, key, self.serial, self.generation, method, self._payload(payload_json))
         task.signals.completed.connect(self._read_done)
         self.pending[self.serial] = task
