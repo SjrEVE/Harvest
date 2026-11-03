@@ -1,7 +1,7 @@
 # SĂN THẦU DATA STUDIO — BÁO CÁO TỔNG HỢP G1 (A → G)
 
 **Ngày:** 03/11/2026 · **Spec nền:** Master Spec Consolidated **v1.3**
-**Workspace:** `D:\Harvest\santhau-data-studio` · git local, **6 checkpoint commit, không push, không remote, không PR**
+**Workspace:** `D:\Harvest\santhau-data-studio` · git local, **7 checkpoint commit, không push, không remote, không PR**
 **Repo nguồn `Gia-Su-AI/DauThauAI`: read-only trong toàn bộ batch** — không sửa, không copy mã.
 File này là báo cáo hợp nhất; tên `G1-1-STORAGE-INGEST-REPORT.md` trong lệnh giao tương ứng mục A dưới đây.
 
@@ -31,7 +31,8 @@ VNEPS, không mang dữ liệu thật vào repo, không push/merge/deploy.
 ```
 pytest (toàn bộ)                  : 415 passed
 ruff check src tools tests        : All checks passed
-commit list                       : ed6f103 → 31ff787 → c4bb00d → b3b3fd8 → 5d99a8f → c24b109
+commit list                       : ed6f103 → 31ff787 → c4bb00d → b3b3fd8 → 5d99a8f → c24b109 → c3007f7
+benchmark raw store (5k pages)    : 4 pass, verify_failures = 0  (xem §5.3)
 ```
 
 Chi tiết test theo module (số test mới trong batch):
@@ -144,9 +145,21 @@ Chi tiết test theo module (số test mới trong batch):
 1. **A1 — token dashboard đã lộ:** vẫn **BLOCKED** tới khi owner thu hồi. Không dùng, không kiểm tra.
 2. **Live lane e-GP / deep (B7):** chưa chạy canary thật (cần session user + pháp lý); mọi thứ
    được chứng minh offline trên shape portal ghi lại. Đây là **BLOCKED có chủ đích**, không phải PASS.
-3. **Benchmark raw store 100k:** lần chạy 100k **crash** — `OSError: [Errno 22]` khi đọc gzip trong
-   layout object-per-page (log `_evidence/g1/bench-raw-100k.log`). Chưa có số liệu 100k hợp lệ;
-   quyết định layout vẫn dựa trên calibration nhỏ + owner review. (Rerun quy mô nhỏ có trong §6.)
+3. **Benchmark raw store:** lần chạy 100k **crash** (`OSError: [Errno 22]` khi đọc gzip layout
+   object-per-page, log `_evidence/g1/bench-raw-100k.log`); cây 1,1 triệu file thử nghiệm đã dọn.
+   Benchmark thu nhỏ **5k pages × 10 records (55.000 object)** chạy lại **thành công, 0 verify
+   failure** (`_evidence/g1/bench-raw-5k.json`). Số đo thật:
+
+   | Pass | Files | Write | Read (scaled) | Verify | Alloc / Logical |
+   |---|---:|---:|---:|---:|---:|
+   | objects-buffered | 55.000 | 45,45 s | **702,02 s** | 28,92 s | 225.280.000 / 34.383.357 |
+   | objects-fsync | 55.000 | 256,04 s | 726,84 s | 21,16 s | 6,55× |
+   | segments-buffered | 2 | 6,12 s | **2,08 s** | 1,02 s | 34.385.920 / 34.383.357 |
+   | segments-fsync | 2 | 36,93 s | 1,26 s | 0,54 s | 1,00× |
+
+   Đọc object layout chậm **~128×** so với segments ở quy mô này (13,2 ms/object vs 0,023 ms);
+   overhead cấp phạt 6,55×. **100k chưa chạy lại** — read phase 5k đã mất 12 phút nên 100k không
+   khả thi trong một phiên.
 4. **Clean-VM E2E (Docker Windows container):** **NOT_TESTED** — Docker engine không chạy trong
    phiên này; build + smoke trên máy hiện tại là mức đã đạt. Cài đặt thật (silent install/uninstall)
    chưa chạy vì ghi registry/profile: cần duyệt hoặc chạy trong VM.
@@ -159,13 +172,13 @@ Chi tiết test theo module (số test mới trong batch):
 
 | # | Quyết định | Đề xuất | Tradeoff |
 |---|---|---|---|
-| D1 | Layout raw store (object-per-page+record vs segment) | Chờ số benchmark hợp lệ; tạm giữ object layout đang chạy | Segment nhanh hơn ~59× khi đọc, nén ~6.56×; object layout verify/phục hồi đơn giản hơn |
+| D1 | Layout raw store (object-per-page+record vs byte-offset segment) | **Chuyển sang segment** theo số 5k: đọc nhanh ~128×, cấp phạt 1,00× vs 6,55×, cùng verify 0 failure; fsync cost tương đương (5,6× vs 6,0×). Object layout chỉ còn lợi thế “mỗi object một file” khi cần phục hồi từng phần | Đổi layout là thay đổi hạ tầng lớn: cần migration/dual-read, và segment làm hỏng một file thì mất cả lô span (bù bằng checksum + ghi append) |
 | D2 | Tiêu đề record khi nguồn không có (`title=None`) | Hiển thị “(không tiêu đề)” + `version_state` thật, không bịa | Đúng §0.2; UI trông “trống” hơn |
 | D3 | Deep lane LIVE | Khoá tới khi có canary dashboard (D-3 giữ nguyên) | Không có dữ liệu HSMT live; đổi lại không claim bừa |
 | D4 | RESUME semantics | Run mới cho cùng job request (resolver idempotent) | Run PAUSED giữ làm lịch sử; UI thấy 2 run cùng job |
 | D5 | Crash recovery auto-requeue | Job INTERRUPTED được đưa lại queue ở lần start worker kế tiếp | Job “độc” sẽ retry mỗi lần start cho tới khi BLOCKED/FAILED |
 | D6 | Phạm vi named pipe | 1 pipe/user (không theo data root) ⇒ 1 worker/user tại một thời điểm | Đơn giản, đúng §2.4; đa data root đồng thời cần đổi tên pipe theo root sau này |
-| D7 | Benchmark scope | Rerun 5k/10k làm bằng chứng quyết định layout; 100k để nightly | Tốn ít thời gian hơn, số liệu scaled |
+| D7 | Benchmark scope | 5k đã xong và dùng làm bằng chứng D1; 100k để nightly/VM có thời gian | 5k đủ phân hạng hai layout; 100k sẽ cho số tuyệt đối nhưng tốn nhiều giờ trên máy này |
 
 ---
 
