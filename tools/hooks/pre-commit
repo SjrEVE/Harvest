@@ -1,0 +1,36 @@
+#!/bin/sh
+# A7 — pre-commit secret gate.
+#
+# Enable once per clone with:
+#     git config core.hooksPath tools/hooks
+#
+# The repository-local virtualenv is preferred so the gate always runs on the
+# interpreter the project is pinned to (Python 3.12, see .python-version).
+
+set -u
+
+ROOT=$(git rev-parse --show-toplevel) || exit 1
+cd "$ROOT" || exit 1
+
+PY=""
+for candidate in "$ROOT/.venv/Scripts/python.exe" "$ROOT/.venv/bin/python" "python" "python3"; do
+    if command -v "$candidate" >/dev/null 2>&1 || [ -x "$candidate" ]; then
+        PY="$candidate"
+        break
+    fi
+done
+
+if [ -z "$PY" ]; then
+    echo "secret-gate: no python interpreter found; refusing to skip the check" >&2
+    exit 1
+fi
+
+"$PY" tools/pre_commit_secret_gate.py
+STATUS=$?
+
+if [ "$STATUS" -ne 0 ]; then
+    echo "" >&2
+    echo "commit rejected by secret-gate (exit $STATUS)." >&2
+fi
+
+exit "$STATUS"

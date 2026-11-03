@@ -1,0 +1,7 @@
+{
+  "original": "C:/Users/media/AppData/Local/Temp/santhau-g0a-real/ex_report-backfill.json",
+  "sanitized": "tests/fixtures/synthetic/ex_report-backfill__synthetic.json",
+  "identity_leaks": 0,
+  "leaks": [],
+  "verdict": "PASS"
+}

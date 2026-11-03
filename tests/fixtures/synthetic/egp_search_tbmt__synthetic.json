@@ -1,0 +1,52 @@
+{
+  "page": {
+    "content": [
+      {
+        "id": "Gói thầu 222 thuộc kế hoạch lựa chọn nhà thầu GWWE",
+        "type": "es-notify-contractor",
+        "notifyNo": "IB8488127358",
+        "notifyVersion": "00",
+        "planNo": "PL2557573",
+        "planVersion": "00",
+        "bidName": [
+          "Cung cấp 810 thiết bị văn phòng năm 2016 Cung cấp 165 thiết "
+        ],
+        "name": [
+          "Cung cấp 944 thiết bị văn phòng năm 2007"
+        ],
+        "bidCloseDate": "2019-09-15T09:00:00.000Z",
+        "bidOpenDate": "2019-09-15T09:30:00.000Z",
+        "publicDate": "2019-08-20T02:00:00.000Z",
+        "procuringEntityName": "Tư vấn giám sát gói 370 dự án XVSF Gói thầu 281 thuộc kế hoạ",
+        "investorName": "Ban Quản lý Đầu tư xây dựng khu vực Cao Lãnh",
+        "locations": "Sông Cầu",
+        "investTotal": 1244364633,
+        "status": "DANG_MO_THAU",
+        "stepCode": "Cung cấp 860 thiết bị văn phòng năm 2021",
+        "caseKHKQ": 6,
+        "goods": "Tư vấn giám sát gói 795 dự án PHSC"
+      },
+      {
+        "id": "Gói thầu 189 thuộc kế hoạch lựa chọn nhà thầu KNYB",
+        "type": "es-notify-contractor",
+        "notifyNo": "IB5589498571",
+        "notifyVersion": "01",
+        "planNo": "PL4842055",
+        "bidName": "Xây lắp hạng mục 324 công trình YFXL Tư vấn giám sát gói 030",
+        "bidCloseDate": "2019-08-30T14:00:00+07:00",
+        "publicDate": "2019-08-18T01:00:00.000Z",
+        "procuringEntityName": "Cung cấp 590 thiết bị văn phòng năm 2022",
+        "investorName": "Công ty TNHH Một thành viên GNNWCW",
+        "locations": "Cao Lãnh",
+        "investTotal": 4557563757,
+        "status": "DANG_MO_THAU",
+        "stepCode": "Tư vấn giám sát gói 148 dự án FNSS",
+        "caseKHKQ": 1
+      }
+    ],
+    "totalElements": 5,
+    "totalPages": 9,
+    "number": 9,
+    "size": 10
+  }
+}

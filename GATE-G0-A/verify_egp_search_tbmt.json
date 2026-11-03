@@ -1,0 +1,7 @@
+{
+  "original": "C:/Users/media/AppData/Local/Temp/santhau-g0a-real/egp_search_tbmt.json",
+  "sanitized": "tests/fixtures/synthetic/egp_search_tbmt__synthetic.json",
+  "identity_leaks": 0,
+  "leaks": [],
+  "verdict": "PASS"
+}

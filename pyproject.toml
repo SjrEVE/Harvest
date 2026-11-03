@@ -1,0 +1,47 @@
+[project]
+name = "santhau-data-studio"
+version = "0.0.1"
+description = "Săn Thầu Data Studio — Windows procurement data collection, verification and exploration workbench"
+requires-python = "==3.12.*"
+dependencies = [
+    "PySide6-Essentials==6.12.0",
+    # Windows ships no system tz database; ZoneInfo("Asia/Ho_Chi_Minh") fails without this.
+    # The source harvester pinned the same package for the same reason (§3.9 clock contract).
+    "tzdata==2026.6; sys_platform == 'win32'",
+]
+
+[project.scripts]
+santhau-studio = "santhau_studio.app_main:main"
+santhau-collector = "santhau_studio.worker_main:main"
+
+[build-system]
+requires = ["hatchling==1.33.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/santhau_studio"]
+
+[dependency-groups]
+dev = [
+    "pytest==9.2.0",
+    "pytest-qt==4.5.0",
+    "ruff==0.17.3",
+]
+build = [
+    "nuitka==4.3.4",
+    "zstandard==0.25.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tools", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "ARG", "PTH", "RUF"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tools", "tests/contract", "."]
+addopts = "-q"

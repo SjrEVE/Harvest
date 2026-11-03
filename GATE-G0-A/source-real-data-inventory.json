@@ -1,0 +1,218 @@
+{
+  "sha": "aa65f0a6edcb98877d705c8495ca00c79303f86e",
+  "prefix": "tools/radar-harvester",
+  "files_scanned": 88,
+  "files_with_identity_markers": 14,
+  "files": [
+    {
+      "path": "tests/fixtures/egp_home_page0.json",
+      "bytes": 12777,
+      "markers": {
+        "vn_org_name": 4,
+        "notify_no": 20,
+        "tax_id_10": 47,
+        "plan_no": 10,
+        "contract_code": 0,
+        "source_host": 0,
+        "tunnel_host": 0,
+        "money_ge_9_digits": 54
+      },
+      "identity_markers": 81
+    },
+    {
+      "path": "examples/report-backfill.json",
+      "bytes": 12323,
+      "markers": {
+        "vn_org_name": 2,
+        "notify_no": 20,
+        "tax_id_10": 20,
+        "plan_no": 0,
+        "contract_code": 0,
+        "source_host": 10,
+        "tunnel_host": 0,
+        "money_ge_9_digits": 21
+      },
+      "identity_markers": 42
+    },
+    {
+      "path": "examples/report.json",
+      "bytes": 11820,
+      "markers": {
+        "vn_org_name": 1,
+        "notify_no": 20,
+        "tax_id_10": 20,
+        "plan_no": 0,
+        "contract_code": 0,
+        "source_host": 10,
+        "tunnel_host": 0,
+        "money_ge_9_digits": 20
+      },
+      "identity_markers": 41
+    },
+    {
+      "path": "examples/report-backfill-jan2024.md",
+      "bytes": 9291,
+      "markers": {
+        "vn_org_name": 0,
+        "notify_no": 20,
+        "tax_id_10": 20,
+        "plan_no": 0,
+        "contract_code": 0,
+        "source_host": 10,
+        "tunnel_host": 0,
+        "money_ge_9_digits": 20
+      },
+      "identity_markers": 40
+    },
+    {
+      "path": "examples/report-backfill.md",
+      "bytes": 9301,
+      "markers": {
+        "vn_org_name": 0,
+        "notify_no": 20,
+        "tax_id_10": 20,
+        "plan_no": 0,
+        "contract_code": 0,
+        "source_host": 10,
+        "tunnel_host": 0,
+        "money_ge_9_digits": 21
+      },
+      "identity_markers": 40
+    },
+    {
+      "path": "examples/report-reconcile-jan2024.md",
+      "bytes": 9301,
+      "markers": {
+        "vn_org_name": 0,
+        "notify_no": 20,
+        "tax_id_10": 20,
+        "plan_no": 0,
+        "contract_code": 0,
+        "source_host": 10,
+        "tunnel_host": 0,
+        "money_ge_9_digits": 20
+      },
+      "identity_markers": 40
+    },
+    {
+      "path": "examples/report.md",
+      "bytes": 8923,
+      "markers": {
+        "vn_org_name": 0,
+        "notify_no": 20,
+        "tax_id_10": 20,
+        "plan_no": 0,
+        "contract_code": 0,
+        "source_host": 10,
+        "tunnel_host": 0,
+        "money_ge_9_digits": 20
+      },
+      "identity_markers": 40
+    },
+    {
+      "path": "tests/fixtures/egp_home_type_samples.json",
+      "bytes": 6065,
+      "markers": {
+        "vn_org_name": 1,
+        "notify_no": 5,
+        "tax_id_10": 18,
+        "plan_no": 3,
+        "contract_code": 1,
+        "source_host": 0,
+        "tunnel_host": 0,
+        "money_ge_9_digits": 21
+      },
+      "identity_markers": 28
+    },
+    {
+      "path": "tests/test_serving.py",
+      "bytes": 5854,
+      "markers": {
+        "vn_org_name": 2,
+        "notify_no": 3,
+        "tax_id_10": 16,
+        "plan_no": 3,
+        "contract_code": 0,
+        "source_host": 0,
+        "tunnel_host": 0,
+        "money_ge_9_digits": 11
+      },
+      "identity_markers": 24
+    },
+    {
+      "path": "tests/fixtures/egp_search_tbmt.json",
+      "bytes": 1565,
+      "markers": {
+        "vn_org_name": 4,
+        "notify_no": 2,
+        "tax_id_10": 4,
+        "plan_no": 0,
+        "contract_code": 0,
+        "source_host": 0,
+        "tunnel_host": 0,
+        "money_ge_9_digits": 4
+      },
+      "identity_markers": 10
+    },
+    {
+      "path": "tests/test_home_types.py",
+      "bytes": 3901,
+      "markers": {
+        "vn_org_name": 0,
+        "notify_no": 1,
+        "tax_id_10": 5,
+        "plan_no": 1,
+        "contract_code": 1,
+        "source_host": 0,
+        "tunnel_host": 0,
+        "money_ge_9_digits": 5
+      },
+      "identity_markers": 8
+    },
+    {
+      "path": "analysis/crawl_detail_full.py",
+      "bytes": 7160,
+      "markers": {
+        "vn_org_name": 0,
+        "notify_no": 1,
+        "tax_id_10": 1,
+        "plan_no": 0,
+        "contract_code": 0,
+        "source_host": 1,
+        "tunnel_host": 0,
+        "money_ge_9_digits": 1
+      },
+      "identity_markers": 2
+    },
+    {
+      "path": "examples/manifest.json",
+      "bytes": 413,
+      "markers": {
+        "vn_org_name": 0,
+        "notify_no": 0,
+        "tax_id_10": 2,
+        "plan_no": 0,
+        "contract_code": 0,
+        "source_host": 0,
+        "tunnel_host": 0,
+        "money_ge_9_digits": 2
+      },
+      "identity_markers": 2
+    },
+    {
+      "path": "HANDOFF_WEB_DISPLAY.md",
+      "bytes": 9473,
+      "markers": {
+        "vn_org_name": 0,
+        "notify_no": 0,
+        "tax_id_10": 0,
+        "plan_no": 0,
+        "contract_code": 0,
+        "source_host": 1,
+        "tunnel_host": 1,
+        "money_ge_9_digits": 0
+      },
+      "identity_markers": 0
+    }
+  ]
+}

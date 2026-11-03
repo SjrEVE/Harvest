@@ -1,0 +1,49 @@
+{
+  "tool": "git_history_secret_audit",
+  "repo": "D:\\DauThauAI",
+  "audited_sha": "aa65f0a6edcb98877d705c8495ca00c79303f86e",
+  "document": "tools/radar-harvester/HANDOFF_WEB_DISPLAY.md",
+  "document_line": 127,
+  "pattern_count": 2,
+  "pattern_fingerprints": [
+    "144e724076c545c8",
+    "a02ef6612830adb9"
+  ],
+  "refs_total": 183,
+  "pickaxe": {
+    "144e724076c545c8": [
+      {
+        "commit": "6a6fcb5551b1873df11cf76084004153e5e00e5c",
+        "date": "2026-11-02T02:51:33+07:00",
+        "author": "SjrEVE",
+        "refs": "",
+        "subject": "docs(harvester): handoff brief for Codex - web display API + host migration plan"
+      }
+    ],
+    "a02ef6612830adb9": [
+      {
+        "commit": "6a6fcb5551b1873df11cf76084004153e5e00e5c",
+        "date": "2026-11-02T02:51:33+07:00",
+        "author": "SjrEVE",
+        "refs": "",
+        "subject": "docs(harvester): handoff brief for Codex - web display API + host migration plan"
+      }
+    ]
+  },
+  "tree_grep_by_ref": {
+    "refs/heads/codex/radar-harvester": [
+      "tools/radar-harvester/HANDOFF_WEB_DISPLAY.md"
+    ],
+    "refs/remotes/origin/codex/radar-harvester": [
+      "tools/radar-harvester/HANDOFF_WEB_DISPLAY.md"
+    ]
+  },
+  "object_sweep": {
+    "c3b8b707a30f9a4afe0cc82c3b28002edd1f838a": [
+      "144e724076c545c8"
+    ],
+    "_count": [
+      "28234"
+    ]
+  }
+}

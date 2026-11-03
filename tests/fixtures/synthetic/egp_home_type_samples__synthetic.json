@@ -1,0 +1,201 @@
+{
+  "KQLCNT": {
+    "id": "Gói thầu 222 thuộc kế hoạch lựa chọn nhà thầu GWWE",
+    "notifyId": "tjtyztdfrg582557",
+    "inputResultId": "1e0b13bd8740ad3d3e20b552347dfac9",
+    "bidCloseDate": "2019-10-31T23:58:14.885",
+    "bidForm": "Gói thầu 438 thuộc kế hoạch lựa chọn nhà thầu SHDN",
+    "bidMode": "Gói thầu 172 thuộc kế hoạch lựa chọn nhà thầu GVKJ",
+    "bidName": [
+      "Gói thầu 536 thuộc kế hoạch lựa chọn nhà thầu HSAX Tư vấn gi"
+    ],
+    "investField": [
+      "Gói thầu 819 thuộc kế hoạch lựa chọn nhà thầu MXEF"
+    ],
+    "isInternet": 6,
+    "notifyNo": "DC0032860549",
+    "notifyVersion": "00",
+    "notifyNoStand": "DC3597795637",
+    "processApply": "Gói thầu 811 thuộc kế hoạch lựa chọn nhà thầu UVKN",
+    "publicDate": "2019-10-31T23:58:13",
+    "publicDateKqlcnt": "2019-10-31T23:58:13",
+    "status": "IS_PUBLISH",
+    "investorName": "Ban Quản lý Dự án MMUVK khu vực Mường Ao",
+    "investorCode": "vn148420558",
+    "isPass": 6,
+    "bidField": "Cung cấp 242 thiết bị văn phòng năm 2002",
+    "planType": "DTPT",
+    "planNo": "PL3063872590",
+    "planVersion": "00",
+    "stepCode": "Tư vấn giám sát gói 361 dự án YVNG Tư vấn giám sát gói 691 d",
+    "type": "es-notify-contractor",
+    "statusForNotify": "CNTTT",
+    "winningCode": [
+      "Tư vấn giám sát gói 218 dự án CTZS"
+    ],
+    "decisionDate": "2019-10-29T23:59:59",
+    "contractorName": [
+      "Công ty Cổ phần Tư vấn NSST Việt Nam"
+    ],
+    "bidWinningPrice": [
+      43540533.84
+    ],
+    "numPetition": 5,
+    "numClarifyReq": 5,
+    "numBidderTech": 7,
+    "numBidderJoin": 9,
+    "bidId": "bebc3829044e488e1ecc3383f2af6f91",
+    "bidPrice": [
+      81719789.46
+    ],
+    "numPetitionHsmt": 3,
+    "numPetitionLcnt": 2,
+    "numPetitionKqlcnt": 5,
+    "caseKHKQ": 3,
+    "score": "Xây lắp hạng mục 595 công trình CCCH",
+    "winningContractorName": []
+  },
+  "HOP_DONG": {
+    "id": "Tư vấn giám sát gói 180 dự án RMWV Tư vấn giám sát gói 253 d",
+    "bidForm": "Gói thầu 752 thuộc kế hoạch lựa chọn nhà thầu JZRS",
+    "bidMode": "Cung cấp 669 thiết bị văn phòng năm 2012",
+    "bidName": [
+      "Xây lắp hạng mục 732 công trình VTCX Gói thầu 500 thuộc kế h"
+    ],
+    "investField": [
+      "Xây lắp hạng mục 488 công trình DMPB"
+    ],
+    "isInternet": 9,
+    "notifyNo": "DC2636787523",
+    "publicDate": "2019-10-31T23:16:02",
+    "status": "IS_PUBLISH",
+    "investorName": "Hợp tác xã Nông nghiệp YXFKWN",
+    "investorCode": "vn065279010",
+    "stepCode": "Xây lắp hạng mục 988 công trình JVPC",
+    "type": "es-ct-contract",
+    "winningCode": [
+      "Cung cấp 773 thiết bị văn phòng năm 2018"
+    ],
+    "score": "Tư vấn giám sát gói 619 dự án ULTZ",
+    "winningContractorName": [
+      "Hợp tác xã Nông nghiệp LZK"
+    ],
+    "contractCode": "HD0794851521",
+    "contractNo": "Cung cấp 585 thiết bị văn phòng năm 2025",
+    "contractVersion": "00",
+    "contractSignDate": "2019-10-29T00:00:00",
+    "ctPriceAfter": 894041807.74,
+    "isDomestic": 1
+  },
+  "KHLCNT": {
+    "id": "Cung cấp 278 thiết bị văn phòng năm 2017 Xây lắp hạng mục 00",
+    "bidCloseDate": "2019-10-30T23:59:59",
+    "bidName": [
+      "Tư vấn giám sát gói 509 dự án WMKL Tư vấn giám sát gói 523 d",
+      "Tư vấn giám sát gói 457 dự án DTSE Cung cấp 531 thiết bị văn"
+    ],
+    "investField": [
+      "Cung cấp 671 thiết bị văn phòng năm 2004"
+    ],
+    "locations": [
+      {
+        "provCode": "Cung cấp 230 thiết bị văn phòng năm 2007",
+        "provName": "Tư vấn giám sát gói 974 dự án TPZG",
+        "districtCode": "Ia Drang",
+        "districtName": "An Khang"
+      },
+      {
+        "provCode": "Cung cấp 265 thiết bị văn phòng năm 2015",
+        "provName": "Cung cấp 664 thiết bị văn phòng năm 2021",
+        "districtCode": "Kỳ Anh",
+        "districtName": "Diên Khánh"
+      }
+    ],
+    "publicDate": "2019-10-31T23:56:09",
+    "investTotal": 66895863719,
+    "investorName": "Ban Quản lý Dự án LXKX khu vực Cao Lãnh",
+    "investorCode": "vn655703193",
+    "name": "Xây lắp hạng mục 051 công trình YSTK Cung cấp 950 thiết bị văn phòng năm 2020 Gói thầu 668 thuộc kế hoạch lựa chọn nhà thầu GTWZ Tư vấn giám sát gói 194 dự án NCUG Xây lắp hạng mục 399 công trình XKJA",
+    "planType": "DTPT",
+    "planNo": "PL2871909346",
+    "planVersion": "00",
+    "planNoStand": "PL814159154390",
+    "stepCode": "Xây lắp hạng mục 914 công trình XJJV",
+    "type": "es-plan-project-p",
+    "decisionDate": "2019-10-30T23:59:59",
+    "createdBy": "vn044224326",
+    "bidPrice": [
+      5588922.19,
+      321585556.64
+    ],
+    "score": "Gói thầu 231 thuộc kế hoạch lựa chọn nhà thầu TMEA",
+    "bidNamePlanNew": [
+      {
+        "name": "Gói thầu 009 thuộc kế hoạch lựa chọn nhà thầu RSLV Tư vấn gi"
+      },
+      {
+        "name": "Xây lắp hạng mục 908 công trình GMTP Tư vấn giám sát gói 526"
+      }
+    ],
+    "haveBidNotNotify": 3,
+    "approvalStatus": "01",
+    "pname": "Cung cấp 665 thiết bị văn phòng năm 2014 Tư vấn giám sát gói 029 dự án KBBG Tư vấn giám sát gói 264 dự án KREW Cung cấp "
+  },
+  "DU_AN": {
+    "id": "Cung cấp 726 thiết bị văn phòng năm 2005 Gói thầu 998 thuộc ",
+    "locations": [
+      {
+        "provCode": "Tư vấn giám sát gói 082 dự án UJTP",
+        "provName": "Gói thầu 644 thuộc kế hoạch lựa chọn nhà thầu YGLF",
+        "districtCode": "Cao Lãnh",
+        "districtName": "Diên Khánh"
+      }
+    ],
+    "publicDate": "2019-10-31T23:45:36.542",
+    "districtCode": "Cao Lãnh",
+    "investTotal": 68518600424,
+    "investorName": "Trung tâm Y tế huyện Mỹ Lệ",
+    "investorCode": "vn337985631",
+    "location": "Lạc Khê",
+    "name": "Xây lắp hạng mục 352 công trình CCTW Gói thầu 314 thuộc kế hoạch lựa chọn nhà thầu PDKN Xây lắp hạng mục 112 công trình ",
+    "provCode": "Gói thầu 366 thuộc kế hoạch lựa chọn nhà thầu XJEN",
+    "stepCode": "Gói thầu 160 thuộc kế hoạch lựa chọn nhà thầu YWNA",
+    "type": "es-bidp-project-p",
+    "decisionDate": "2019-10-26T23:59:59",
+    "score": "Tư vấn giám sát gói 248 dự án BGSY",
+    "pno": "Cung cấp 343 thiết bị văn phòng năm 2019",
+    "pgroup": "Xây lắp hạng mục 897 công trình YLBR",
+    "pversion": "00",
+    "pnoStand": "Tư vấn giám sát gói 488 dự án HKZV"
+  },
+  "YCBG": {
+    "id": "Tư vấn giám sát gói 095 dự án CWVR Cung cấp 686 thiết bị văn",
+    "bidCloseDate": "2019-11-05T23:59:00",
+    "bidForm": "Xây lắp hạng mục 498 công trình BJMB",
+    "bidName": [
+      "Xây lắp hạng mục 618 công trình ZAHX Gói thầu 787 thuộc kế hoạch lựa chọn nhà thầu TGVK Gói thầu 519 thuộc kế hoạch lựa chọn nhà thầu KFZC Tư vấn giám sát gói 577 dự án TMEV Cung cấp 814 thiết bị văn "
+    ],
+    "locations": [
+      {
+        "provCode": "Tư vấn giám sát gói 506 dự án MESS",
+        "provName": "Tư vấn giám sát gói 885 dự án MZZX",
+        "districtCode": "Sông Cầu",
+        "districtName": "Bình Điền"
+      }
+    ],
+    "notifyNo": "RQ8051133874",
+    "notifyVersion": "00",
+    "publicDate": "2019-10-31T23:44:13.778",
+    "status": "01",
+    "investorName": "UBND phường Xuân Hòa quận Vĩnh Hội thành phố Phù Cát",
+    "investorCode": "vn818396539",
+    "name": "Xây lắp hạng mục 092 công trình EVLD Cung cấp 881 thiết bị v",
+    "bidOpenDate": "2019-10-31T23:44:13.778",
+    "stepCode": "Gói thầu 799 thuộc kế hoạch lựa chọn nhà thầu BYVJ",
+    "type": "es-ycbg",
+    "decisionDate": "2019-10-28T23:36:02",
+    "createdBy": "vn2358298112",
+    "score": "Cung cấp 642 thiết bị văn phòng năm 2001",
+    "pname": "Xây lắp hạng mục 002 công trình ZFYH Gói thầu 747 thuộc kế hoạch lựa chọn nhà thầu SDDJ Tư vấn giám sát gói 527 dự án MJWF Tư vấn giám sát gói 349 dự án WCUB Gói thầu 269 thuộc kế hoạch lựa chọn nhà t"
+  }
+}

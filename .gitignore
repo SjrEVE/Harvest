@@ -1,0 +1,41 @@
+# Intermediates
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/
+*.egg-info/
+
+# Local captures — a real payload must never become a committed file.
+data/
+captures/
+local-captures/
+*.raw.json
+*.raw.json.gz
+warehouse*.sqlite
+warehouse*.sqlite-wal
+warehouse*.sqlite-shm
+santhau*.db
+backups/
+exports/
+attachments/
+
+# Real-data quarantine staging used by the sanitizer (lives outside the repo by default)
+/tmp-real/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Secret material, whatever the gate says
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.key

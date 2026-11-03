@@ -1,0 +1,96 @@
+THIRD_PARTY_NOTICES
+===================
+
+This file lists third-party material present in Săn Thầu Data Studio.
+Full license texts are collected at G4 (release), not here: see the
+verification-status section of LICENSE-MANIFEST.md for what is and is
+not yet evidenced.
+
+Python packages shipped at runtime
+---------------------------------
+  * PySide6_Essentials 6.12.0 — LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+      license files in wheel: D:\Harvest\santhau-data-studio\.venv\Lib\site-packages\pyside6_essentials-6.12.0.dist-info\licenses\LicenseRef-Qt-Commercial.txt
+  * santhau-data-studio 0.0.1 — unknown
+      license files in wheel: none shipped in wheel
+  * shiboken6 6.12.0 — LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+      license files in wheel: D:\Harvest\santhau-data-studio\.venv\Lib\site-packages\shiboken6-6.12.0.dist-info\licenses\LicenseRef-Qt-Commercial.txt
+
+Build / test tooling (not shipped to users)
+-------------------------------------------
+  * colorama 0.4.6 — OSI Approved :: BSD License
+  * iniconfig 2.3.1 — MIT
+  * Nuitka 4.3.4 — GNU Affero General Public License v3
+  * packaging 26.3 — Apache-2.0 OR BSD-2-Clause
+  * pluggy 1.7.0 — MIT
+  * Pygments 2.21.0 — BSD-2-Clause
+  * pytest 9.2.0 — MIT
+  * pytest-qt 4.5.0 — MIT
+  * ruff 0.17.3 — MIT
+  * typing_extensions 4.16.0 — PSF-2.0
+  * zstandard 0.25.0 — BSD-3-Clause
+
+Native libraries in the packaged build
+--------------------------------------
+  * CPython (Python Software Foundation) [PSF-2.0] — 2 file(s)
+      python3.dll
+      python312.dll
+  * CPython standard library extension [PSF-2.0] — 7 file(s)
+      _bz2.pyd
+      _decimal.pyd
+      _hashlib.pyd
+      _lzma.pyd
+      _wmi.pyd
+      select.pyd
+      ... 1 more
+  * Mesa llvmpipe software OpenGL (inside Qt build) [MIT] — 1 file(s)
+      opengl32sw.dll
+  * Microsoft Visual C++ runtime [MIT-Like (VS license terms)] — 5 file(s)
+      msvcp140.dll
+      msvcp140_1.dll
+      msvcp140_2.dll
+      vcruntime140.dll
+      vcruntime140_1.dll
+  * OpenSSL (bundled by CPython/Qt) [Apache-2.0 AND OpenSSL-Original] — 1 file(s)
+      libcrypto-3-x64.dll
+  * PySide6 Qt binding module (The Qt Company) [LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only] — 8 file(s)
+      PySide6\QtCore.pyd
+      PySide6\QtGui.pyd
+      PySide6\QtNetwork.pyd
+      PySide6\QtOpenGL.pyd
+      PySide6\QtQml.pyd
+      PySide6\QtQuick.pyd
+      ... 2 more
+  * PySide6 binding (The Qt Company) [LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only] — 2 file(s)
+      pyside6.abi3.dll
+      pyside6qml.abi3.dll
+  * Qt 6 QML modules (The Qt Company) [LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only] — 63 file(s)
+      PySide6\qml\Qt\labs\animation\labsanimationplugin.dll
+      PySide6\qml\Qt\labs\folderlistmodel\qmlfolderlistmodelplugin.dll
+      PySide6\qml\Qt\labs\platform\labsplatformplugin.dll
+      PySide6\qml\Qt\labs\qmlmodels\labsmodelsplugin.dll
+      PySide6\qml\Qt\labs\settings\qmlsettingsplugin.dll
+      PySide6\qml\Qt\labs\sharedimage\sharedimageplugin.dll
+      ... 57 more
+  * Qt 6 module (The Qt Company) [LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only] — 4 file(s)
+      shiboken6\msvcp140.dll
+      shiboken6\msvcp140_1.dll
+      shiboken6\msvcp140_2.dll
+      shiboken6\msvcp140_codecvt_ids.dll
+  * Qt 6 modules (The Qt Company) [LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only] — 61 file(s)
+      qt6core.dll
+      qt6gui.dll
+      qt6labsanimation.dll
+      qt6labsfolderlistmodel.dll
+      qt6labsplatform.dll
+      qt6labsqmlmodels.dll
+      ... 55 more
+  * Qt 6 plugins (The Qt Company) [LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only] — 25 file(s)
+      PySide6\qml\QtQuick\VirtualKeyboard\Plugins\Hangul\qtvkbhangulplugin.dll
+      PySide6\qml\QtQuick\VirtualKeyboard\Plugins\OpenWNN\qtvkbopenwnnplugin.dll
+      PySide6\qml\QtQuick\VirtualKeyboard\Plugins\Pinyin\qtvkbpinyinplugin.dll
+      PySide6\qml\QtQuick\VirtualKeyboard\Plugins\qtvkbpluginsplugin.dll
+      PySide6\qml\QtQuick\VirtualKeyboard\Plugins\TCIme\qtvkbtcimeplugin.dll
+      PySide6\qml\QtQuick\VirtualKeyboard\Plugins\Thai\qtvkbthaiplugin.dll
+      ... 19 more
+  * Shiboken generator runtime (The Qt Company) [LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only] — 1 file(s)
+      shiboken6.abi3.dll

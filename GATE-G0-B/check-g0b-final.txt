@@ -1,0 +1,47 @@
+# DDL contract check — Master Spec v1.3
+
+[PASS ] B1.1 (B1 hai định danh raw) — observations lưu cả response_object_sha và record_object_sha
+[PASS ] B1.2 (B1 record_locator) — record_locator bắt buộc NOT NULL
+[PASS ] B1.3 (B1 object_kind) — vai trò suy ra từ view raw_object_roles (cách G0-B chọn để tránh xung đột PRIMARY KEY)
+[PASS ] B2.1 (B2 FK thật để transaction có nghĩa) — observations tham chiếu raw_objects bằng FK khai báo, không chỉ là hash tự do
+[PASS ] B2.2 (B2 phân biệt file mồ côi vs row mồ côi) — row mồ côi suy ra được từ cạnh tham chiếu; file mồ côi thuộc bước quét filesystem (SQL không nhìn thấy file không có row, và không nên giả là thấy)
+[PASS ] B3.1 (B3 hai bộ đếm tách bạch) — coverage_proofs có attempt_error_count (vận hành) và unrecovered_request_count (chặn COMPLETE)
+[PASS ] B3.2 (B3 lịch sử attempt giữ đầy đủ) — fetch_attempts có khóa UNIQUE(request_id, attempt_no) nên retry là attempt mới, không ghi đè
+[PASS ] B4.1 (B4 notice group tồn tại) — có notice_groups + notice_group_members để nhóm các bản công bố
+[PASS ] B4.2 (B4 tên trường tách bạch) — không có CỘT nào tên notifyVersion; bộ đếm của ta là content_version_seq. So trên tên cột, không so trên toàn văn bản — comment mô tả thì buộc phải nhắc tên nguồn
+[PASS ] B5.1 (B5 hợp đồng biên trong proof) — proof trỏ boundary_rule_id tới bảng rule có kind + verified_at
+[PASS ] B5.2 (B5 granularity ở cả hai bảng) — granularity có mặt trên coverage_intervals và coverage_proofs
+[PASS ] B5.3 (B5 quy tắc quy đổi UTC -> tham số nguồn) — quy tắc quy đổi được lưu tái lập được (params + version + timezone + precision)
+[PASS ] B6.1 (B6 captured_at / refresh_due_at) — có deep_captures, deep_capture_history với 3 cột captured/refresh; lịch sử tách latest
+[PASS ] B7.1 (B7 schema không chứa credential) — không có cột nào lưu token/cookie/authorization trong các bảng mạng
+[PASS ] B7.2 (B7 nơi ghi lý do BLOCKED) — có bảng sự kiện truy cập với reason_kind đóng và probe_uri cấm query string, nên lý do ghi được mà không mở chỗ cho URL mang token
+[PASS ] VOCAB.coverage_intervals (§3.6 interval_status) — cột status có CHECK chặn giá trị ngoài từ vựng
+[PASS ] VOCAB.fetch_attempts (§3.6 attempt_outcome) — cột outcome có CHECK chặn giá trị ngoài từ vựng
+[PASS ] VOCAB.observations (§3.6 observation_status) — cột status có CHECK chặn giá trị ngoài từ vựng
+[PASS ] VOCAB.source_records (§3.4 version_state) — version_state có CHECK ba giá trị KNOWN/MISSING/UNPARSABLE
+[PASS ] IDK.1 (§3.4 mã hoá version_raw NULL) — identity_key là canonical digest có version prefix: NULL đi vào encoding như một giá trị phân biệt, không bị render thành 'None' hay '00'
+[PASS ] IDK.2 (§3.4 escape ký tự phân cách) — không có delimiter nào để escape: thành phần được length-tag rồi hash
+[PASS ] KEY.1 (§3.7 vs §3.4 notifyVersion) — O-3 phương án A: natural_key = notifyNo đơn thuần, version chỉ nằm ở version_state/version_raw; identity_key là digest nên không còn hai bản sao của cùng một thông tin để mà lệch. Định nghĩa natural_key từng family nằm ở docs/DATA_CONTRACT.md, không suy ra được từ DDL
+[PASS ] UNRES.1 (§3.2 vs observations NOT NULL) — O-4: record trích được nhưng thiếu identity -> có RECORD object + observation UNRESOLVED; response không parse được -> quarantined_responses mức page, không tạo observation. Nên record_object_sha NOT NULL là đúng, và CHECK response<>record cấm gán lẫn nhau
+[PASS ] HASH.1 (§3.5 nullability nhất quán) — current_content_hash NOT NULL: không tồn tại record có content version mà chưa có hash
+[PASS ] ORD.1 (§5.2 thứ tự ghi proof và interval) — coverage_intervals.proof_id tham chiếu coverage_proofs được khai báo SAU nó. SQLite cho phép forward reference, nhưng §4.1 mục 8 yêu cầu ghi proof cùng transaction với interval, nên migration phải insert proof trước rồi interval — thứ tự ngược với DDL, dễ gây lỗi khi viết
+[PASS ] CL-C2 (C-2 CHECK đủ 3 từ vựng) — interval_status / observation_status / attempt_outcome / version_state đều bị CHECK
+[PASS ] CL-C6 (C-6 boundary rule tái lập được) — bảng rule có id/version/timezone/precision/params và proof trỏ vào nó
+[PASS ] CL-C7 (C-7 MISSING ⟺ version_raw NULL) — schema buộc MISSING mang NULL và KNOWN/UNPARSABLE mang giá trị
+[PASS ] CL-C8 (C-8 identity không nối delimiter) — identity_key là canonical digest có version prefix, không phải chuỗi nối
+[PASS ] CL-C9 (C-9 current_content_hash NOT NULL) — record tin cậy luôn có content hash
+[PASS ] CL-C10 (C-10 proof insert trước interval) — thứ tự khai báo khớp với thứ tự ghi bắt buộc trong transaction
+[PASS ] CL-U2 (U-2 UNKNOWN ≠ 0) — value để NULL được và không có DEFAULT 0; presence_state buộc KNOWN mới có value
+[PASS ] CL-U3.page_receipts (U-3 bảng tối thiểu) — page_receipts tồn tại với cột định nghĩa
+[PASS ] CL-U3.watermarks (U-3 bảng tối thiểu) — watermarks tồn tại với cột định nghĩa
+[PASS ] CL-U3.reconcile_gaps (U-3 bảng tối thiểu) — reconcile_gaps tồn tại với cột định nghĩa
+[PASS ] CL-U3.unresolved_records (U-3 bảng tối thiểu) — unresolved_records tồn tại với cột định nghĩa
+[PASS ] CL-O4 (O-4 quarantine mức response) — có bảng quarantine page-level, và object_derivation + trigger chứng minh record được trích thật từ response tại locator (thay cho CHECK so-hash đã bỏ vì trái D-0)
+[PASS ] CL-O5 (O-5 lịch sử capture bất biến tách khỏi latest) — refresh INSERT seq mới; latest là con trỏ, không phải bản ghi bị ghi đè
+[PASS ] CL-SHA (Xung đột raw SHA vs hai vai trò) — hoặc bỏ object_kind và suy vai trò từ cạnh, hoặc không còn PK xung đột
+[PASS ] CL-ROLE (Sửa #1: dẫn xuất thay CHECK so-hash) — record phải chứng minh trích được từ response tại locator; không còn CHECK phủ nhận hash trùng hợp pháp
+[PASS ] CL-REDACT (Sửa #3: đổi redaction policy không sinh revision nghiệp vụ) — revision phân biệt được nguồn đổi vs policy đổi; counter nghiệp vụ không bị phình
+[PASS ] CL-IMMUT (Sửa #4: rule/proof đã tham chiếu là bất biến) — proof lịch sử không bị rút thảm bằng cách sửa rule tại chỗ; muốn đổi thì thêm rule_version
+[PASS ] CL-LIFECYCLE (Sửa #5: lifecycle tách khỏi outcome) — runs.lifecycle là trạng thái điều khiển (§2.3), runs.status là kết quả (§3.6) và NULL tới khi dừng
+
+tally: {'PASS': 43}

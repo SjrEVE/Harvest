@@ -1,0 +1,29 @@
+# DDL contract check — Master Spec v1.3
+
+[PASS ] B1.1 (B1 hai định danh raw) — observations lưu cả response_object_sha và record_object_sha
+[PASS ] B1.2 (B1 record_locator) — record_locator bắt buộc NOT NULL
+[PASS ] B1.3 (B1 object_kind) — raw_objects phân loại RESPONSE/RECORD bằng CHECK
+[PASS ] B2.1 (B2 FK thật để transaction có nghĩa) — observations tham chiếu raw_objects bằng FK khai báo, không chỉ là hash tự do
+[GAP  ] B2.2 (B2 phân biệt file mồ côi vs row mồ côi) — DDL không có cột/trạng thái nào phân biệt 'object file không có row' với 'row không có tham chiếu'; hai loại mồ côi ở §5.2 được xử lý khác nhau nên cần chỗ ghi quyết định
+[PASS ] B3.1 (B3 hai bộ đếm tách bạch) — coverage_proofs có attempt_error_count (vận hành) và unrecovered_request_count (chặn COMPLETE)
+[PASS ] B3.2 (B3 lịch sử attempt giữ đầy đủ) — fetch_attempts có khóa UNIQUE(request_id, attempt_no) nên retry là attempt mới, không ghi đè
+[PASS ] B4.1 (B4 notice group tồn tại) — có notice_groups + notice_group_members để nhóm các bản công bố
+[PASS ] B4.2 (B4 tên trường tách bạch) — bộ đếm của ta là content_version_seq; notifyVersion chỉ xuất hiện như nhãn hiển thị
+[PASS ] B5.1 (B5 hợp đồng biên trong proof) — coverage_proofs ghi filter_boundary_kind + filter_boundary_verified_at_utc
+[PASS ] B5.2 (B5 granularity ở cả hai bảng) — granularity có mặt trên coverage_intervals và coverage_proofs
+[GAP  ] B5.3 (B5 quy tắc quy đổi UTC -> tham số nguồn) — §4.2 yêu cầu adapter khai báo 'quy tắc quy đổi' và proof phải chứng minh, nhưng DDL không có cột nào lưu quy tắc đó; chỉ có source_query_fingerprint và adapter_sha, là hash của thứ khác
+[GAP  ] B6.1 (B6 captured_at / refresh_due_at) — §10.4 và B6 yêu cầu done_ids trả kèm captured_at + refresh_due_at và invalidate khi decisionVersion/resultVersion/notifyVersion đổi, nhưng §3.10 không định nghĩa bảng nào cho trạng thái deep-capture. 'Bảng bắt buộc còn lại' chỉ liệt kê tên, không có cột
+[PASS ] B7.1 (B7 schema không chứa credential) — không có cột nào lưu token/cookie/authorization trong các bảng mạng
+[GAP  ] B7.2 (B7 nơi ghi lý do BLOCKED) — §6 bắt buộc scrub URL khỏi mọi reason/report/manifest, và §1.2 BUG-03 ghi nhận code cũ nhét token vào coverage_windows.reason. DDL mới không còn cột reason nào, nhưng cũng không có bảng nào ghi nguồn-lệnh-blocked kèm lý do đã scrub
+[FAIL ] VOCAB.coverage_intervals (§3.6 interval_status) — cột status KHÔNG có CHECK — đây đúng là lỗ BUG-03 (đường code ghi COMPLETED vào interval_status)
+[FAIL ] VOCAB.fetch_attempts (§3.6 attempt_outcome) — cột outcome KHÔNG có CHECK — đây đúng là lỗ BUG-03 (đường code ghi COMPLETED vào interval_status)
+[FAIL ] VOCAB.observations (§3.6 observation_status) — cột status KHÔNG có CHECK — đây đúng là lỗ BUG-03 (đường code ghi COMPLETED vào interval_status)
+[PASS ] VOCAB.source_records (§3.4 version_state) — version_state có CHECK ba giá trị KNOWN/MISSING/UNPARSABLE
+[GAP  ] IDK.1 (§3.4 mã hoá version_raw NULL) — identity_key = family|natural_key|state|version_raw, nhưng với version_state=MISSING thì version_raw NULL và spec không định nghĩa chuỗi thay thế. 'MISSING|' và 'MISSING|None' tạo identity_key khác nhau cho cùng một hồ sơ, và identity_key nằm trong UNIQUE nên sai là tách đôi record
+[GAP  ] IDK.2 (§3.4 escape ký tự phân cách) — natural_key là dữ liệu nguồn. Nếu notifyNo/planNo chứa '|', hai bộ khóa khác nhau có thể cho cùng identity_key. Spec không nêu quy tắc escape hay độ dài tối đa
+[FAIL ] KEY.1 (§3.7 vs §3.4 notifyVersion) — §3.7 định nghĩa natural key của TBMT là (notifyNo, notifyVersion) — notifyVersion đã nằm trong natural_key; §3.4 lại đưa version_raw (= notifyVersion) vào identity_key một lần nữa. Hai chỗ phải được suy ra giống nhau, nếu không thì một record có thể mang natural_key cũ và state mới
+[FAIL ] UNRES.1 (§3.2 vs observations NOT NULL) — observation_key cho phép 'UNRESOLVED:<hash>' nhưng record_object_sha NOT NULL REFERENCES raw_objects. Một member không trích được hồ sơ thì không có record object. Hoặc phải cho phép NULL, hoặc phải quy định 'lưu fragment không parse được như RECORD object' — spec chưa chọn
+[GAP  ] HASH.1 (§3.5 nullability nhất quán) — source_record_versions.content_hash NOT NULL trong khi source_records.current_content_version NOT NULL nhưng current_content_hash để NULL. Không tồn tại trạng thái hợp lệ nào có version mà chưa có hash, nên cột nên NOT NULL hoặc spec phải nêu trường hợp ngoại lệ
+[GAP  ] ORD.1 (§5.2 thứ tự ghi proof và interval) — coverage_intervals.proof_id tham chiếu coverage_proofs được khai báo SAU nó. SQLite cho phép forward reference, nhưng §4.1 mục 8 yêu cầu ghi proof cùng transaction với interval, nên migration phải insert proof trước rồi interval — thứ tự ngược với DDL, dễ gây lỗi khi viết
+
+tally: {'PASS': 12, 'GAP': 8, 'FAIL': 5}

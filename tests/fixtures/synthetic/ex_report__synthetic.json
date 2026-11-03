@@ -1,0 +1,237 @@
+{
+  "schema_version": 1,
+  "run_id": "Gói thầu 222 thuộc kế hoạch lựa chọn nhà thầu GWWE Xây lắp h",
+  "started_at": "2019-10-31T13:54:57+00:00",
+  "finished_at": "2019-10-31T13:55:24+00:00",
+  "end_status": "PARTIAL",
+  "resumed_from_run_id": null,
+  "totals": {
+    "sources_tried": 9,
+    "sources_completed": 3,
+    "sources_blocked": 6,
+    "sources_failed": 6,
+    "sources_interrupted": 8,
+    "sources_requires_session": 6,
+    "sources_unsupported": 8,
+    "requests": 36,
+    "pages": 41,
+    "observations": 641,
+    "unique_records": 220,
+    "new": 1,
+    "updated": 2,
+    "unchanged": 418,
+    "duplicates_in_run": 4,
+    "unresolved": 9,
+    "invalid": 8,
+    "warehouse_bytes": 337737,
+    "disk_free_mb": 24852
+  },
+  "by_record_type": {
+    "TBMT": {
+      "received": 507,
+      "new": 6,
+      "updated": 1,
+      "unchanged": 187,
+      "duplicates_in_run": 8,
+      "unresolved": 3
+    }
+  },
+  "not_collected_types": [
+    {
+      "record_type": "KHLCNT",
+      "status": "UNSUPPORTED",
+      "reason": "Cung cấp 944 thiết bị văn phòng năm 2007 Tư vấn giám sát gói"
+    },
+    {
+      "record_type": "DU_AN",
+      "status": "UNSUPPORTED",
+      "reason": "Gói thầu 281 thuộc kế hoạch lựa chọn nhà thầu ZNDZ Gói thầu "
+    },
+    {
+      "record_type": "KQLCNT",
+      "status": "UNSUPPORTED",
+      "reason": "Gói thầu 328 thuộc kế hoạch lựa chọn nhà thầu PBMJ Cung cấp 597 thiết bị văn phòng năm 2020 Tư vấn giám sát gói 371 dự á"
+    },
+    {
+      "record_type": "MO_THAU",
+      "status": "UNSUPPORTED",
+      "reason": "Gói thầu 894 thuộc kế hoạch lựa chọn nhà thầu NYBL Xây lắp hạng mục 894 công trình WULS Gói thầu 484 thuộc kế hoạch lựa "
+    },
+    {
+      "record_type": "NHA_THAU",
+      "status": "UNSUPPORTED",
+      "reason": "Xây lắp hạng mục 853 công trình FJYF Xây lắp hạng mục 670 cô"
+    },
+    {
+      "record_type": "CHU_DAU_TU",
+      "status": "UNSUPPORTED",
+      "reason": "Cung cấp 872 thiết bị văn phòng năm 2008 Tư vấn giám sát gói"
+    },
+    {
+      "record_type": "HANG_HOA_GIA",
+      "status": "UNSUPPORTED",
+      "reason": "Gói thầu 986 thuộc kế hoạch lựa chọn nhà thầu XPFD Gói thầu "
+    }
+  ],
+  "quality": {
+    "TBMT": {
+      "evaluated": 598,
+      "parse_success_ratio": 8,
+      "identity_reliable_ratio": 9,
+      "missing_fields": {
+        "code": 0,
+        "title": "Gói thầu 489 thuộc kế hoạch lựa chọn nhà thầu UCHR",
+        "org_code": 5,
+        "buyer": 7,
+        "time": 9,
+        "source_url": "0"
+      }
+    }
+  },
+  "coverage": {
+    "egp_home": {
+      "coverage": "Gói thầu 100 thuộc kế hoạch lựa chọn nhà thầu URVF",
+      "pages_done": 24,
+      "records": 719,
+      "cursor_pending": true,
+      "reason": "Xây lắp hạng mục 255 công trình VLCC"
+    }
+  },
+  "sources": [
+    {
+      "source": "Cung cấp 671 thiết bị văn phòng năm 2012",
+      "status": "PARTIAL",
+      "pages": 89,
+      "requests": 83,
+      "records": 425,
+      "new": 7,
+      "updated": 3,
+      "cursor": "Xây lắp hạng mục 379 công trình MTCS Cung cấp 477 thiết bị văn phòng năm 2020 Gói thầu 854 thuộc kế hoạch lựa chọn nhà t",
+      "reason": "Cung cấp 981 thiết bị văn phòng năm 2017"
+    }
+  ],
+  "samples": {
+    "TBMT": [
+      {
+        "record_type": "TBMT",
+        "source": "Gói thầu 500 thuộc kế hoạch lựa chọn nhà thầu PUVV",
+        "source_record_id": "Xây lắp hạng mục 881 công trình MPBX",
+        "title": "Cung cấp 636 thiết bị văn phòng năm 2015 Xây lắp hạng mục 23",
+        "source_url": "https://fkwpbsyaap.mof.gov.vn/web/guest/meswaczanw-ttjvqczfr?p_p_id=rgxtxeuqqcwumtzysbmzkvyxbcxazs_WAR_vktmxdmfdhnunrvuxbwgexxruuhzyt&p_p_mxbxatufh=0&p_p_state=normal&p_p_mode=view&_xrznavwnkmatrnyzfyhfphnrjzymrd_WAR_tsenhngcqvttyepsdcfrhdygegahbu_render=detail-v2&type=es-notify-vgpwrktqzg&dpaefxqm=TBMT&step=tbmt&id=fvdzrepp-e459-45f0-be5f-kaxxkxshhqbw&gmxkxewh=mpmnyrahdwgt",
+        "source_published_at": "2019-10-31T20:52:42.539",
+        "fetched_at": "Xây lắp hạng mục 051 công trình YSTK Cung cấp 950 thiết bị v",
+        "status": "UNCHANGED",
+        "raw_file": "Gói thầu 668 thuộc kế hoạch lựa chọn nhà thầu GTWZ Gói thầu ",
+        "raw_line": 6
+      },
+      {
+        "record_type": "TBMT",
+        "source": "Cung cấp 994 thiết bị văn phòng năm 2015",
+        "source_record_id": "Gói thầu 909 thuộc kế hoạch lựa chọn nhà thầu HKNT",
+        "title": "Gói thầu 415 thuộc kế hoạch lựa chọn nhà thầu ZZWC Xây lắp h",
+        "source_url": "https://kxjjvnbkje.mof.gov.vn/web/guest/fkhequfkgx-xxwtdxehd?p_p_id=tneabudaybwrsmvmursbvcjdvkyvat_WAR_gntqbtrzmfphwrrefpqzmfxkdqxvur&p_p_bevkbbgre=0&p_p_state=normal&p_p_mode=view&_pzkkrewhwdygkthhgrepxkucebvvtw_WAR_upmxsbueujtqxtbqyjxkygmfzfgfwq_render=detail-v2&type=es-notify-pcdjvastxp&ghsvtznq=TBMT&step=tbmt&id=hydtumgx-de2e-4b6d-ae45-nfcctwaahckq&dkpyjzdd=zfxbdnvczgzy",
+        "source_published_at": "2019-10-31T20:52:11.081",
+        "fetched_at": "Tư vấn giám sát gói 642 dự án NZAC Gói thầu 960 thuộc kế hoạ",
+        "status": "UNCHANGED",
+        "raw_file": "Xây lắp hạng mục 803 công trình SYGH Cung cấp 434 thiết bị v",
+        "raw_line": 6
+      },
+      {
+        "record_type": "TBMT",
+        "source": "Tư vấn giám sát gói 507 dự án ARJX",
+        "source_record_id": "Cung cấp 490 thiết bị văn phòng năm 2003",
+        "title": "Tư vấn giám sát gói 368 dự án NHCK Xây lắp hạng mục 498 công trình BJMB Tư vấn giám sát gói 561 dự án TZAH Xây lắp hạng ",
+        "source_url": "https://kbncwkfzct.mof.gov.vn/web/guest/rmrstnevfu-ckxwyysna?p_p_id=pnessqutnnzzxndubmdxdyggtsjems_WAR_zgbbzbbjyuctgxvqnhwnaveevmdvfu&p_p_uyzcxdxcb=0&p_p_state=normal&p_p_mode=view&_rwvbyvjaehnuewyuddxzeepkfaavpa_WAR_yynbbezfyhcbxskrsddjpneyrnjwfr_render=detail-v2&type=es-notify-hkwwcubbfp&webyxcqc=TBMT&step=tbmt&id=dqweuerw-3640-48a4-9585-mqyrnafbqnfk&mjhthmge=vmhhbmhcwfhf",
+        "source_published_at": "2019-10-31T20:23:00.673",
+        "fetched_at": "Xây lắp hạng mục 211 công trình BCJJ Cung cấp 856 thiết bị v",
+        "status": "UNCHANGED",
+        "raw_file": "Tư vấn giám sát gói 925 dự án GKDL Gói thầu 440 thuộc kế hoạ",
+        "raw_line": 3
+      },
+      {
+        "record_type": "TBMT",
+        "source": "Xây lắp hạng mục 319 công trình GBXX",
+        "source_record_id": "Gói thầu 999 thuộc kế hoạch lựa chọn nhà thầu FFAE",
+        "title": "Tư vấn giám sát gói 783 dự án ETFZ Gói thầu 107 thuộc kế hoạch lựa chọn nhà thầu GJEN Cung cấp 886 thiết bị văn phòng nă",
+        "source_url": "https://qahmcpyvyp.mof.gov.vn/web/guest/yhfkhcxuqp-wyzyypnvh?p_p_id=utvvkjjsnndktustmfwuqpqkbxdzta_WAR_exwngtexbvwyjchewdpsjbnaqnedpy&p_p_xqkdcsdgk=0&p_p_state=normal&p_p_mode=view&_zfdguhvnqbzsudhcdcyhbmrjungzbf_WAR_etbarfyamvavufuxymgpdvfxprkmns_render=detail-v2&type=es-notify-pjzuutmdvj&tehvtahh=TBMT&step=tbmt&id=zyuzmeyx-22d4-409c-9c7d-nssqvbenqyty&emstegpd=gdfxmqfducef",
+        "source_published_at": "2019-10-31T20:07:58.933",
+        "fetched_at": "Gói thầu 858 thuộc kế hoạch lựa chọn nhà thầu XRXG Xây lắp h",
+        "status": "UNCHANGED",
+        "raw_file": "Tư vấn giám sát gói 807 dự án NPKV Gói thầu 932 thuộc kế hoạ",
+        "raw_line": 9
+      },
+      {
+        "record_type": "TBMT",
+        "source": "Tư vấn giám sát gói 290 dự án RAVM",
+        "source_record_id": "Cung cấp 145 thiết bị văn phòng năm 2015",
+        "title": "Cung cấp 861 thiết bị văn phòng năm 2008 Xây lắp hạng mục 328 công trình APSN Tư vấn giám sát gói 283 dự án NLLU Cung cấ",
+        "source_url": "https://jukvmftsgn.mof.gov.vn/web/guest/hjkfzetwwe-sczvezyrk?p_p_id=yvnscebpczdkfhqpgpjwjqvcufgfev_WAR_yvprrtwkaryeqamqqxgednyjmzpamn&p_p_zjejyarwh=0&p_p_state=normal&p_p_mode=view&_wzyudanfgdttpyzbcmxtmxxersbqar_WAR_qjdbruqyfrwddrpgzuvvtpjjujcmku_render=detail-v2&type=es-notify-furvvbgeqf&mrdfkwsw=TBMT&step=tbmt&id=hetszpcm-fb42-436d-890f-sppcbexenpct&hfzdxchp=pudqyzjghvxr",
+        "source_published_at": "2019-10-31T19:54:06.396",
+        "fetched_at": "Tư vấn giám sát gói 907 dự án CKPJ Cung cấp 616 thiết bị văn",
+        "status": "UNCHANGED",
+        "raw_file": "Tư vấn giám sát gói 934 dự án BKDP Tư vấn giám sát gói 770 d",
+        "raw_line": 9
+      },
+      {
+        "record_type": "TBMT",
+        "source": "Xây lắp hạng mục 440 công trình NJZD",
+        "source_record_id": "Gói thầu 650 thuộc kế hoạch lựa chọn nhà thầu WXHF",
+        "title": "Tư vấn giám sát gói 537 dự án YZYP",
+        "source_url": "https://xfdrvcfmpw.mof.gov.vn/web/guest/zkxzqkesfk-bxhanbdbx?p_p_id=mtcpyqprarswnbtfdvexntgzfnhcjg_WAR_twftnhqbthmhxmvyqzrkujyfqukauh&p_p_wsvqujngv=0&p_p_state=normal&p_p_mode=view&_dgbhrawpzjksnhqdrwptnerwhfthcj_WAR_dmpcxxyanyspzeefxvetqgkvvxuytr_render=detail-v2&type=es-notify-nncuevugkd&jbvkhfex=TBMT&step=tbmt&id=tdjjdqgy-7524-4538-8a5a-rjqxdmamjfqx&agdqdfqb=xugvgnupsryn",
+        "source_published_at": "2019-10-31T19:41:09.075",
+        "fetched_at": "Xây lắp hạng mục 672 công trình PLMG Tư vấn giám sát gói 758",
+        "status": "UNCHANGED",
+        "raw_file": "Cung cấp 407 thiết bị văn phòng năm 2015 Xây lắp hạng mục 62",
+        "raw_line": 3
+      },
+      {
+        "record_type": "TBMT",
+        "source": "Xây lắp hạng mục 411 công trình UFHE",
+        "source_record_id": "Cung cấp 788 thiết bị văn phòng năm 2013",
+        "title": "Cung cấp 787 thiết bị văn phòng năm 2022 Tư vấn giám sát gói 093 dự án AVSN Tư vấn giám sát gói 247 dự án HVKA Gói thầu ",
+        "source_url": "https://qywencssxn.mof.gov.vn/web/guest/vegwxjnztn-wayexfpyf?p_p_id=jufbrukwwqrwvepddwhwmdqewfgnqp_WAR_ahfsjeegvhgfrxwdxztdjectrvufym&p_p_txcsdbvst=0&p_p_state=normal&p_p_mode=view&_zverffzykusbfqpnqspkjtcfmpadew_WAR_uwamccfhqykdhxfwzkacvhjdwvzqsq_render=detail-v2&type=es-notify-xubaayzmaq&cwxubskz=TBMT&step=tbmt&id=xevwemrd-0c13-404d-bf5a-kgsbgvkgnzaa&pjwbqfby=wvxkuykvdqea",
+        "source_published_at": "2019-10-31T19:25:39.451",
+        "fetched_at": "Tư vấn giám sát gói 651 dự án MMHJ Gói thầu 453 thuộc kế hoạ",
+        "status": "UNCHANGED",
+        "raw_file": "Gói thầu 993 thuộc kế hoạch lựa chọn nhà thầu AXAX Tư vấn gi",
+        "raw_line": 7
+      },
+      {
+        "record_type": "TBMT",
+        "source": "Gói thầu 273 thuộc kế hoạch lựa chọn nhà thầu JSYR",
+        "source_record_id": "Tư vấn giám sát gói 270 dự án HMEJ",
+        "title": "Gói thầu 371 thuộc kế hoạch lựa chọn nhà thầu CWWS Gói thầu 293 thuộc kế hoạch lựa chọn nhà thầu YDUM Xây lắp hạng mục 5",
+        "source_url": "https://xgbyetaben.mof.gov.vn/web/guest/tdbretpgnf-csejurawz?p_p_id=vefaeuqrendzkzghfjmxtdrzqqjbge_WAR_kuzkyafcdssfgzkpvwpjdfcdedhbrm&p_p_vgzdkcacq=0&p_p_state=normal&p_p_mode=view&_gmtyymmtdrbdzjtawznwfnuexxtqmg_WAR_dmqjummabzwevvpxfxyxpgsrnsymnw_render=detail-v2&type=es-notify-pbdenaymbd&syyajzna=TBMT&step=tbmt&id=wtgzwwba-8508-4ab7-9112-wmaywpnsqwae&sfhdbjyn=kzmksacuhwmw",
+        "source_published_at": "2019-10-31T19:13:12.329",
+        "fetched_at": "Xây lắp hạng mục 674 công trình FAZY Gói thầu 534 thuộc kế h",
+        "status": "UNCHANGED",
+        "raw_file": "Tư vấn giám sát gói 229 dự án TMPJ Gói thầu 242 thuộc kế hoạ",
+        "raw_line": 3
+      },
+      {
+        "record_type": "TBMT",
+        "source": "Cung cấp 904 thiết bị văn phòng năm 2013",
+        "source_record_id": "Xây lắp hạng mục 538 công trình EFRF",
+        "title": "Gói thầu 977 thuộc kế hoạch lựa chọn nhà thầu NYMN Gói thầu 228 thuộc kế hoạch lựa chọn nhà thầu WKMZ Gói thầu 600 thuộc kế hoạch lựa chọn nhà thầu NHPP Xây lắp hạng mục 583 công trình JNPV Gói thầu 8",
+        "source_url": "https://jhquvsuyqx.mof.gov.vn/web/guest/pwtrpzahap-vngzmthbe?p_p_id=hmkykamednxeadrwtwkrtgjeezpdsw_WAR_cztfgtwumauqqeaxrtqpqnngukybtp&p_p_jsngshwzh=0&p_p_state=normal&p_p_mode=view&_ubembcrdjphukavwfghmvwgzjayphf_WAR_dxszpgrbmqvsufrtgvqqvzrzqdbwrq_render=detail-v2&type=es-notify-zdujuapcsk&yxddyazp=TBMT&step=tbmt&id=yfkatpqp-b912-43e9-b24a-ruxmvjpwyytn&jchebcqp=axgvpjdmvqdf",
+        "source_published_at": "2019-10-31T19:07:12.53",
+        "fetched_at": "Xây lắp hạng mục 227 công trình FDZD Xây lắp hạng mục 875 cô",
+        "status": "UNCHANGED",
+        "raw_file": "Xây lắp hạng mục 754 công trình WUMA Cung cấp 434 thiết bị v",
+        "raw_line": 6
+      },
+      {
+        "record_type": "TBMT",
+        "source": "Cung cấp 355 thiết bị văn phòng năm 2012",
+        "source_record_id": "Gói thầu 258 thuộc kế hoạch lựa chọn nhà thầu DGEP",
+        "title": "Cung cấp 848 thiết bị văn phòng năm 2013 Xây lắp hạng mục 91",
+        "source_url": "https://jgknspawfd.mof.gov.vn/web/guest/fwtrasfpzy-pyhmseumt?p_p_id=wnhvrqqpxfqeegyqwyadbggdhhhxyb_WAR_mgzrkernwupsuyuqrtxdkvvzprncyq&p_p_bvmpajxay=0&p_p_state=normal&p_p_mode=view&_grvyrbdpnczazadcysfevvpbxfezdk_WAR_uhusceemjrmzqruqbdgjyrxemrfcst_render=detail-v2&type=es-notify-mgbdrkgfzk&wztuwssy=TBMT&step=tbmt&id=xnfnamys-381d-48fc-9fe8-unydqcubakhw&behewzqu=ypraupjedtxt",
+        "source_published_at": "2019-10-31T18:56:01.277",
+        "fetched_at": "Cung cấp 287 thiết bị văn phòng năm 2006 Tư vấn giám sát gói",
+        "status": "UNCHANGED",
+        "raw_file": "Tư vấn giám sát gói 041 dự án KZRD Gói thầu 963 thuộc kế hoạ",
+        "raw_line": 1
+      }
+    ]
+  }
+}

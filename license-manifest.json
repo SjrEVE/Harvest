@@ -1,0 +1,1086 @@
+{
+  "distributions": [
+    {
+      "name": "colorama",
+      "version": "0.4.6",
+      "license_field": "",
+      "license_expression": "",
+      "license_classifiers": [
+        "OSI Approved :: BSD License"
+      ],
+      "license_files_in_wheel": [
+        "D:\\Harvest\\santhau-data-studio\\.venv\\Lib\\site-packages\\colorama-0.4.6.dist-info\\licenses\\LICENSE.txt"
+      ],
+      "detected_by": "absent from deployment",
+      "role": "build/dev only"
+    },
+    {
+      "name": "iniconfig",
+      "version": "2.3.1",
+      "license_field": "",
+      "license_expression": "MIT",
+      "license_classifiers": [],
+      "license_files_in_wheel": [
+        "D:\\Harvest\\santhau-data-studio\\.venv\\Lib\\site-packages\\iniconfig-2.3.1.dist-info\\licenses\\LICENSE"
+      ],
+      "detected_by": "absent from deployment",
+      "role": "build/dev only"
+    },
+    {
+      "name": "Nuitka",
+      "version": "4.3.4",
+      "license_field": "GNU Affero General Public License v3",
+      "license_expression": "",
+      "license_classifiers": [
+        "OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)"
+      ],
+      "license_files_in_wheel": [
+        "D:\\Harvest\\santhau-data-studio\\.venv\\Lib\\site-packages\\nuitka-4.3.4.dist-info\\licenses\\LICENSE-RUNTIME.txt",
+        "D:\\Harvest\\santhau-data-studio\\.venv\\Lib\\site-packages\\nuitka-4.3.4.dist-info\\licenses\\LICENSE.txt",
+        "D:\\Harvest\\santhau-data-studio\\.venv\\Lib\\site-packages\\nuitka-4.3.4.dist-info\\licenses\\NOTICE.txt"
+      ],
+      "detected_by": "absent from deployment",
+      "role": "build/dev only"
+    },
+    {
+      "name": "packaging",
+      "version": "26.3",
+      "license_field": "",
+      "license_expression": "Apache-2.0 OR BSD-2-Clause",
+      "license_classifiers": [],
+      "license_files_in_wheel": [
+        "D:\\Harvest\\santhau-data-studio\\.venv\\Lib\\site-packages\\packaging-26.3.dist-info\\licenses\\LICENSE",
+        "D:\\Harvest\\santhau-data-studio\\.venv\\Lib\\site-packages\\packaging-26.3.dist-info\\licenses\\LICENSE.APACHE",
+        "D:\\Harvest\\santhau-data-studio\\.venv\\Lib\\site-packages\\packaging-26.3.dist-info\\licenses\\LICENSE.BSD"
+      ],
+      "detected_by": "absent from deployment",
+      "role": "build/dev only"
+    },
+    {
+      "name": "pluggy",
+      "version": "1.7.0",
+      "license_field": "MIT",
+      "license_expression": "",
+      "license_classifiers": [
+        "OSI Approved :: MIT License"
+      ],
+      "license_files_in_wheel": [
+        "D:\\Harvest\\santhau-data-studio\\.venv\\Lib\\site-packages\\pluggy-1.7.0.dist-info\\licenses\\LICENSE"
+      ],
+      "detected_by": "absent from deployment",
+      "role": "build/dev only"
+    },
+    {
+      "name": "Pygments",
+      "version": "2.21.0",
+      "license_field": "",
+      "license_expression": "BSD-2-Clause",
+      "license_classifiers": [],
+      "license_files_in_wheel": [
+        "D:\\Harvest\\santhau-data-studio\\.venv\\Lib\\site-packages\\pygments-2.21.0.dist-info\\licenses\\AUTHORS",
+        "D:\\Harvest\\santhau-data-studio\\.venv\\Lib\\site-packages\\pygments-2.21.0.dist-info\\licenses\\LICENSE"
+      ],
+      "detected_by": "absent from deployment",
+      "role": "build/dev only"
+    },
+    {
+      "name": "pytest",
+      "version": "9.2.0",
+      "license_field": "",
+      "license_expression": "MIT",
+      "license_classifiers": [],
+      "license_files_in_wheel": [
+        "D:\\Harvest\\santhau-data-studio\\.venv\\Lib\\site-packages\\pytest-9.2.0.dist-info\\licenses\\LICENSE"
+      ],
+      "detected_by": "absent from deployment",
+      "role": "build/dev only"
+    },
+    {
+      "name": "pytest-qt",
+      "version": "4.5.0",
+      "license_field": "MIT",
+      "license_expression": "",
+      "license_classifiers": [
+        "OSI Approved :: MIT License"
+      ],
+      "license_files_in_wheel": [
+        "D:\\Harvest\\santhau-data-studio\\.venv\\Lib\\site-packages\\pytest_qt-4.5.0.dist-info\\licenses\\LICENSE"
+      ],
+      "detected_by": "absent from deployment",
+      "role": "build/dev only"
+    },
+    {
+      "name": "ruff",
+      "version": "0.17.3",
+      "license_field": "",
+      "license_expression": "MIT",
+      "license_classifiers": [],
+      "license_files_in_wheel": [
+        "D:\\Harvest\\santhau-data-studio\\.venv\\Lib\\site-packages\\ruff-0.17.3.dist-info\\licenses\\LICENSE"
+      ],
+      "detected_by": "absent from deployment",
+      "role": "build/dev only"
+    },
+    {
+      "name": "typing_extensions",
+      "version": "4.16.0",
+      "license_field": "",
+      "license_expression": "PSF-2.0",
+      "license_classifiers": [],
+      "license_files_in_wheel": [
+        "D:\\Harvest\\santhau-data-studio\\.venv\\Lib\\site-packages\\typing_extensions-4.16.0.dist-info\\licenses\\LICENSE"
+      ],
+      "detected_by": "absent from deployment",
+      "role": "build/dev only"
+    },
+    {
+      "name": "zstandard",
+      "version": "0.25.0",
+      "license_field": "",
+      "license_expression": "BSD-3-Clause",
+      "license_classifiers": [],
+      "license_files_in_wheel": [
+        "D:\\Harvest\\santhau-data-studio\\.venv\\Lib\\site-packages\\zstandard-0.25.0.dist-info\\licenses\\LICENSE"
+      ],
+      "detected_by": "absent from deployment",
+      "role": "build/dev only"
+    },
+    {
+      "name": "PySide6_Essentials",
+      "version": "6.12.0",
+      "license_field": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+      "license_expression": "",
+      "license_classifiers": [],
+      "license_files_in_wheel": [
+        "D:\\Harvest\\santhau-data-studio\\.venv\\Lib\\site-packages\\pyside6_essentials-6.12.0.dist-info\\licenses\\LicenseRef-Qt-Commercial.txt"
+      ],
+      "detected_by": "deployment file match",
+      "role": "shipped at runtime"
+    },
+    {
+      "name": "santhau-data-studio",
+      "version": "0.0.1",
+      "license_field": "",
+      "license_expression": "",
+      "license_classifiers": [],
+      "license_files_in_wheel": [],
+      "detected_by": "deployment file match",
+      "role": "shipped at runtime"
+    },
+    {
+      "name": "shiboken6",
+      "version": "6.12.0",
+      "license_field": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+      "license_expression": "",
+      "license_classifiers": [],
+      "license_files_in_wheel": [
+        "D:\\Harvest\\santhau-data-studio\\.venv\\Lib\\site-packages\\shiboken6-6.12.0.dist-info\\licenses\\LicenseRef-Qt-Commercial.txt"
+      ],
+      "detected_by": "deployment file match",
+      "role": "shipped at runtime"
+    }
+  ],
+  "native_files": [
+    {
+      "file": "_bz2.pyd",
+      "origin": "CPython standard library extension",
+      "license": "PSF-2.0"
+    },
+    {
+      "file": "_decimal.pyd",
+      "origin": "CPython standard library extension",
+      "license": "PSF-2.0"
+    },
+    {
+      "file": "_hashlib.pyd",
+      "origin": "CPython standard library extension",
+      "license": "PSF-2.0"
+    },
+    {
+      "file": "_lzma.pyd",
+      "origin": "CPython standard library extension",
+      "license": "PSF-2.0"
+    },
+    {
+      "file": "_wmi.pyd",
+      "origin": "CPython standard library extension",
+      "license": "PSF-2.0"
+    },
+    {
+      "file": "libcrypto-3-x64.dll",
+      "origin": "OpenSSL (bundled by CPython/Qt)",
+      "license": "Apache-2.0 AND OpenSSL-Original"
+    },
+    {
+      "file": "msvcp140.dll",
+      "origin": "Microsoft Visual C++ runtime",
+      "license": "MIT-Like (VS license terms)"
+    },
+    {
+      "file": "msvcp140_1.dll",
+      "origin": "Microsoft Visual C++ runtime",
+      "license": "MIT-Like (VS license terms)"
+    },
+    {
+      "file": "msvcp140_2.dll",
+      "origin": "Microsoft Visual C++ runtime",
+      "license": "MIT-Like (VS license terms)"
+    },
+    {
+      "file": "opengl32sw.dll",
+      "origin": "Mesa llvmpipe software OpenGL (inside Qt build)",
+      "license": "MIT"
+    },
+    {
+      "file": "PySide6\\qml\\Qt\\labs\\animation\\labsanimationplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\Qt\\labs\\folderlistmodel\\qmlfolderlistmodelplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\Qt\\labs\\platform\\labsplatformplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\Qt\\labs\\qmlmodels\\labsmodelsplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\Qt\\labs\\settings\\qmlsettingsplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\Qt\\labs\\sharedimage\\sharedimageplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\Qt\\labs\\StyleKit\\impl\\labsstylekitimplplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\Qt\\labs\\StyleKit\\labsstylekitplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\Qt\\labs\\synchronizer\\labssynchronizerplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\Qt\\labs\\wavefrontmesh\\qmlwavefrontmeshplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtCore\\qtqmlcoreplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtNetwork\\qmlnetworkplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQml\\DesignSupport\\qmldesignsupportplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQml\\Models\\modelsplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQml\\qmlplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQml\\StateMachine\\qtqmlstatemachineplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQml\\WorkerScript\\workerscriptplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQml\\XmlListModel\\qmlxmllistmodelplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Controls\\Basic\\impl\\qtquickcontrols2basicstyleimplplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Controls\\Basic\\qtquickcontrols2basicstyleplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Controls\\FluentWinUI3\\impl\\qtquickcontrols2fluentwinui3styleimplplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Controls\\FluentWinUI3\\qtquickcontrols2fluentwinui3styleplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Controls\\Fusion\\impl\\qtquickcontrols2fusionstyleimplplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Controls\\Fusion\\qtquickcontrols2fusionstyleplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Controls\\Imagine\\impl\\qtquickcontrols2imaginestyleimplplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Controls\\Imagine\\qtquickcontrols2imaginestyleplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Controls\\impl\\qtquickcontrols2implplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Controls\\Material\\impl\\qtquickcontrols2materialstyleimplplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Controls\\Material\\qtquickcontrols2materialstyleplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Controls\\Native\\qtquickcontrols2nativestyleplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Controls\\qtquickcontrols2plugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Controls\\Universal\\impl\\qtquickcontrols2universalstyleimplplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Controls\\Universal\\qtquickcontrols2universalstyleplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Controls\\Windows\\impl\\qtquickcontrols2windowsstyleimplplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Controls\\Windows\\qtquickcontrols2windowsstyleplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Dialogs\\qtquickdialogsplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Dialogs\\quickimpl\\qtquickdialogs2quickimplplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Effects\\effectsplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Layouts\\qquicklayoutsplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\LocalStorage\\qmllocalstorageplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\NativeStyle\\qtquicknativestyleplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Particles\\particlesplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Pdf\\pdfquickplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\qtquick2plugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Scene2D\\qtquickscene2dplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Scene3D\\qtquickscene3dplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Shapes\\DesignHelpers\\qtquickshapesdesignhelpersplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Shapes\\qmlshapesplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Templates\\qtquicktemplates2plugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Timeline\\BlendTrees\\qtquicktimelineblendtreesplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Timeline\\qtquicktimelineplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\tooling\\quicktoolingplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\VectorImage\\Helpers\\qquickvectorimagehelpersplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\VectorImage\\qquickvectorimageplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\VirtualKeyboard\\Components\\qtvkbcomponentsplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\VirtualKeyboard\\Core\\virtualkeyboardplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\VirtualKeyboard\\Layouts\\qtvkblayoutsplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\VirtualKeyboard\\Plugins\\Hangul\\qtvkbhangulplugin.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\VirtualKeyboard\\Plugins\\OpenWNN\\qtvkbopenwnnplugin.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\VirtualKeyboard\\Plugins\\Pinyin\\qtvkbpinyinplugin.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\VirtualKeyboard\\Plugins\\qtvkbpluginsplugin.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\VirtualKeyboard\\Plugins\\TCIme\\qtvkbtcimeplugin.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\VirtualKeyboard\\Plugins\\Thai\\qtvkbthaiplugin.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\VirtualKeyboard\\qtvkbplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\VirtualKeyboard\\Settings\\qtvkbsettingsplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\VirtualKeyboard\\Styles\\Builtin\\qtvkbbuiltinstylesplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\VirtualKeyboard\\Styles\\qtvkbstylesplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtQuick\\Window\\quickwindowplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qml\\QtTest\\quicktestplugin.dll",
+      "origin": "Qt 6 QML modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\iconengines\\qsvgicon.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\imageformats\\qgif.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\imageformats\\qicns.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\imageformats\\qico.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\imageformats\\qjpeg.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\imageformats\\qpdf.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\imageformats\\qsvg.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\imageformats\\qtga.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\imageformats\\qtiff.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\imageformats\\qwbmp.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\imageformats\\qwebp.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\platforms\\qdirect2d.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\platforms\\qminimal.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\platforms\\qoffscreen.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\platforms\\qwindows.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\styles\\qmodernwindowsstyle.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\tls\\qcertonlybackend.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\tls\\qopensslbackend.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\qt-plugins\\tls\\qschannelbackend.dll",
+      "origin": "Qt 6 plugins (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\QtCore.pyd",
+      "origin": "PySide6 Qt binding module (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\QtGui.pyd",
+      "origin": "PySide6 Qt binding module (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\QtNetwork.pyd",
+      "origin": "PySide6 Qt binding module (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\QtOpenGL.pyd",
+      "origin": "PySide6 Qt binding module (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\QtQml.pyd",
+      "origin": "PySide6 Qt binding module (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\QtQuick.pyd",
+      "origin": "PySide6 Qt binding module (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "PySide6\\QtWidgets.pyd",
+      "origin": "PySide6 Qt binding module (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "pyside6.abi3.dll",
+      "origin": "PySide6 binding (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "pyside6qml.abi3.dll",
+      "origin": "PySide6 binding (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "python3.dll",
+      "origin": "CPython (Python Software Foundation)",
+      "license": "PSF-2.0"
+    },
+    {
+      "file": "python312.dll",
+      "origin": "CPython (Python Software Foundation)",
+      "license": "PSF-2.0"
+    },
+    {
+      "file": "qt6core.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6gui.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6labsanimation.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6labsfolderlistmodel.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6labsplatform.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6labsqmlmodels.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6labssettings.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6labssharedimage.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6labsstylekit.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6labsstylekitimpl.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6labssynchronizer.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6labswavefrontmesh.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6network.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6opengl.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6qml.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6qmlcore.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6qmldesignsupport.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6qmllocalstorage.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6qmlmeta.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6qmlmodels.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6qmlnetwork.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6qmlworkerscript.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6qmlxmllistmodel.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quick.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickcontrols2.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickcontrols2basic.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickcontrols2basicstyleimpl.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickcontrols2fluentwinui3.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickcontrols2fluentwinui3styleimpl.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickcontrols2fusion.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickcontrols2fusionstyleimpl.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickcontrols2imagine.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickcontrols2imaginestyleimpl.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickcontrols2impl.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickcontrols2material.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickcontrols2materialstyleimpl.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickcontrols2native.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickcontrols2universal.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickcontrols2universalstyleimpl.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickcontrols2windows.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickcontrols2windowsstyleimpl.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickdialogs2.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickdialogs2quickimpl.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickdialogs2utils.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickeffects.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quicklayouts.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quicknativestyle.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickparticles.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickshapes.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickshapesdesignhelpers.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quicktemplates2.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quicktest.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quicktimeline.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quicktimelineblendtrees.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickvectorimage.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickvectorimagegenerator.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6quickvectorimagehelpers.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6sql.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6svg.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6test.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "qt6widgets.dll",
+      "origin": "Qt 6 modules (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "select.pyd",
+      "origin": "CPython standard library extension",
+      "license": "PSF-2.0"
+    },
+    {
+      "file": "shiboken6\\msvcp140.dll",
+      "origin": "Qt 6 module (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "shiboken6\\msvcp140_1.dll",
+      "origin": "Qt 6 module (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "shiboken6\\msvcp140_2.dll",
+      "origin": "Qt 6 module (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "shiboken6\\msvcp140_codecvt_ids.dll",
+      "origin": "Qt 6 module (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "shiboken6\\Shiboken.pyd",
+      "origin": "PySide6 Qt binding module (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "shiboken6.abi3.dll",
+      "origin": "Shiboken generator runtime (The Qt Company)",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+    },
+    {
+      "file": "unicodedata.pyd",
+      "origin": "CPython standard library extension",
+      "license": "PSF-2.0"
+    },
+    {
+      "file": "vcruntime140.dll",
+      "origin": "Microsoft Visual C++ runtime",
+      "license": "MIT-Like (VS license terms)"
+    },
+    {
+      "file": "vcruntime140_1.dll",
+      "origin": "Microsoft Visual C++ runtime",
+      "license": "MIT-Like (VS license terms)"
+    }
+  ],
+  "dist": "build\\stage"
+}

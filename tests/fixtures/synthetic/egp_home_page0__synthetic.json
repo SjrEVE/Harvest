@@ -1,0 +1,579 @@
+{
+  "page": {
+    "content": [
+      {
+        "id": "Gói thầu 222 thuộc kế hoạch lựa chọn nhà thầu GWWE Xây lắp h",
+        "notifyId": "50039fe72ddf3a028045c635a4c724f6",
+        "bidCloseDate": "2019-11-18T09:00:00",
+        "bidForm": "Tư vấn giám sát gói 573 dự án HTDA",
+        "bidMode": "Xây lắp hạng mục 387 công trình HDNM",
+        "bidName": [
+          "Gói thầu 723 thuộc kế hoạch lựa chọn nhà thầu VKJB"
+        ],
+        "investField": [
+          "Gói thầu 536 thuộc kế hoạch lựa chọn nhà thầu HSAX"
+        ],
+        "isInternet": 8,
+        "locations": [
+          {
+            "provCode": "Cung cấp 028 thiết bị văn phòng năm 2023",
+            "provName": "Gói thầu 952 thuộc kế hoạch lựa chọn nhà thầu FXLB",
+            "districtCode": "Diên Khánh",
+            "districtName": "Cao Lãnh"
+          }
+        ],
+        "notifyNo": "IB8605493597",
+        "notifyVersion": "00",
+        "notifyNoStand": "IB795637181189",
+        "processApply": "Xây lắp hạng mục 605 công trình MMUV",
+        "publicDate": "2019-10-31T17:58:00.081",
+        "status": "01",
+        "investorName": "Công ty TNHH Một thành viên SDJTJ",
+        "investorCode": "vn853242567",
+        "bidOpenDate": "2019-11-18T09:00:00",
+        "originalPublicDate": "2019-10-31T17:58:00.081",
+        "planType": "DTPT",
+        "planNo": "PL0306387259",
+        "stepCode": "Gói thầu 736 thuộc kế hoạch lựa chọn nhà thầu CYVN Tư vấn gi",
+        "type": "es-notify-contractor",
+        "statusForNotify": "",
+        "numPetition": 7,
+        "numClarifyReq": 3,
+        "numBidderTech": 2,
+        "bidId": "1ee31bbc7f7be308bb3eb1dce129d4f2",
+        "createdBy": "vn826778048",
+        "bidPrice": [
+          21005068874.25
+        ],
+        "numPetitionHsmt": 8,
+        "numPetitionLcnt": 5,
+        "numPetitionKqlcnt": 5,
+        "score": "Tư vấn giám sát gói 801 dự án ABUR",
+        "isDomestic": 3
+      },
+      {
+        "id": "Gói thầu 942 thuộc kế hoạch lựa chọn nhà thầu MMVL Gói thầu ",
+        "notifyId": "be79958f8382bafe5a09cba0f540e1ca",
+        "bidCloseDate": "2019-11-18T10:00:00",
+        "bidForm": "Tư vấn giám sát gói 524 dự án ZRSV",
+        "bidMode": "Tư vấn giám sát gói 698 dự án AUMJ",
+        "bidName": [
+          "Cung cấp 298 thiết bị văn phòng năm 2023 Gói thầu 500 thuộc "
+        ],
+        "investField": [
+          "Xây lắp hạng mục 488 công trình DMPB"
+        ],
+        "isInternet": 9,
+        "locations": [
+          {
+            "provCode": "Cung cấp 636 thiết bị văn phòng năm 2015",
+            "provName": "Xây lắp hạng mục 237 công trình YNYX",
+            "districtCode": "Gò Vấp",
+            "districtName": "Mường Ao"
+          }
+        ],
+        "notifyNo": "IB6070065279",
+        "notifyVersion": "00",
+        "notifyNoStand": "IB010598849612",
+        "processApply": "Tư vấn giám sát gói 738 dự án XEUP",
+        "publicDate": "2019-10-31T17:46:49.222",
+        "status": "01",
+        "investorName": "Sở Hàm Thuận tỉnh Phù Cát",
+        "investorCode": "vn107948515",
+        "bidOpenDate": "2019-11-18T10:00:00",
+        "originalPublicDate": "2019-10-31T17:46:49.222",
+        "planType": "DTPT",
+        "planNo": "PL2135857980",
+        "stepCode": "Cung cấp 278 thiết bị văn phòng năm 2017 Xây lắp hạng mục 00",
+        "type": "es-notify-contractor",
+        "statusForNotify": "",
+        "numPetition": 8,
+        "numClarifyReq": 6,
+        "numBidderTech": 1,
+        "bidId": "b7817458aef757e3fdc489dbbbe24397",
+        "createdBy": "vn3263574571",
+        "bidPrice": [
+          248060816201.35
+        ],
+        "numPetitionHsmt": 4,
+        "numPetitionLcnt": 6,
+        "numPetitionKqlcnt": 4,
+        "score": "Gói thầu 698 thuộc kế hoạch lựa chọn nhà thầu TYEN",
+        "workType": "CTCAU",
+        "isDomestic": 2
+      },
+      {
+        "id": "Gói thầu 273 thuộc kế hoạch lựa chọn nhà thầu DYGE Gói thầu ",
+        "notifyId": "1a2c1ca1371b65b7b72aadce6c633720",
+        "bidCloseDate": "2019-11-09T08:00:00",
+        "bidForm": "Gói thầu 226 thuộc kế hoạch lựa chọn nhà thầu LFVD",
+        "bidMode": "Tư vấn giám sát gói 266 dự án KAXX",
+        "bidName": [
+          "Tư vấn giám sát gói 336 dự án BWGL Xây lắp hạng mục 293 công"
+        ],
+        "investField": [
+          "Tư vấn giám sát gói 031 dự án WGTW"
+        ],
+        "isInternet": 6,
+        "locations": [
+          {
+            "provCode": "Gói thầu 517 thuộc kế hoạch lựa chọn nhà thầu TKVF",
+            "provName": "Xây lắp hạng mục 012 công trình UCDP",
+            "districtCode": "Lạc Khê",
+            "districtName": "Diên Khánh"
+          }
+        ],
+        "notifyNo": "IB8971946183",
+        "notifyVersion": "00",
+        "notifyNoStand": "IB853994402871",
+        "processApply": "Gói thầu 934 thuộc kế hoạch lựa chọn nhà thầu NTYC",
+        "publicDate": "2019-10-31T17:40:02.513",
+        "status": "01",
+        "investorName": "Sở Gò Vấp tỉnh Diên Khánh",
+        "investorCode": "vn914449504",
+        "bidOpenDate": "2019-11-09T08:30:00",
+        "originalPublicDate": "2019-10-31T17:40:02.513",
+        "planType": "DTPT",
+        "planNo": "PL4224326824",
+        "stepCode": "Cung cấp 981 thiết bị văn phòng năm 2017 Xây lắp hạng mục 20",
+        "type": "es-notify-contractor",
+        "statusForNotify": "",
+        "numPetition": 1,
+        "numClarifyReq": 8,
+        "numBidderTech": 8,
+        "bidId": "9654881c0e5339117e18ad3376a8eb8a",
+        "createdBy": "vn4194908358",
+        "bidPrice": [
+          2754209419.51
+        ],
+        "numPetitionHsmt": 6,
+        "numPetitionLcnt": 3,
+        "numPetitionKqlcnt": 7,
+        "score": "Cung cấp 977 thiết bị văn phòng năm 2023",
+        "workType": "KHAC",
+        "isDomestic": 6
+      },
+      {
+        "id": "Cung cấp 416 thiết bị văn phòng năm 2002 Cung cấp 940 thiết ",
+        "notifyId": "487a30924a9f8d87b5a62733634858d4",
+        "bidCloseDate": "2019-11-09T09:00:00",
+        "bidForm": "Cung cấp 939 thiết bị văn phòng năm 2017",
+        "bidMode": "Cung cấp 337 thiết bị văn phòng năm 2018",
+        "bidName": [
+          "Gói thầu 209 thuộc kế hoạch lựa chọn nhà thầu VTWU Xây lắp h"
+        ],
+        "investField": [
+          "Tư vấn giám sát gói 806 dự án YJXK"
+        ],
+        "isInternet": 4,
+        "locations": [
+          {
+            "provCode": "Xây lắp hạng mục 223 công trình FWPN",
+            "provName": "Gói thầu 490 thuộc kế hoạch lựa chọn nhà thầu STXN",
+            "districtCode": "Diên Khánh",
+            "districtName": "Kỳ Anh"
+          }
+        ],
+        "notifyNo": "IB9856318853",
+        "notifyVersion": "00",
+        "notifyNoStand": "IB521189003146",
+        "processApply": "Gói thầu 464 thuộc kế hoạch lựa chọn nhà thầu ZDDZ",
+        "publicDate": "2019-10-31T17:39:39.092",
+        "status": "01",
+        "investorName": "Ban Quản lý Dự án MVC khu vực Phù Cát",
+        "investorCode": "vn426016096",
+        "bidOpenDate": "2019-11-09T09:00:00",
+        "originalPublicDate": "2019-10-31T17:39:39.092",
+        "planType": "DTPT",
+        "planNo": "PL0862480373",
+        "stepCode": "Cung cấp 343 thiết bị văn phòng năm 2019 Xây lắp hạng mục 89",
+        "type": "es-notify-contractor",
+        "statusForNotify": "",
+        "numPetition": 1,
+        "numClarifyReq": 8,
+        "numBidderTech": 5,
+        "bidId": "839de8cd86125476e90a6de7a3a94719",
+        "createdBy": "vn4906095199",
+        "bidPrice": [
+          7185845490.7
+        ],
+        "numPetitionHsmt": 7,
+        "numPetitionLcnt": 9,
+        "numPetitionKqlcnt": 7,
+        "score": "Cung cấp 145 thiết bị văn phòng năm 2002",
+        "isDomestic": 5
+      },
+      {
+        "id": "Xây lắp hạng mục 065 công trình ZNCT Gói thầu 341 thuộc kế h",
+        "notifyId": "4d69e80890412c73f448595d341b8bd7",
+        "bidCloseDate": "2019-11-07T16:30:00",
+        "bidForm": "Xây lắp hạng mục 194 công trình FZCT",
+        "bidMode": "Xây lắp hạng mục 778 công trình MEVF",
+        "bidName": [
+          "Gói thầu 497 thuộc kế hoạch lựa chọn nhà thầu MANM Tư vấn gi"
+        ],
+        "investField": [
+          "Xây lắp hạng mục 180 công trình LDXD"
+        ],
+        "isInternet": 4,
+        "locations": [
+          {
+            "provCode": "Cung cấp 874 thiết bị văn phòng năm 2007",
+            "provName": "Gói thầu 000 thuộc kế hoạch lựa chọn nhà thầu JYUC",
+            "districtCode": "Quảng Trị Đông",
+            "districtName": "Diên Khánh"
+          },
+          {
+            "provCode": "Tư vấn giám sát gói 539 dự án MAVE",
+            "provName": "Xây lắp hạng mục 192 công trình UUYZ",
+            "districtCode": "Ninh Tị",
+            "districtName": "Sông Cầu"
+          },
+          {
+            "provCode": "Gói thầu 107 thuộc kế hoạch lựa chọn nhà thầu WVBY",
+            "provName": "Xây lắp hạng mục 023 công trình MUEW",
+            "districtCode": "Lạc Khê",
+            "districtName": "Bình Điền"
+          },
+          {
+            "provCode": "Gói thầu 226 thuộc kế hoạch lựa chọn nhà thầu KFAA",
+            "provName": "Tư vấn giám sát gói 050 dự án BEZF",
+            "districtCode": "Diên Khánh",
+            "districtName": "Sông Cầu"
+          },
+          {
+            "provCode": "Gói thầu 074 thuộc kế hoạch lựa chọn nhà thầu RSDD",
+            "provName": "Tư vấn giám sát gói 527 dự án MJWF",
+            "districtCode": "Diên Khánh",
+            "districtName": "Gò Vấp"
+          },
+          {
+            "provCode": "Gói thầu 800 thuộc kế hoạch lựa chọn nhà thầu FNWE",
+            "provName": "Gói thầu 611 thuộc kế hoạch lựa chọn nhà thầu PWEU",
+            "districtCode": "Sông Cầu",
+            "districtName": "Kỳ Anh"
+          },
+          {
+            "provCode": "Xây lắp hạng mục 675 công trình AFBP",
+            "provName": "Cung cấp 454 thiết bị văn phòng năm 2007",
+            "districtCode": "Cao Lãnh",
+            "districtName": "Mường Ao"
+          },
+          {
+            "provCode": "Xây lắp hạng mục 330 công trình LHCW",
+            "provName": "Cung cấp 242 thiết bị văn phòng năm 2009",
+            "districtCode": "Gò Vấp",
+            "districtName": "Hàm Thuận"
+          },
+          {
+            "provCode": "Cung cấp 856 thiết bị văn phòng năm 2025",
+            "provName": "Tư vấn giám sát gói 925 dự án GKDL",
+            "districtCode": "Sông Cầu",
+            "districtName": "An Khang"
+          },
+          {
+            "provCode": "Xây lắp hạng mục 405 công trình WPRF",
+            "provName": "Xây lắp hạng mục 319 công trình GBXX",
+            "districtCode": "Phù Cát",
+            "districtName": "Bình Điền"
+          },
+          {
+            "provCode": "Cung cấp 202 thiết bị văn phòng năm 2008",
+            "provName": "Cung cấp 825 thiết bị văn phòng năm 2007",
+            "districtCode": "Gò Vấp",
+            "districtName": "Cao Lãnh"
+          }
+        ],
+        "notifyNo": "IB6938862356",
+        "notifyVersion": "00",
+        "notifyNoStand": "IB035169632431",
+        "processApply": "Tư vấn giám sát gói 696 dự án MVHU",
+        "publicDate": "2019-10-31T17:31:27.422",
+        "status": "01",
+        "investorName": "Công ty TNHH Một thành viên JJSMM",
+        "investorCode": "vn298666401",
+        "bidOpenDate": "2019-11-07T16:30:00",
+        "originalPublicDate": "2019-10-31T17:31:27.422",
+        "planType": "TX",
+        "planNo": "PL8029538209",
+        "stepCode": "Xây lắp hạng mục 132 công trình WDNS Gói thầu 506 thuộc kế h",
+        "type": "es-notify-contractor",
+        "statusForNotify": "",
+        "numPetition": 7,
+        "numClarifyReq": 5,
+        "numBidderTech": 2,
+        "bidId": "fe9179c7783ab556e7dd3b5bb886a262",
+        "createdBy": "vn3421383956",
+        "bidPrice": [
+          5506973653.91
+        ],
+        "numPetitionHsmt": 9,
+        "numPetitionLcnt": 2,
+        "numPetitionKqlcnt": 4,
+        "score": "Gói thầu 113 thuộc kế hoạch lựa chọn nhà thầu BLRJ",
+        "isDomestic": 6
+      },
+      {
+        "id": "Cung cấp 022 thiết bị văn phòng năm 2024 Cung cấp 059 thiết ",
+        "notifyId": "f121a03335f90dd5564142f4a888f14c",
+        "bidCloseDate": "2019-11-10T09:00:00",
+        "bidForm": "Gói thầu 926 thuộc kế hoạch lựa chọn nhà thầu RKLM",
+        "bidMode": "Tư vấn giám sát gói 488 dự án TLDV",
+        "bidName": [
+          "Cung cấp 398 thiết bị văn phòng năm 2022 Xây lắp hạng mục 257 công trình SPVB Cung cấp 568 thiết bị văn phòng năm 2020 C"
+        ],
+        "investField": [
+          "Xây lắp hạng mục 621 công trình UCEF"
+        ],
+        "isInternet": 9,
+        "locations": [
+          {
+            "provCode": "Xây lắp hạng mục 873 công trình KAKN",
+            "provName": "Cung cấp 378 thiết bị văn phòng năm 2010"
+          }
+        ],
+        "notifyNo": "IB9209329976",
+        "notifyVersion": "00",
+        "notifyNoStand": "IB862907095314",
+        "processApply": "Xây lắp hạng mục 947 công trình RFTZ",
+        "publicDate": "2019-10-31T17:15:14.858",
+        "status": "01",
+        "investorName": "Sở Gò Vấp tỉnh Quảng Trị Đông",
+        "investorCode": "vn806766283",
+        "bidOpenDate": "2019-11-10T09:00:00",
+        "originalPublicDate": "2019-10-31T17:15:14.858",
+        "planType": "DTPT",
+        "planNo": "PL6558241138",
+        "stepCode": "Xây lắp hạng mục 248 công trình KVLF Tư vấn giám sát gói 353",
+        "type": "es-notify-contractor",
+        "statusForNotify": "",
+        "numPetition": 3,
+        "numClarifyReq": 9,
+        "numBidderTech": 3,
+        "bidId": "93ac328fd7216f9bb09f9335e70eaa6b",
+        "createdBy": "vn9571206114-74",
+        "bidPrice": [
+          6081454127.22
+        ],
+        "numPetitionHsmt": 7,
+        "numPetitionLcnt": 4,
+        "numPetitionKqlcnt": 7,
+        "score": "Xây lắp hạng mục 946 công trình VCUF",
+        "workType": "CTNL",
+        "isDomestic": 4
+      },
+      {
+        "id": "Cung cấp 299 thiết bị văn phòng năm 2020 Xây lắp hạng mục 07",
+        "notifyId": "32d33068a4ad6604bbef1de66f5aa975",
+        "bidCloseDate": "2019-11-09T13:36:00",
+        "bidForm": "Gói thầu 545 thuộc kế hoạch lựa chọn nhà thầu ZNAL",
+        "bidMode": "Xây lắp hạng mục 240 công trình RWHW",
+        "bidName": [
+          "Gói thầu 052 thuộc kế hoạch lựa chọn nhà thầu GDTT Gói thầu "
+        ],
+        "investField": [
+          "Tư vấn giám sát gói 706 dự án ARPJ"
+        ],
+        "isInternet": 1,
+        "locations": [
+          {
+            "provCode": "Tư vấn giám sát gói 862 dự án RWDD",
+            "provName": "Tư vấn giám sát gói 389 dự án VTNJ",
+            "districtCode": "Lạc Khê",
+            "districtName": "Gò Vấp"
+          }
+        ],
+        "notifyNo": "IB1548287990",
+        "notifyVersion": "00",
+        "notifyNoStand": "IB326257124979",
+        "processApply": "Cung cấp 287 thiết bị văn phòng năm 2016",
+        "publicDate": "2019-10-31T17:12:45.553",
+        "status": "01",
+        "investorName": "Trung tâm Y tế huyện Thuận Nam",
+        "investorCode": "vn113668164",
+        "bidOpenDate": "2019-11-09T13:36:00",
+        "originalPublicDate": "2019-10-31T17:12:45.553",
+        "planType": "DTPT",
+        "planNo": "PL3397690714",
+        "stepCode": "Tư vấn giám sát gói 448 dự án EPDN Gói thầu 069 thuộc kế hoạ",
+        "type": "es-notify-contractor",
+        "statusForNotify": "",
+        "numPetition": 4,
+        "numClarifyReq": 5,
+        "numBidderTech": 1,
+        "bidId": "b7177727df31e8ffe5c088b5970bfa50",
+        "createdBy": "vn7703258444",
+        "bidPrice": [
+          18410753723.42
+        ],
+        "numPetitionHsmt": 1,
+        "numPetitionLcnt": 4,
+        "numPetitionKqlcnt": 3,
+        "score": "Tư vấn giám sát gói 537 dự án YZYP",
+        "workType": "CVCX",
+        "isDomestic": 3
+      },
+      {
+        "id": "Gói thầu 791 thuộc kế hoạch lựa chọn nhà thầu FLNW Xây lắp h",
+        "notifyId": "587112cf069443a33a221fa8a1dfe517",
+        "bidCloseDate": "2019-11-12T10:00:00",
+        "bidForm": "Gói thầu 058 thuộc kế hoạch lựa chọn nhà thầu CNYP",
+        "bidMode": "Tư vấn giám sát gói 077 dự án WMBT",
+        "bidName": [
+          "Gói thầu 925 thuộc kế hoạch lựa chọn nhà thầu TGZF Cung cấp "
+        ],
+        "investField": [
+          "Xây lắp hạng mục 360 công trình THLH"
+        ],
+        "isInternet": 6,
+        "locations": [
+          {
+            "provCode": "Tư vấn giám sát gói 748 dự án JYFP",
+            "provName": "Xây lắp hạng mục 083 công trình WSVP"
+          }
+        ],
+        "notifyNo": "IB4539130370",
+        "notifyVersion": "00",
+        "notifyNoStand": "IB964475361796",
+        "processApply": "Xây lắp hạng mục 279 công trình HFTH",
+        "procuringEntityCode": "Xây lắp hạng mục 156 công trình CXXY",
+        "procuringEntityName": "Xây lắp hạng mục 762 công trình EFXV Tư vấn giám sát gói 349",
+        "publicDate": "2019-10-31T17:10:46.485",
+        "status": "01",
+        "investorName": "Ban Quản lý Đầu tư xây dựng khu vực Lạc Khê",
+        "investorCode": "vn409432281",
+        "bidOpenDate": "2019-11-12T10:00:00",
+        "originalPublicDate": "2019-10-31T17:10:46.485",
+        "planType": "DTPT",
+        "planNo": "PL4416374615",
+        "stepCode": "Gói thầu 542 thuộc kế hoạch lựa chọn nhà thầu PXAG Tư vấn gi",
+        "type": "es-notify-contractor",
+        "statusForNotify": "",
+        "numPetition": 4,
+        "numClarifyReq": 6,
+        "numBidderTech": 9,
+        "bidId": "6d6abe1042a5c9e9b6ff9e41b23f76d0",
+        "createdBy": "vn5531775850-26",
+        "bidPrice": [
+          48353545903.03
+        ],
+        "numPetitionHsmt": 5,
+        "numPetitionLcnt": 9,
+        "numPetitionKqlcnt": 8,
+        "score": "Xây lắp hạng mục 626 công trình GPUB",
+        "isDomestic": 5,
+        "pname": "Xây lắp hạng mục 118 công trình FHEV Tư vấn giám sát gói 881"
+      },
+      {
+        "id": "Tư vấn giám sát gói 876 dự án FBLY Gói thầu 930 thuộc kế hoạ",
+        "notifyId": "78382a3b432aa76f263c5f1cbd9a70c5",
+        "bidCloseDate": "2019-11-11T14:00:00",
+        "bidForm": "Xây lắp hạng mục 004 công trình GXFM",
+        "bidMode": "Cung cấp 692 thiết bị văn phòng năm 2021",
+        "bidName": [
+          "Xây lắp hạng mục 923 công trình WXJM Xây lắp hạng mục 902 cô"
+        ],
+        "investField": [
+          "Cung cấp 482 thiết bị văn phòng năm 2020"
+        ],
+        "isInternet": 7,
+        "locations": [
+          {
+            "provCode": "Tư vấn giám sát gói 992 dự án NDDW",
+            "provName": "Cung cấp 951 thiết bị văn phòng năm 2025"
+          }
+        ],
+        "notifyNo": "IB3566032742",
+        "notifyVersion": "00",
+        "notifyNoStand": "IB239332791814",
+        "processApply": "Cung cấp 187 thiết bị văn phòng năm 2011",
+        "procuringEntityCode": "Gói thầu 710 thuộc kế hoạch lựa chọn nhà thầu VSTZ",
+        "procuringEntityName": "Cung cấp 722 thiết bị văn phòng năm 2016 Gói thầu 266 thuộc ",
+        "publicDate": "2019-10-31T16:56:11.844",
+        "status": "01",
+        "investorName": "Công ty Cổ phần Tư vấn TCFLN Việt Nam",
+        "investorCode": "vn989051123",
+        "bidOpenDate": "2019-11-11T14:00:00",
+        "originalPublicDate": "2019-10-31T16:56:11.844",
+        "planType": "DTPT",
+        "planNo": "PL6413294019",
+        "stepCode": "Cung cấp 419 thiết bị văn phòng năm 2014 Gói thầu 005 thuộc ",
+        "type": "es-notify-contractor",
+        "statusForNotify": "",
+        "numPetition": 9,
+        "numClarifyReq": 1,
+        "numBidderTech": 8,
+        "bidId": "c6483e08a0c4f054b67f3a094d31c1d3",
+        "createdBy": "vn2571437039-99",
+        "bidPrice": [
+          52698891615.85
+        ],
+        "numPetitionHsmt": 4,
+        "numPetitionLcnt": 6,
+        "numPetitionKqlcnt": 1,
+        "score": "Gói thầu 649 thuộc kế hoạch lựa chọn nhà thầu BPFB",
+        "isDomestic": 5,
+        "pname": "Xây lắp hạng mục 916 công trình EASZ Xây lắp hạng mục 155 cô"
+      },
+      {
+        "id": "Xây lắp hạng mục 534 công trình ESAW Cung cấp 002 thiết bị v",
+        "notifyId": "47c51871f8d97160f6a26c0737613b7b",
+        "bidCloseDate": "2019-11-10T08:00:00",
+        "bidForm": "Tư vấn giám sát gói 062 dự án XSAH",
+        "bidMode": "Cung cấp 411 thiết bị văn phòng năm 2020",
+        "bidName": [
+          "Tư vấn giám sát gói 802 dự án VGYD Xây lắp hạng mục 459 công"
+        ],
+        "investField": [
+          "Gói thầu 302 thuộc kế hoạch lựa chọn nhà thầu TABE"
+        ],
+        "isInternet": 9,
+        "locations": [
+          {
+            "provCode": "Gói thầu 072 thuộc kế hoạch lựa chọn nhà thầu TNGM",
+            "provName": "Gói thầu 724 thuộc kế hoạch lựa chọn nhà thầu URAW",
+            "districtCode": "Mường Ao",
+            "districtName": "Cao Lãnh"
+          }
+        ],
+        "notifyNo": "IB2028672514",
+        "notifyVersion": "00",
+        "notifyNoStand": "IB332458176640",
+        "processApply": "Cung cấp 248 thiết bị văn phòng năm 2006",
+        "publicDate": "2019-10-31T16:54:45.84",
+        "status": "01",
+        "investorName": "Sở Diên Khánh tỉnh Phù Cát",
+        "investorCode": "vn996412112",
+        "bidOpenDate": "2019-11-10T08:00:00",
+        "originalPublicDate": "2019-10-31T16:54:45.84",
+        "planType": "DTPT",
+        "planNo": "PL1307593141",
+        "stepCode": "Gói thầu 163 thuộc kế hoạch lựa chọn nhà thầu LTYY Xây lắp h",
+        "type": "es-notify-contractor",
+        "statusForNotify": "",
+        "numPetition": 9,
+        "numClarifyReq": 1,
+        "numBidderTech": 6,
+        "bidId": "8d7092235c70b08329eda50e9fbf4a68",
+        "createdBy": "vn865315648",
+        "bidPrice": [
+          54305262832.01
+        ],
+        "numPetitionHsmt": 3,
+        "numPetitionLcnt": 7,
+        "numPetitionKqlcnt": 3,
+        "score": "Tư vấn giám sát gói 377 dự án MSYL",
+        "workType": "TTT",
+        "isDomestic": 7
+      }
+    ],
+    "totalPages": 1807,
+    "pageSize": 10,
+    "currentPage": 2,
+    "totalElements": 28844,
+    "sort": null,
+    "first": true,
+    "last": false,
+    "empty": false
+  }
+}

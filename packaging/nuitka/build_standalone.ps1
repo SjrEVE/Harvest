@@ -1,0 +1,109 @@
+# G0-A / A8 packaging spike - Nuitka standalone build.
+# ASCII-only source: Windows PowerShell 5.1 mis-parses non-BOM UTF-8 with diacritics.
+#
+# Builds two executables into build/nuitka/<name>.dist:
+#   SanThauDataStudio.exe  Qt Quick/QML viewer
+#   SanThauCollector.exe   headless fake worker (no Qt)
+#
+# Usage: powershell -ExecutionPolicy Bypass -File packaging/nuitka/build_standalone.ps1
+
+$ErrorActionPreference = 'Stop'
+$Repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+Set-Location $Repo
+
+$Py = Join-Path $Repo '.venv\Scripts\python.exe'
+if (-not (Test-Path $Py)) { throw "missing venv python: $Py" }
+
+$Out = Join-Path $Repo 'build\nuitka'
+New-Item -ItemType Directory -Force -Path $Out | Out-Null
+
+# Clear previous outputs before building. Doing it afterwards races with any process
+# still holding the folder (a shell whose cwd is inside it, or a running exe), which
+# leaves a half-deleted dist behind.
+foreach ($stale in @('app_main.dist', 'worker_main.dist', 'SanThauDataStudio.dist', 'SanThauCollector.dist')) {
+    $path = Join-Path $Out $stale
+    if (Test-Path $path) { Remove-Item -Recurse -Force $path }
+}
+
+Write-Host '--- building SanThauDataStudio.exe (Qt Quick/QML) ---'
+& $Py -m nuitka `
+    --standalone `
+    --assume-yes-for-downloads `
+    --enable-plugin=pyside6 `
+    --windows-console-mode=disable `
+    --windows-company-name='Gia Su AI' `
+    --windows-product-name='San Thau Data Studio' `
+    --windows-file-version=0.0.1 `
+    --windows-product-version=0.0.1 `
+    --include-qt-plugins=qml,platforms,imageformats,styles `
+    --include-data-dir=src/santhau_studio/desktop/qml=qml `
+    --output-dir=$Out `
+    --output-filename=SanThauDataStudio.exe `
+    --remove-output `
+    src/santhau_studio/app_main.py
+if ($LASTEXITCODE -ne 0) { throw "nuitka app build failed: $LASTEXITCODE" }
+
+Write-Host '--- building SanThauCollector.exe (headless worker) ---'
+& $Py -m nuitka `
+    --standalone `
+    --assume-yes-for-downloads `
+    --enable-plugin=no-qt `
+    --windows-console-mode=disable `
+    --windows-company-name='Gia Su AI' `
+    --windows-product-name='San Thau Data Studio Collector' `
+    --windows-file-version=0.0.1 `
+    --windows-product-version=0.0.1 `
+    --output-dir=$Out `
+    --output-filename=SanThauCollector.exe `
+    --remove-output `
+    src/santhau_studio/worker_main.py
+if ($LASTEXITCODE -ne 0) { throw "nuitka worker build failed: $LASTEXITCODE" }
+
+# Nuitka names each dist folder after the entry module; rename to product names so
+# the Inno input matches the §2.2 topology.
+$Renames = @(
+    @{ From = 'app_main.dist';    To = 'SanThauDataStudio.dist' },
+    @{ From = 'worker_main.dist'; To = 'SanThauCollector.dist' }
+)
+foreach ($rename in $Renames) {
+    $source = Join-Path $Out $rename.From
+    $target = Join-Path $Out $rename.To
+    if (Test-Path $source) {
+        if (Test-Path $target) { Remove-Item -Recurse -Force $target }
+        Move-Item -Path $source -Destination $target
+    }
+    if (-not (Test-Path $target)) { throw "dist folder missing: $target" }
+    $files = (Get-ChildItem -Recurse -File $target | Measure-Object).Count
+    $bytes = (Get-ChildItem -Recurse -File $target | Measure-Object -Sum Length).Sum
+    Write-Host ("dist {0}: files={1} bytes={2:N0}" -f $rename.To, $files, $bytes)
+}
+Write-Host 'BUILD_OK'
+
+# --- assemble a single deployment folder -------------------------------------
+# The product topology puts SanThauDataStudio.exe and SanThauCollector.exe in one
+# directory, so the GUI can find the worker as a sibling. Two Nuitka dist folders
+# are merged here; shared runtimes (python312.dll, msvcp140*.dll) are identical
+# between them, so the app copy wins and the collector copy is skipped on conflict.
+$Stage = Join-Path $Repo 'build\stage'
+if (Test-Path $Stage) { Remove-Item -Recurse -Force $Stage }
+New-Item -ItemType Directory -Force -Path $Stage | Out-Null
+
+foreach ($source in @('SanThauDataStudio.dist', 'SanThauCollector.dist')) {
+    $root = Join-Path $Out $source
+    Get-ChildItem -Recurse -File $root | ForEach-Object {
+        $relative = $_.FullName.Substring($root.Length).TrimStart('\')
+        $target = Join-Path $Stage $relative
+        if (Test-Path $target) { return }
+        $parent = Split-Path -Parent $target
+        if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+        Copy-Item -LiteralPath $_.FullName -Destination $target
+    }
+}
+
+foreach ($required in @('SanThauDataStudio.exe', 'SanThauCollector.exe', 'qml\Main.qml')) {
+    if (-not (Test-Path (Join-Path $Stage $required))) { throw "stage missing $required" }
+}
+$stageFiles = (Get-ChildItem -Recurse -File $Stage | Measure-Object).Count
+$stageBytes = (Get-ChildItem -Recurse -File $Stage | Measure-Object -Sum Length).Sum
+Write-Host ("stage {0}: files={1} bytes={2:N0}" -f $Stage, $stageFiles, $stageBytes)
+Write-Host 'ASSEMBLE_OK'
