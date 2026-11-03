@@ -16,6 +16,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuick import QQuickWindow
 
 from santhau_studio.desktop.backend import StudioBackend, default_data_root
 from santhau_studio.desktop.bridge import BackendBridge
@@ -46,29 +47,24 @@ def qml_entry_point() -> Path | None:
 
 
 class WindowGrabber(QObject):
-    """Expose QML window capture to the smoke path without QML-side knowledge of the test."""
+    """Render the QML scene itself for the smoke proof.
+
+    `QScreen.grabWindow(hwnd)` returns whatever is on top when the window is not the foreground
+    surface — during automated runs that was another application, so the screenshot was not proof
+    of this UI. `QQuickWindow.grabWindow()` renders the scene contents and works obscured.
+    """
 
     def __init__(self, app: QGuiApplication, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._app = app
 
     def grab(self, root: object, shot: Path) -> str:
-        root.raise_()
-        root.requestActivate()
-        for _ in range(40):
+        for _ in range(20):
             self._app.processEvents()
-        if not root.isVisible():
+        if not isinstance(root, QQuickWindow) or not root.isVisible():
             return ""
-        win_id = int(root.winId())
-        if win_id == 0:
-            return ""
-        screen = root.screen()
-        if screen is None:
-            return ""
-        image = screen.grabWindow(win_id).toImage()
+        image = root.grabWindow()
         if image.isNull():
-            return ""
-        if (image.width(), image.height()) != (int(root.width()), int(root.height())):
             return ""
         image.save(str(shot))
         return f"{image.width()}x{image.height()}"
@@ -78,6 +74,8 @@ def main(argv: list[str] | None = None) -> int:
     force_utf8_stdout()
     argv = list(sys.argv if argv is None else argv)
     data_root, argv = _take_data_root(argv)
+    smoke_page, argv = _take_int_flag(argv, "--smoke-page", 0)
+    smoke_record, argv = _take_int_flag(argv, "--smoke-record", 0)
     smoke_shot = _take_smoke_args(argv)
 
     app = QGuiApplication(argv)
@@ -99,6 +97,9 @@ def main(argv: list[str] | None = None) -> int:
 
     root = engine.rootObjects()[0]
     if smoke_shot is not None:
+        if smoke_record:
+            root.setProperty("detailRecordId", int(smoke_record))
+        root.setProperty("pageIndex", int(smoke_page))
         return _run_smoke(app, root, backend, Path(smoke_shot))
     return app.exec()
 
@@ -111,6 +112,19 @@ def _take_data_root(argv: list[str]) -> tuple[Path | None, list[str]]:
     if index < len(argv) and not argv[index].startswith("-"):
         return Path(argv.pop(index)), argv
     return default_data_root(), argv
+
+
+def _take_int_flag(argv: list[str], flag: str, default: int) -> tuple[int, list[str]]:
+    if flag not in argv:
+        return default, argv
+    index = argv.index(flag)
+    argv.pop(index)
+    if index < len(argv):
+        try:
+            return int(argv.pop(index)), argv
+        except ValueError:
+            return default, argv
+    return default, argv
 
 
 def _take_smoke_args(argv: list[str]) -> str | None:

@@ -150,7 +150,7 @@ class StudioBackend:
         }
         if held:
             try:
-                client = PipeClient.connect(worker_pipe_name(), timeout_seconds=0.5)
+                client = PipeClient.connect(worker_pipe_name(data_root=self.data_root), timeout_seconds=0.5)
                 try:
                     payload["pipe_ok"] = bool(client.request({"op": "ping"}).get("ok"))
                 finally:
@@ -197,7 +197,7 @@ class StudioBackend:
 
     def job_status(self, job_id: str) -> dict[str, Any]:
         try:
-            client = PipeClient.connect(worker_pipe_name(), timeout_seconds=1.0)
+            client = PipeClient.connect(worker_pipe_name(data_root=self.data_root), timeout_seconds=1.0)
         except (PipeTransportError, OSError) as exc:
             return {"ok": False, "error": f"worker unreachable: {type(exc).__name__}"}
         try:
@@ -259,7 +259,7 @@ class StudioBackend:
 
     def worker_command(self, command: str, job_id: str | None = None) -> dict[str, Any]:
         try:
-            client = PipeClient.connect(worker_pipe_name(), timeout_seconds=1.0)
+            client = PipeClient.connect(worker_pipe_name(data_root=self.data_root), timeout_seconds=1.0)
         except (PipeTransportError, OSError) as exc:
             return {"ok": False, "error": f"worker unreachable: {type(exc).__name__}"}
         try:
@@ -415,6 +415,10 @@ class StudioBackend:
             limit = min(max(int(payload.get("limit", 50)), 1), SEARCH_LIMIT_MAX)
         except (TypeError, ValueError):
             limit = 50
+        try:
+            offset = max(int(payload.get("offset", 0)), 0)
+        except (TypeError, ValueError):
+            offset = 0
         fts = _fts_query(text)
         if not fts:
             return {"query": text, "hits": [], "note": "EMPTY_QUERY"}
@@ -436,13 +440,14 @@ class StudioBackend:
                         "   SELECT id FROM source_record_versions WHERE source_record_id = s.record_id"
                         "   ORDER BY content_version_seq DESC LIMIT 1)"
                         " WHERE search_index MATCH ?1 AND (?2 IS NULL OR s.family = ?2)"
-                        " ORDER BY rank LIMIT ?3",
-                        (fts, fold_vietnamese(family) if family else None, limit),
+                        " ORDER BY rank LIMIT ?3 OFFSET ?4",
+                        (fts, fold_vietnamese(family) if family else None, limit, offset),
                     )
                 ]
             except sqlite3.Error as exc:
                 return {"query": text, "hits": [], "error": f"{type(exc).__name__}: {exc}"}
-        return {"query": text, "hits": hits, "note": None if hits else "NO_MATCH"}
+        return {"query": text, "hits": hits, "offset": offset, "limit": limit,
+                "note": None if hits else "NO_MATCH"}
 
     # ------------------------------------------------------------------ UI-07 record detail
 
@@ -644,7 +649,7 @@ class StudioBackend:
             "backups": self._backups(),
             "app_version": APP_VERSION,
             "data_root": str(self.data_root),
-            "worker_pipe": worker_pipe_name(),
+            "worker_pipe": worker_pipe_name(data_root=self.data_root),
             "settings": [],
         }
         if conn is None:

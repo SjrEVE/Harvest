@@ -20,6 +20,7 @@ Framing is line-delimited JSON over a byte-mode pipe; nothing here interprets pa
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
@@ -33,6 +34,7 @@ if sys.platform != "win32":  # pragma: no cover - the product ships on Windows o
 
 import ctypes
 import getpass
+from pathlib import Path
 
 from santhau_studio.platform_win.process import sid_from_token
 
@@ -117,11 +119,20 @@ class PipeClosedError(PipeTransportError):
 Handler = Callable[[dict, str], dict]
 
 
-def worker_pipe_name(user: str | None = None) -> str:
-    """The per-user control pipe name; the SDDL keeps it ours even in the shared namespace."""
+def worker_pipe_name(user: str | None = None, *, data_root: str | Path | None = None) -> str:
+    """Per-user, per-data-root control pipe name.
+
+    Two workers on the same machine must not collide when they serve different data roots
+    (§2.2 allows one writer *per root*, not per machine), so the root path is folded into the
+    name. The SDDL still restricts the pipe to one user; the name never carries the path itself.
+    """
     raw = user if user is not None else getpass.getuser()
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", raw)[:40] or "local"
-    return f"\\\\.\\pipe\\santhau-studio-{safe}-worker"
+    scope = ""
+    if data_root is not None:
+        folded = str(Path(data_root).resolve()).casefold().encode("utf-8")
+        scope = "-" + hashlib.sha256(folded).hexdigest()[:12]
+    return f"\\\\.\\pipe\\santhau-studio-{safe}{scope}-worker"
 
 
 def client_sid(handle: wintypes.HANDLE) -> str | None:

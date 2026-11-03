@@ -75,6 +75,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--data-root", required=True, type=Path)
     parser.add_argument("--page-source-file", type=Path, default=None)
     parser.add_argument("--poll-seconds", type=float, default=0.05)
+    parser.add_argument("--scheduled", action="store_true", help="khởi chạy bởi Task Scheduler")
+    parser.add_argument("--profile", default="default")
+    parser.add_argument("--idle-exit-seconds", type=float, default=None,
+                        help="thoát khi hàng đợi trống đủ lâu (scheduled runs)")
     args = parser.parse_args(argv)
 
     sid = current_process_sid()
@@ -89,13 +93,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             _log_failure(args.data_root, f"page source module unusable: {args.page_source_file}")
             return EXIT_BAD_PAGE_SOURCE
 
-    loop = WorkerLoop(args.data_root, page_source_builder=builder, poll_seconds=args.poll_seconds)
+    loop = WorkerLoop(
+        args.data_root,
+        page_source_builder=builder,
+        poll_seconds=args.poll_seconds,
+        idle_exit_seconds=args.idle_exit_seconds,
+    )
     controller = WorkerController(loop)
     try:
-        server = PipeServer(worker_pipe_name(), allowed_sid=sid, handler=controller)
+        server = PipeServer(worker_pipe_name(data_root=args.data_root), allowed_sid=sid, handler=controller)
     except PipeNameConflictError:
-        _log_failure(args.data_root, f"pipe {worker_pipe_name()} is already owned by another process")
-        print(f"pipe {worker_pipe_name()} is already owned by another process", file=sys.stderr)
+        _log_failure(args.data_root, f"pipe {worker_pipe_name(data_root=args.data_root)} is already owned by another process")
+        print(f"pipe {worker_pipe_name(data_root=args.data_root)} is already owned by another process", file=sys.stderr)
         return EXIT_PIPE_CONFLICT
 
     stop = threading.Event()
@@ -110,6 +119,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     controller.close()
     if loop.exit_code != 0:
         _log_failure(args.data_root, f"worker loop exit {loop.exit_code}\n{loop.last_error or ''}")
+    if args.scheduled and loop.exit_code == EXIT_DATA_ROOT_BUSY:
+        # A scheduled launch that finds a live worker is not a failure: the morning run may still
+        # be working, or the user started one interactively. Skip cleanly and record why.
+        _log_failure(args.data_root, "scheduled run skipped: data root already busy")
+        return 0
     return loop.exit_code
 
 

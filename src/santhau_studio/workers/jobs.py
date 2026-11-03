@@ -25,11 +25,13 @@ Lifecycle rules enforced here:
 from __future__ import annotations
 
 import json
+import os
 import queue
 import re
 import sqlite3
 import sys
 import threading
+import time
 import traceback
 import uuid
 from collections.abc import Callable
@@ -41,6 +43,7 @@ from typing import Any
 from santhau_studio.collectors.source_registry import SOURCES
 from santhau_studio.domain.coverage import Interval
 from santhau_studio.platform_win.os_lock import DataRootBusy
+from santhau_studio.storage.rawstore import LAYOUT_SEGMENTS
 from santhau_studio.storage.warehouse import WarehouseWriter, connect_read_only
 from santhau_studio.workers.runner import IntervalOutcome, PageSource, Runner
 
@@ -293,6 +296,7 @@ class WorkerLoop:
         page_source_builder: PageSourceBuilder | None = None,
         poll_seconds: float = 0.05,
         clock: Clock | None = None,
+        idle_exit_seconds: float | None = None,
     ) -> None:
         self.data_root = Path(data_root)
         self.flag = CommandFlag()
@@ -301,6 +305,8 @@ class WorkerLoop:
         self._builder = page_source_builder
         self._poll = poll_seconds
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._idle_exit = idle_exit_seconds
+        self._idle_since = time.monotonic()
         self._commands: queue.Queue[Command] = queue.Queue()
         self._writer: WarehouseWriter | None = None
         self._current: JobRequest | None = None
@@ -325,7 +331,12 @@ class WorkerLoop:
     def run(self, stop: threading.Event | None = None) -> None:
         stop = stop or threading.Event()
         try:
-            self._writer = WarehouseWriter.open(self.data_root, create_schema=True, role="worker")
+            # Production ingest writes the measured layout (segments); the environment can
+            # still pin a root to the legacy object layout for comparison or recovery drills.
+            layout = os.environ.get("SANTHAU_RAW_LAYOUT", LAYOUT_SEGMENTS)
+            self._writer = WarehouseWriter.open(
+                self.data_root, create_schema=True, role="worker", raw_layout=layout
+            )
         except Exception as exc:
             self.exit_code = 3 if isinstance(exc, DataRootBusy) else 1
             self.last_error = f"{type(exc).__name__}: {exc}"
@@ -336,10 +347,15 @@ class WorkerLoop:
                 self._drain_commands()
                 if stop.is_set() or self.flag.shutdown_requested:
                     break
+                if self._idle_exit is not None and time.monotonic() - self._idle_since >= self._idle_exit:
+                    # Scheduled runs must end when the queue has been empty long enough, or the
+                    # 20:00 trigger would be ignored as a second instance forever.
+                    break
                 request = claim_next_job(self.data_root)
                 if request is None:
                     stop.wait(self._poll)
                     continue
+                self._idle_since = time.monotonic()
                 self._execute(request)
         except Exception:
             self.exit_code = 1

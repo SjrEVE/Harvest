@@ -303,3 +303,36 @@ def test_serving_snapshot_and_ui_read_all_six_families(tmp_path: Path) -> None:
 
     with contextlib.closing(sqlite3.connect(root / "serving.sqlite")) as conn:
         assert conn.execute("SELECT COUNT(*) FROM search_index").fetchone()[0] == EXPECTED_ROWS * 6
+
+
+def test_pipeline_over_the_segment_layout(tmp_path: Path) -> None:
+    """The production ingest layout (segments) carries the same proof and serving guarantees."""
+    root = tmp_path / "data"
+    writer = WarehouseWriter.open(root, create_schema=True, role="e2e", raw_layout="segments")
+    try:
+        writer.conn.execute(
+            "INSERT OR IGNORE INTO filter_boundary_rules (rule_key, rule_version, source_key, family, endpoint,"
+            " adapter_sha, boundary_kind, precision, source_timezone, offset_minutes, conversion_params,"
+            " canary_verified, verified_at_utc) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("e2e-seg", 1, SOURCE_EGP_HOME, "TBMT", ENDPOINT, ADAPTER_SHA,
+             "CLOSED_LOCAL", "DAY", "Asia/Ho_Chi_Minh", 420, '{"to_minus":"1s"}', 1,
+             "2026-10-31T00:00:00Z"),
+        )
+        writer.conn.commit()
+        writer.register_run("run-seg", "job-seg", "BACKFILL")
+        outcomes = make_runner(writer, "TBMT", FakePortal()).backfill("run-seg", DAY)
+        assert outcomes[0].status == "COMPLETE", outcomes[0].blockers
+        assert (root / "raw" / "segments").is_dir()
+        assert not list((root / "raw" / "objects").rglob("*.bin.gz")), "new bytes go to segments"
+        rows = writer.conn.execute(
+            "SELECT o.response_object_sha, o.record_object_sha FROM observations o LIMIT 3"
+        ).fetchall()
+        for row in rows:
+            for sha in row:
+                writer.store.read(sha)  # segment read + hash verification
+        report = writer.store.recover(writer.conn)
+        assert report.missing_files == () and report.unreadable == ()
+        count, bad = writer.store.segments.verify_all()
+        assert count == 2 + EXPECTED_ROWS and bad == ()  # two page payloads + 13 records
+    finally:
+        writer.close()

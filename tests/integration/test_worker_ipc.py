@@ -583,7 +583,7 @@ def test_subprocess_worker_survives_gui_close_and_refuses_a_second_worker(root, 
                 stderr = worker.stderr.read().decode(errors="replace") if worker.stderr else ""
                 pytest.fail(f"worker exited early rc={worker.returncode}: {stderr[-800:]}")
             try:
-                client = PipeClient.connect(worker_pipe_name(), timeout_seconds=0.5)
+                client = PipeClient.connect(worker_pipe_name(data_root=root), timeout_seconds=0.5)
             except PipeTransportError:
                 time.sleep(0.1)
         assert client is not None, "worker pipe never became ready"
@@ -616,7 +616,7 @@ def test_subprocess_worker_survives_gui_close_and_refuses_a_second_worker(root, 
             if second.poll() is None:
                 _kill_tree(second)
 
-        client = PipeClient.connect(worker_pipe_name(), timeout_seconds=20)
+        client = PipeClient.connect(worker_pipe_name(data_root=root), timeout_seconds=20)
         try:
             status = client.request({"op": "status", "job_id": request.job_id})
             assert status["runs"][0]["status"] == "COMPLETED"  # reopen attaches, nothing was lost
@@ -628,7 +628,7 @@ def test_subprocess_worker_survives_gui_close_and_refuses_a_second_worker(root, 
         # what attach needs is a live pid it can name, not the Popen handle.
         assert holder is not None and holder["role"] == "worker" and pid_alive(holder["pid"])
 
-        client = PipeClient.connect(worker_pipe_name(), timeout_seconds=20)
+        client = PipeClient.connect(worker_pipe_name(data_root=root), timeout_seconds=20)
         try:
             assert client.request({"op": "command", "command": "FORCE_TERMINATE", "job_id": request.job_id})["ok"]
         finally:

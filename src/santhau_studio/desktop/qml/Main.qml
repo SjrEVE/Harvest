@@ -36,9 +36,13 @@ Window {
             color: "#181d23"
 
             Column {
+                id: navColumn
                 anchors.fill: parent
                 anchors.margins: 12
                 spacing: 6
+                focus: true
+                Keys.onDownPressed: root.pageIndex = Math.min(root.pageIndex + 1, root.navItems.length - 1)
+                Keys.onUpPressed: root.pageIndex = Math.max(root.pageIndex - 1, 0)
 
                 Text {
                     text: "SĂN THẦU"
@@ -235,6 +239,12 @@ Window {
                             text: "Chưa có dữ liệu trong serving snapshot."
                             color: "#8b959f"
                             font.pixelSize: 12
+                        }
+                        Text {
+                            visible: !!page2.state.error
+                            text: page2.state.error || ""
+                            color: "#e07a7a"
+                            font.pixelSize: 11
                         }
                         Item { Layout.fillHeight: true }
                     }
@@ -537,9 +547,18 @@ Window {
                 Item {
                     id: page6
                     property var state: ({ hits: [] })
-                    function run() { state = root.parse(backend.search(JSON.stringify({
-                        text: queryField.text, family: familyBox.text, limit: 50
-                    }))) }
+                    function run() {
+                        state = root.parse(backend.search(JSON.stringify({
+                            text: queryField.text, family: familyBox.text, limit: 50, offset: 0
+                        })))
+                    }
+                    function loadMore() {
+                        var next = root.parse(backend.search(JSON.stringify({
+                            text: queryField.text, family: familyBox.text, limit: 50,
+                            offset: (state.hits || []).length
+                        })))
+                        state = { hits: (state.hits || []).concat(next.hits || []), note: next.note }
+                    }
 
                     ColumnLayout {
                         anchors.fill: parent
@@ -564,9 +583,16 @@ Window {
                                 background: Rectangle { color: "#20262d"; border.color: "#333c45"; radius: 4 }
                             }
                             Button { text: "Tìm"; onClicked: page6.run() }
+                            Button { text: "Tải thêm"; onClicked: page6.loadMore() }
                         }
 
                         Text { text: page6.state.note || ""; color: "#8b959f"; font.pixelSize: 11 }
+                        Text {
+                            visible: !!page6.state.error
+                            text: page6.state.error || ""
+                            color: "#e07a7a"
+                            font.pixelSize: 11
+                        }
                         Repeater {
                             model: page6.state.hits || []
                             delegate: Rectangle {
