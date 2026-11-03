@@ -45,8 +45,9 @@ Write-Host '--- building SanThauDataStudio.exe (Qt Quick/QML) ---'
     --windows-console-mode=disable `
     --windows-company-name='Gia Su AI' `
     --windows-product-name='San Thau Data Studio' `
-    --windows-file-version=0.0.1 `
-    --windows-product-version=0.0.1 `
+    --windows-file-version=0.0.1.3 `
+    --windows-product-version=0.0.1.3 `
+    --windows-file-description='San Thau Data Studio 0.0.1-RC3' `
     --include-qt-plugins=qml,platforms,imageformats,styles `
     --include-data-dir=src/santhau_studio/desktop/qml=qml `
     --output-dir=$Out `
@@ -63,8 +64,9 @@ Write-Host '--- building SanThauCollector.exe (headless worker) ---'
     --windows-console-mode=disable `
     --windows-company-name='Gia Su AI' `
     --windows-product-name='San Thau Data Studio Collector' `
-    --windows-file-version=0.0.1 `
-    --windows-product-version=0.0.1 `
+    --windows-file-version=0.0.1.3 `
+    --windows-product-version=0.0.1.3 `
+    --windows-file-description='San Thau Data Studio Collector 0.0.1-RC3' `
     --include-data-files=docs/ddl/g0_b_proposed.sql=docs/ddl/g0_b_proposed.sql `
     --output-dir=$Out `
     --output-filename=SanThauCollector.exe `

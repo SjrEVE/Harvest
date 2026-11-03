@@ -8,7 +8,8 @@
 ; Build:  iscc /DStageDir=<absolute path to build\stage> packaging\inno\santhau-data-studio.iss
 
 #define MyAppName      "Săn Thầu — Kho dữ liệu"
-#define MyAppVersion   "0.0.1"
+#define MyAppVersion   "0.0.1-RC3"
+#define MyWindowsVersion "0.0.1.3"
 #define MyAppPublisher "Gia Su AI"
 #define MyAppExeName   "SanThauDataStudio.exe"
 
@@ -20,6 +21,11 @@
 AppId={{7C1F4D9E-8A2B-4F6C-9D31-0E5B7A2C4F88}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+AppVerName={#MyAppName} {#MyAppVersion}
+VersionInfoVersion={#MyWindowsVersion}
+VersionInfoTextVersion={#MyAppVersion}
+VersionInfoProductVersion={#MyWindowsVersion}
+VersionInfoProductTextVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL=https://tutor.ai.vn
 DefaultDirName={localappdata}\Programs\SanThauDataStudio
@@ -38,7 +44,8 @@ WizardStyle=modern
 ; The spike must not pretend to be a signed release.
 ; Authenticode is mandatory at G4, not here.
 DisableWelcomePage=no
-UninstallDisplayName={#MyAppName}
+UninstallDisplayName={#MyAppName} {#MyAppVersion}
+UninstallDisplayIcon={app}\{#MyAppExeName}
 ; Never delete the user's data root on uninstall (a §11 hard fail condition).
 UninstallFilesDir={app}
 ; Without these, uninstalling while the app or collector is running leaves every
