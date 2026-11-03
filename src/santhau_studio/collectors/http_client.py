@@ -55,14 +55,19 @@ _BASE_HEADERS = {
 class AccessBlocked(RuntimeError):
     """The source refused access (401/403/CAPTCHA). Never retried, never faked (§6)."""
 
+    def __init__(self, message, *, attempt_log=()):
+        super().__init__(message)
+        self.attempt_log = tuple(attempt_log)
+
 
 class FetchFailed(RuntimeError):
     """Bounded retries exhausted, or the response was not a usable JSON object."""
 
-    def __init__(self, message: str, *, verdict: Verdict | None = None, attempts: int = 0) -> None:
+    def __init__(self, message: str, *, verdict: Verdict | None = None, attempts: int = 0, attempt_log=()) -> None:
         super().__init__(message)
         self.verdict = verdict
         self.attempts = attempts
+        self.attempt_log = tuple(attempt_log)
 
 
 class InsecureRequest(RuntimeError):
@@ -126,6 +131,7 @@ class FetchLane:
         sleeper: Callable[[float], None] = time.sleep,
         pacing_sleeper: Callable[[float], None] | None = None,
         clock: Callable[[], float] = time.monotonic,
+        budget=None,
     ) -> None:
         self.url = url
         self.source_key = source_key
@@ -137,6 +143,7 @@ class FetchLane:
         # separately: a test that records backoff must not have pacing waits mixed into it.
         self._pacing_sleeper = pacing_sleeper or sleeper
         self._clock = clock
+        self.budget = budget
         self._own_client = client is None
         self._client = client or httpx.Client(
             headers=portal_headers(self.host),
@@ -178,16 +185,23 @@ class FetchLane:
         last_error: str | None = None
         last_verdict: Verdict | None = None
         for attempt_no in range(1, self.retry.max_attempts + 1):
+            if self.budget:
+                self.budget.check()
             record = Attempt(attempt_no=attempt_no, started_at_utc=_now_utc())
             started = self._clock()
-            record.wait_seconds = self.limiter.acquire(min_interval=min_interval, sleeper=self._pacing_sleeper)
+            wait = self._pacing_sleeper if not self.budget else lambda seconds: self.budget.sleep(seconds, self._pacing_sleeper)
+            record.wait_seconds = self.limiter.acquire(min_interval=min_interval, sleeper=wait)
             try:
                 if self._own_client:
                     with HostRequestGate(self.host, max(self.limiter.floor, min_interval or 0.0)) as gate:
+                        if self.budget:
+                            self.budget.consume()
                         response = self._client.post(self.url, json=body)
                         if response.status_code == 429:
                             gate.defer(parse_retry_after(response.headers.get("Retry-After")))
                 else:
+                    if self.budget:
+                        self.budget.consume()
                     response = self._client.post(self.url, json=body)
             except httpx.HTTPError as exc:
                 # Transport failure: bounded retry, but the message is scrubbed before it can
@@ -201,9 +215,9 @@ class FetchLane:
                     raise FetchFailed(
                         f"{self.source_key}: {self.retry.max_attempts} attempts failed, last {last_error}",
                         verdict=last_verdict,
-                        attempts=attempt_no,
+                        attempts=attempt_no, attempt_log=attempts,
                     ) from exc
-                self._sleeper(self.retry.delay_for(attempt_no, None))
+                self._backoff(self.retry.delay_for(attempt_no, None), attempts)
                 continue
             finally:
                 # A cookie jar that fills up is an unintended session on a session-free channel.
@@ -222,7 +236,7 @@ class FetchLane:
                 record.outcome = "BLOCKED"
                 record.error_kind = verdict.reason
                 attempts.append(record)
-                raise AccessBlocked(f"{self.source_key} refused access ({verdict.reason})")
+                raise AccessBlocked(f"{self.source_key} refused access ({verdict.reason})", attempt_log=attempts)
             if verdict.kind == "BLOCKED":
                 record.outcome = "BLOCKED"
                 record.error_kind = verdict.reason
@@ -230,7 +244,7 @@ class FetchLane:
                 raise FetchFailed(
                     f"{self.source_key}: {verdict.reason} (HTTP {response.status_code})",
                     verdict=verdict,
-                    attempts=attempt_no,
+                    attempts=attempt_no, attempt_log=attempts,
                 )
             if verdict.kind == "RETRY":
                 record.outcome = "RETRY"
@@ -244,9 +258,9 @@ class FetchLane:
                     raise FetchFailed(
                         f"{self.source_key}: {verdict.reason} persisted over {attempt_no} attempts",
                         verdict=verdict,
-                        attempts=attempt_no,
+                        attempts=attempt_no, attempt_log=attempts,
                     )
-                self._sleeper(delay)
+                self._backoff(delay, attempts)
                 continue
 
             try:
@@ -258,13 +272,13 @@ class FetchLane:
                 raise FetchFailed(
                     f"{self.source_key}: response is not JSON ({type(exc).__name__})",
                     verdict=verdict,
-                    attempts=attempt_no,
+                    attempts=attempt_no, attempt_log=attempts,
                 ) from exc
             if not isinstance(payload, (dict, list)):
                 record.outcome = "MALFORMED"
                 record.error_kind = "SCHEMA_MISMATCH"
                 attempts.append(record)
-                raise FetchFailed(f"{self.source_key}: JSON payload is not an object or array")
+                raise FetchFailed(f"{self.source_key}: JSON payload is not an object or array", attempt_log=attempts)
             record.outcome = "OK"
             attempts.append(record)
             return FetchOutcome(payload=payload, verdict=verdict, attempts=attempts,
@@ -275,6 +289,16 @@ class FetchLane:
             verdict=last_verdict,
             attempts=len(attempts),
         )
+
+    def _backoff(self, delay, attempts):
+        try:
+            if self.budget:
+                self.budget.sleep(delay, self._sleeper)
+            else:
+                self._sleeper(delay)
+        except FetchFailed as exc:
+            exc.attempt_log = tuple(attempts)
+            raise
 
 
 def _now_utc() -> str:

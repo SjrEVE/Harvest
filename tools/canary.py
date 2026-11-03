@@ -24,7 +24,7 @@ from santhau_studio.collectors.source_registry import FAMILY_ORDER, SOURCE_EGP_H
 from santhau_studio.domain.coverage import vn_calendar_day
 from santhau_studio.storage import coverage
 from santhau_studio.storage.warehouse import WarehouseWriter
-from santhau_studio.workers.runner import Runner
+from santhau_studio.workers.runner import RunLimits, Runner
 
 ADAPTER_SHA_ENV = "SANTHAU_CANARY_ADAPTER_SHA"
 APPROVAL_ENV = "SANTHAU_CANARY_APPROVED"
@@ -58,17 +58,20 @@ def print_plan(day: str | None) -> int:
               f" --data-root <root> --execute")
         print("  expected: probe ok (rows/total readable, no date filter sent);")
         print("            collect -> intervals COMPLETE with proof, canary_state=COLLECTION_PROVEN")
+    from santhau_studio.workers.deep_run import LANE_READINESS, LIVE_BLOCK_REASON
+    print("\n# Deep lanes: owner-approved endpoint/shape evidence is required before execution")
+    print({"lanes": LANE_READINESS, "reason": LIVE_BLOCK_REASON})
     return 0
 
 
-def _approved() -> str | None:
-    if "--execute" not in sys.argv:
+def _approved(args) -> str | None:
+    if not args.execute:
         return None
     return os.environ.get(APPROVAL_ENV) or None
 
 
 def run_probe(args: argparse.Namespace) -> int:
-    owner = _approved()
+    owner = _approved(args)
     if owner is None:
         print(f"REFUSED: pass --execute with {APPROVAL_ENV}=<owner> to touch the real source",
               file=sys.stderr)
@@ -79,7 +82,11 @@ def run_probe(args: argparse.Namespace) -> int:
         return EXIT_REFUSED
     writer = WarehouseWriter.open(args.data_root, create_schema=True, role="canary")
     try:
-        result = probe_family(writer, family=args.family, adapter_sha=adapter_sha)
+        from santhau_studio.collectors.budget import RequestBudget
+        from santhau_studio.collectors.http_client import FetchLane
+        budget = RequestBudget(args.max_requests, args.max_seconds)
+        result = probe_family(writer, family=args.family, adapter_sha=adapter_sha,
+            lane_factory=lambda _: FetchLane(url=SOURCES[SOURCE_EGP_HOME].endpoint, source_key=SOURCE_EGP_HOME, budget=budget))
     finally:
         writer.close()
     print(f"probe {args.family}: {result} (approved by {owner})")
@@ -87,7 +94,7 @@ def run_probe(args: argparse.Namespace) -> int:
 
 
 def run_collect(args: argparse.Namespace) -> int:
-    owner = _approved()
+    owner = _approved(args)
     if owner is None:
         print(f"REFUSED: pass --execute with {APPROVAL_ENV}=<owner>", file=sys.stderr)
         return EXIT_REFUSED
@@ -111,7 +118,8 @@ def run_collect(args: argparse.Namespace) -> int:
         runner = Runner(
             writer=writer, source_key=SOURCE_EGP_HOME, family=args.family,
             endpoint=SOURCES[SOURCE_EGP_HOME].endpoint, adapter_sha=adapter_sha,
-            page_source=_live_page_source(args.family),
+            page_source=_live_page_source(args.family, args),
+            limits=RunLimits(args.max_pages, args.max_pages * 100, 100), max_split_granularity="DAY",
         )
         outcomes = runner.backfill(run_id, day_interval)
         writer.finish_run(run_id, "COMPLETED" if all(o.status == "COMPLETE" for o in outcomes) else "PARTIAL")
@@ -123,10 +131,13 @@ def run_collect(args: argparse.Namespace) -> int:
         writer.close()
 
 
-def _live_page_source(family: str):
+def _live_page_source(family: str, args):
+    from santhau_studio.collectors.budget import RequestBudget
+    from santhau_studio.collectors.http_client import FetchLane
     from santhau_studio.collectors.lane_source import egp_page_source
-
-    return egp_page_source(family=family)
+    budget = RequestBudget(args.max_requests, args.max_seconds)
+    return egp_page_source(family=family, lane_factory=lambda: FetchLane(
+        url=SOURCES[SOURCE_EGP_HOME].endpoint, source_key=SOURCE_EGP_HOME, budget=budget))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -143,7 +154,14 @@ def main(argv: list[str] | None = None) -> int:
     collect.add_argument("--day")
     collect.add_argument("--data-root", type=Path, required=True)
     collect.set_defaults(func=run_collect)
+    for command in (probe, collect):
+        command.add_argument("--execute", action="store_true")
+        command.add_argument("--max-pages", type=int, default=3)
+        command.add_argument("--max-requests", type=int, default=9)
+        command.add_argument("--max-seconds", type=int, default=120)
     args = parser.parse_args(argv)
+    if args.command != "plan" and not (1 <= args.max_pages <= 10 and 1 <= args.max_requests <= 30 and 1 <= args.max_seconds <= 300):
+        parser.error("Canary bounds: pages 1..10, requests 1..30, seconds 1..300")
     if args.command == "plan":
         return print_plan(args.day)
     return args.func(args)

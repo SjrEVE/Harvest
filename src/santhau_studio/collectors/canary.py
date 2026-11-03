@@ -86,7 +86,7 @@ def record_probe_success(
         "rows": rows,
         "total": total,
         "shape_ok": shape_ok,
-        "state": RULE_VERIFIED,
+        "state": PROBE_UNVERIFIED,
     }
     conn.execute(
         "INSERT OR REPLACE INTO settings (key, value_json, updated_at_utc) VALUES (?,?,?)",

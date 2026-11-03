@@ -107,6 +107,9 @@ class DataRootLock:
                     continue
                 raise DataRootBusy(f"{self.path} is held by {_describe_holder(self.path)}") from None
             try:
+                if self.role == "probe":
+                    self._fd = fd
+                    return self
                 os.lseek(fd, 0, os.SEEK_SET)
                 os.ftruncate(fd, 0)
                 holder = LockHolder(os.getpid(), self.role, socket.gethostname() or "local", time.time())

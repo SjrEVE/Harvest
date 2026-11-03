@@ -48,3 +48,28 @@ def egp_page_source(
             home.close()
 
     return page_source
+
+
+def bounded_source(source, *, max_pages, max_records):
+    """Share a job cap across intervals, including adaptive splits."""
+    from santhau_studio.collectors.http_client import FetchFailed
+    pages = rows = 0
+    def walk(*args):
+        nonlocal pages, rows
+        iterator = source(*args)
+        try:
+            while True:
+                if pages >= max_pages or rows >= max_records:
+                    raise FetchFailed("JOB_PAGE_OR_RECORD_BUDGET_EXHAUSTED")
+                try:
+                    page = next(iterator)
+                except StopIteration:
+                    return
+                pages += 1
+                rows += page.rows
+                yield page
+        finally:
+            close = getattr(iterator, "close", None)
+            if close:
+                close()
+    return walk

@@ -16,7 +16,7 @@ from santhau_studio.storage.backup import create_backup, restore_backup
 from santhau_studio.storage.serving import build_serving_db
 from santhau_studio.storage.warehouse import WarehouseWriter, connect_read_only
 
-ACTIONS = ("backup", "restore", "verify", "export", "import-legacy", "inspect-legacy", "schedule-enable", "schedule-disable", "schedule-status")
+ACTIONS = ("backup", "restore", "verify", "export", "identity", "import-legacy", "inspect-legacy", "schedule-enable", "schedule-disable", "schedule-status")
 
 
 def _cell(value: object) -> str:
@@ -27,6 +27,12 @@ def _cell(value: object) -> str:
 def perform(action: str, root: Path, source: str | None = None) -> dict:
     root = Path(root)
     try:
+        if action == "identity":
+            from santhau_studio.storage.identity_actions import apply_action
+            with closing(WarehouseWriter.open(root, role="identity-review")) as writer:
+                result = apply_action(writer.conn, json.loads(source or '{}'))
+            published = build_serving_db(root / "warehouse.sqlite", root / "serving.sqlite")
+            return {**result, "snapshot_published": published.published}
         if action in ("import-legacy", "inspect-legacy"):
             from santhau_studio.storage.import_legacy import import_legacy, inspect_legacy
 
@@ -34,7 +40,11 @@ def perform(action: str, root: Path, source: str | None = None) -> dict:
                 return {"ok": False, "error": "Chọn thư mục kho harvester hoặc export bundle."}
             if action == "inspect-legacy":
                 return {"ok": True, **inspect_legacy(Path(source))}
-            result = import_legacy(Path(source), root)
+            def progress(value):
+                if sys.stdout is not None and value['seen'] % 100 == 0:
+                    print(json.dumps({"progress":value}),flush=True)
+            result = import_legacy(Path(source), root, progress=progress,
+                                   stop=lambda:(root / 'maintenance.cancel').exists())
             published = build_serving_db(root / "warehouse.sqlite", root / "serving.sqlite")
             return {"ok": result["status"] in ("IMPORTED", "ALREADY_IMPORTED") and published.published,
                     **result, "snapshot_published": published.published}

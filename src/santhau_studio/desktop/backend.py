@@ -21,6 +21,8 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+import threading
+import time
 import uuid
 from contextlib import closing
 from datetime import UTC, datetime
@@ -44,6 +46,7 @@ from santhau_studio.workers.jobs import JOB_KINDS, JobError, JobRequest, enqueue
 DISK_SCAN_LIMIT = 50_000
 SEARCH_LIMIT_MAX = 200
 APP_VERSION = "0.0.1"
+_PROBE_LOCK = threading.Lock()
 
 _TITLE_KEYS = ("title", "bidName", "planName", "projectName", "contractName", "name")
 _TITLE_SQL = "COALESCE(" + ", ".join(
@@ -75,6 +78,7 @@ class StudioBackend:
 
     def __init__(self, data_root: Path | str | None = None) -> None:
         self.data_root = Path(data_root) if data_root else default_data_root()
+        self._disk_cache = None
 
     # ------------------------------------------------------------------ plumbing
 
@@ -173,6 +177,11 @@ class StudioBackend:
         return payload
 
     def _lock_held(self) -> bool:
+        # Concurrent GUI reads must not mistake another GUI probe for a collector.
+        with _PROBE_LOCK:
+            return self._probe_lock()
+
+    def _probe_lock(self) -> bool:
         lock = DataRootLock(self.data_root, role="probe")
         try:
             lock.acquire()
@@ -249,8 +258,10 @@ class StudioBackend:
                 ),
                 scope=scope,
                 mode=str(payload.get("mode") or "interactive"),
+                request_limits=dict(payload.get("request_limits") or {}),
                 created_at=_now(),
             )
+            request.interval()
             path = enqueue_job(self.data_root, request)
         except (JobError, KeyError, ValueError) as exc:
             return {"ok": False, "error": str(exc)}
@@ -317,6 +328,8 @@ class StudioBackend:
         return payload
 
     def _disk_usage(self) -> dict[str, Any]:
+        if self._disk_cache and time.monotonic() - self._disk_cache[0] < 30:
+            return self._disk_cache[1]
         total = 0
         files = 0
         truncated = False
@@ -340,7 +353,9 @@ class StudioBackend:
                     truncated = True
                     stack.clear()
                     break
-        return {"bytes": total, "files": files, "sampled": truncated, "limit": DISK_SCAN_LIMIT}
+        result = {"bytes": total, "files": files, "sampled": truncated, "limit": DISK_SCAN_LIMIT}
+        self._disk_cache = (time.monotonic(), result)
+        return result
 
     # ------------------------------------------------------------------ UI-03 sources
 
@@ -367,7 +382,10 @@ class StudioBackend:
                 ]
             except sqlite3.Error as exc:
                 return {"present": True, "error": str(exc), "registry": [], "boundary_rules": []}
-        return {"present": True, "registry": registry, "boundary_rules": rules}
+        with closing(self._serving()) as conn:
+            from santhau_studio.desktop.diagnostics import source_evidence
+            extra = source_evidence(conn)
+        return {"present": True, "registry": registry, "boundary_rules": rules, **extra}
 
     # ------------------------------------------------------------------ UI-05 coverage
 
@@ -424,11 +442,24 @@ class StudioBackend:
                 entry["reason"] = None
             else:
                 entry["reason"] = "NO_PROOF" if entry["proof_id"] is None else "VERDICT"
-        return {"present": True, "intervals": rows, "summary": summary, "watermarks": watermarks}
+        with closing(self._serving()) as conn:
+            from santhau_studio.desktop.diagnostics import legacy_claims
+            legacy = legacy_claims(conn)
+        return {"present": True, "intervals": rows, "summary": summary, "watermarks": watermarks, "legacy": legacy}
 
     # ------------------------------------------------------------------ UI-06 explorer
 
     def search(self, payload: dict[str, Any]) -> dict[str, Any]:
+        conn = self._serving()
+        if conn is not None:
+            with closing(conn):
+                if conn.execute("SELECT 1 FROM sqlite_master WHERE name='record_fields'").fetchone():
+                    from santhau_studio.desktop.search import search
+
+                    try:
+                        return search(conn, self.serving_path, payload)
+                    except (sqlite3.Error, OSError, ValueError) as exc:
+                        return {"hits": [], "error": str(exc)}
         text = str(payload.get("text") or "").strip()
         family = str(payload.get("family") or "").strip() or None
         try:
@@ -509,7 +540,7 @@ class StudioBackend:
                             "SELECT content_version_seq, content_hash, change_kind, fetched_at_utc,"
                             "       normalize_schema, normalized_json"
                             " FROM source_record_versions WHERE source_record_id=?"
-                            " ORDER BY content_version_seq",
+                            " ORDER BY content_version_seq DESC LIMIT 50",
                             (record_id,),
                         )
                     ],
@@ -517,13 +548,14 @@ class StudioBackend:
                         dict(row)
                         for row in conn.execute(
                             "SELECT revision_no, record_object_sha, reason, first_observed_at_utc, run_id"
-                            " FROM raw_revisions WHERE source_record_id=? ORDER BY revision_no",
+                            " FROM raw_revisions WHERE source_record_id=? ORDER BY revision_no DESC LIMIT 50",
                             (record_id,),
                         )
                     ],
                     "observations": conn.execute(
-                        "SELECT COUNT(*) FROM observations WHERE observation_key=?",
-                        (f"SR:{key}",),
+                        "SELECT COUNT(*) FROM observations o JOIN fetch_attempts a ON a.id=o.attempt_id"
+                        " JOIN fetch_requests q ON q.id=a.request_id WHERE o.observation_key=? AND q.source_key=?",
+                        (f"SR:{key}", record["source_key"]),
                     ).fetchone()[0],
                     "deep_captures": [
                         dict(row)
@@ -538,7 +570,7 @@ class StudioBackend:
                         dict(row)
                         for row in conn.execute(
                             "SELECT lot_no_raw, lot_label, lot_version, goods_count FROM lots"
-                            " WHERE source_record_id=? ORDER BY lot_no_raw",
+                            " WHERE source_record_id=? ORDER BY lot_no_raw LIMIT 50",
                             (record_id,),
                         )
                     ],
@@ -554,7 +586,7 @@ class StudioBackend:
                         dict(row)
                         for row in conn.execute(
                             "SELECT document_kind, name, media_type, byte_len FROM documents"
-                            " WHERE source_record_id=? ORDER BY document_kind, name",
+                            " WHERE source_record_id=? ORDER BY document_kind, name LIMIT 50",
                             (record_id,),
                         )
                     ],
@@ -564,7 +596,7 @@ class StudioBackend:
                             "SELECT party_name, role, party_tax_id_presence, party_tax_id,"
                             "       membership_share_presence, membership_share, ranking"
                             " FROM contractor_memberships WHERE source_record_id=?"
-                            " ORDER BY COALESCE(ranking, 999), party_name",
+                            " ORDER BY COALESCE(ranking, 999), party_name LIMIT 50",
                             (record_id,),
                         )
                     ],
@@ -586,9 +618,67 @@ class StudioBackend:
                         )
                     ],
                 }
+                from santhau_studio.desktop.history import HISTORY
+                detail["history_counts"] = {name: conn.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE source_record_id=?", (record_id,)).fetchone()[0]
+                    for name, (table, _) in HISTORY.items()}
+                detail["aliases"] = [dict(r) for r in conn.execute(
+                    "SELECT alias_kind,alias_value,evidence_json FROM source_aliases WHERE source_record_id=? LIMIT 100", (record_id,))]
+                detail["identity_audit"] = [dict(r) for r in conn.execute(
+                    "SELECT id,action,target_ref,actor_sid,reason,undo_action_id,acted_at_utc FROM identity_audit_actions ORDER BY id DESC LIMIT 50")]
+                detail["legacy_unverified"] = record["source_key"].startswith("legacy:")
             except sqlite3.Error as exc:
                 return {"present": True, "error": f"{type(exc).__name__}: {exc}"}
         return detail
+
+    def enqueue_deep(self, payload):
+        import os
+
+        from santhau_studio.collectors.offline_acceptance import enabled
+        if not enabled(self.data_root) or os.environ.get("SANTHAU_OFFLINE_ACCEPTANCE_ROOT") != str(self.data_root.resolve()):
+            return {"ok":False,"status":"BLOCKED","error":LIVE_BLOCK_REASON + ": chưa có endpoint và hợp đồng deep được owner xác minh"}
+        try:
+            record_id = int(payload["record_id"])
+            detail = self.record_detail(record_id)
+            if not detail.get("record"):
+                raise ValueError("Không có hồ sơ")
+            family = detail["record"]["family"]
+            lane = payload.get("lane", "DETAIL")
+            if lane not in ("DETAIL","HSMT","REOFFER"):
+                raise ValueError("Lane không hỗ trợ")
+            rule = self._verified_rule("egp_home", family)
+            if not rule:
+                raise ValueError("Không có rule")
+            request = JobRequest(job_id="deep-"+uuid.uuid4().hex[:12],job_kind=lane,requested_by="gui",
+                sources=({**rule,"family":family},),scope={"record_ids":[record_id]},created_at=_now())
+            enqueue_job(self.data_root,request)
+            return {"ok":True,"job_id":request.job_id,"profile":"SYNTHETIC_OFFLINE"}
+        except (KeyError,ValueError) as exc:
+            return {"ok":False,"error":str(exc)}
+
+    def coverage_proof(self, proof_id):
+        from santhau_studio.desktop.diagnostics import proof
+        conn = self._serving()
+        if conn is None:
+            return {"error":"Chưa có snapshot."}
+        with closing(conn):
+            return proof(conn, proof_id)
+
+    def record_history(self, payload: dict) -> dict:
+        from santhau_studio.desktop.history import history
+        conn = self._serving()
+        if conn is None:
+            return {"rows": [], "error": "Chưa có snapshot."}
+        with closing(conn):
+            return history(conn, payload)
+
+    def raw_object(self, sha: str) -> dict:
+        from santhau_studio.desktop.history import raw_preview
+        conn = self._serving()
+        if conn is None:
+            return {"error": "Chưa có snapshot."}
+        with closing(conn):
+            return raw_preview(self.data_root, conn, sha)
 
     # ------------------------------------------------------------------ UI-08 deep queue
 
@@ -672,7 +762,7 @@ class StudioBackend:
                     dict(row)
                     for row in conn.execute(
                         "SELECT key, value_json, updated_at_utc FROM settings"
-                        " WHERE key IN ('serving_stale') ORDER BY key"
+                        " WHERE key IN ('serving_stale') OR key LIKE 'legacy:coverage:%' ORDER BY key LIMIT 50"
                     )
                 ]
             except sqlite3.Error as exc:
@@ -693,7 +783,11 @@ class StudioBackend:
             "data_root": str(self.data_root),
             "worker_pipe": worker_pipe_name(data_root=self.data_root),
             "settings": [],
+            "host_policy": {"host":"muasamcong.mof.gov.vn","minimum_pacing_seconds":3,"max_attempts":3,"redirects":"REFUSED","session":"NONE"},
+            "licensing": "Qt/PySide6: LGPL/commercial cần owner quyết định trước phân phối. Xem THIRD_PARTY_NOTICES và LICENSES.",
         }
+        from santhau_studio.desktop.diagnostics import log_tail
+        payload["logs"] = log_tail(self.data_root)
         if conn is None:
             return payload
         with closing(conn):
@@ -701,7 +795,7 @@ class StudioBackend:
                 payload["settings"] = [
                     dict(row)
                     for row in conn.execute(
-                        "SELECT key, value_json, updated_at_utc FROM settings ORDER BY key"
+                        "SELECT key, value_json, updated_at_utc FROM settings WHERE key NOT LIKE 'legacy:%' ORDER BY key LIMIT 50"
                     )
                 ]
             except sqlite3.Error as exc:

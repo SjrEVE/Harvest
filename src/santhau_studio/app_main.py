@@ -89,6 +89,15 @@ def main(argv: list[str] | None = None) -> int:
     force_utf8_stdout()
     argv = list(sys.argv if argv is None else argv)
     data_root, argv = _take_data_root(argv)
+    offline = "--offline-acceptance" in argv
+    if offline:
+        argv.remove("--offline-acceptance")
+        if data_root is None:
+            raise ValueError("Offline acceptance requires an explicit Data Root")
+        from santhau_studio.collectors.offline_acceptance import enabled
+        if not enabled(data_root):
+            raise ValueError("Initialize an isolated synthetic acceptance root first")
+        os.environ["SANTHAU_OFFLINE_ACCEPTANCE_ROOT"] = str(Path(data_root).resolve())
     smoke_page, argv = _take_int_flag(argv, "--smoke-page", 0)
     smoke_record, argv = _take_int_flag(argv, "--smoke-record", 0)
     smoke_shot = _take_smoke_args(argv)
@@ -127,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
 
     engine = QQmlApplicationEngine(app)
     engine.rootContext().setContextProperty("backend", backend)
-    engine.rootContext().setContextProperty("appTitle", APP_TITLE)
+    engine.rootContext().setContextProperty("appTitle", APP_TITLE + (" — SYNTHETIC OFFLINE" if offline else ""))
     engine.addImportPath(str(qml_path.parent))
     engine.load(qml_path.as_uri())
     if not engine.rootObjects():

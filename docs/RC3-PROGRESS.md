@@ -37,3 +37,13 @@ paged DTOs consumed by asynchronous bridge; runtime/canary status feeds UI; rele
 - Authenticode: BLOCKED pending certificate.
 - Qt distribution choice: BLOCKED pending owner legal decision; prepare concrete license package first.
 - Clean Windows 10/11 VM: NOT_TESTED, discover available environment before finalizing.
+## RC3 core checkpoint (in progress)
+
+- Indexed disposable record_fields projection, query filters/unknown/zero semantics, stable sort/keyset cursors and snapshot invalidation.
+- Paged record history and hash-verified raw preview; asynchronous GUI read/control tasks with generation invalidation.
+- Real native UI acceptance has started on an isolated, explicitly labelled SYNTHETIC OFFLINE profile. First GUI run exposed a concurrent probe-lock false positive; fixed probes to serialize and avoid replacing holder metadata.
+- 1M backend benchmark: search p95 63.66ms (RC2 686.47ms), family 433.23ms, dashboard 22.41ms, detail 19.95ms; process working set 34.2MB. Extended sort/cold/UI benchmarks still pending. Initial rebuild 235.56s; text folding optimization needs final measurement.
+- Retry failure attempts retained in warehouse; target-scoped job commands; request/page/time budgets and live-canary CLI approval parsing corrected. 81 focused runtime/network/bridge checks passed.
+- Import overlap test now covers importing newer archive before older history without moving current backwards: 9 importer tests pass. Manual identity link/merge/split/undo is audited with actual Windows SID and preserves source rows.
+- UI filters/history/import/budgets/proof/source ladder/legacy claims/logs/license controls implemented; actual UI acceptance, large maintenance, deep canary tooling and release engineering remain open.
+- Interim full suite before last fixes: 534 pass, 2 fail (failure-attempt missing response=None, fixed), 1 scheduler skip. Do not cite interim as release PASS.

@@ -98,7 +98,10 @@ def _event(writer: WarehouseWriter, event) -> dict:
                                 (writer.source_key, family, idkey)).fetchone() if idkey else None
         max_version = conn.execute("SELECT COALESCE(MAX(id),0) FROM source_record_versions").fetchone()[0]
         max_revision = conn.execute("SELECT COALESCE(MAX(id),0) FROM raw_revisions").fetchone()[0]
-        if event["kind"] == "version" or previous is None:
+        if event["kind"] == "version" and previous is not None:
+            _append_legacy_version(writer, previous, normalized, raw.sha256, response.sha256, stamp, run_id)
+            observation_id = None
+        elif event["kind"] == "version" or previous is None:
             if event["kind"] == "version" and natural is None:
                 raise ValueError("legacy version has no recoverable natural identity")
             _, observation_id = writer._ingest_record(
@@ -138,6 +141,31 @@ def _event(writer: WarehouseWriter, event) -> dict:
     except BaseException:
         conn.execute("ROLLBACK")
         raise
+
+
+def _append_legacy_version(writer, previous, normalized, record_sha, response_sha, stamp, run_id):
+    """An older overlapping archive appends evidence without replacing a newer current state."""
+    from santhau_studio.storage.warehouse import NORMALIZE_SCHEMA
+    conn, record_id = writer.conn, previous['id']
+    prior = conn.execute('SELECT * FROM source_record_versions WHERE source_record_id=? AND fetched_at_utc<=? ORDER BY fetched_at_utc DESC,content_version_seq DESC LIMIT 1',(record_id,stamp)).fetchone()
+    prior_raw = conn.execute('SELECT * FROM raw_revisions WHERE source_record_id=? AND first_observed_at_utc<=? ORDER BY first_observed_at_utc DESC,revision_no DESC LIMIT 1',(record_id,stamp)).fetchone()
+    chash = content_hash(normalized)
+    changed = prior is None or prior['content_hash'] != chash
+    seq = prior['content_version_seq'] if prior else None
+    version_id = None
+    if changed:
+        seq = conn.execute('SELECT COALESCE(MAX(content_version_seq),0)+1 FROM source_record_versions WHERE source_record_id=?',(record_id,)).fetchone()[0]
+        cursor = conn.execute('INSERT INTO source_record_versions(source_record_id,content_version_seq,content_hash,normalized_json,introducing_record_sha,introducing_response_sha,fetched_at_utc,change_kind,normalize_schema) VALUES(?,?,?,?,?,?,?,?,?)',
+            (record_id,seq,chash,_json(normalized),record_sha,response_sha,stamp,'UPDATED',NORMALIZE_SCHEMA))
+        version_id = cursor.lastrowid
+    if changed or prior_raw is None or prior_raw['record_object_sha'] != record_sha:
+        revision = conn.execute('SELECT COALESCE(MAX(revision_no),0)+1 FROM raw_revisions WHERE source_record_id=?',(record_id,)).fetchone()[0]
+        conn.execute('INSERT INTO raw_revisions(source_record_id,revision_no,record_object_sha,content_version_id,reason,redaction_policy_version,first_observed_at_utc,run_id) VALUES(?,?,?,?,?,?,?,?)',
+            (record_id,revision,record_sha,version_id,'SEMANTIC_CHANGE' if changed else 'RAW_ONLY_CHANGE',writer.store.redaction_policy_version,stamp,run_id))
+    current = conn.execute('SELECT fetched_at_utc FROM source_record_versions WHERE source_record_id=? AND content_version_seq=?',(record_id,previous['current_content_version'])).fetchone()
+    newest_raw = conn.execute('SELECT MAX(first_observed_at_utc) FROM raw_revisions WHERE source_record_id=?',(record_id,)).fetchone()[0]
+    if stamp >= max(current[0], newest_raw or stamp):
+        conn.execute('UPDATE source_records SET current_content_version=?,current_content_hash=?,current_record_object_sha=? WHERE id=?',(seq,chash,record_sha,record_id))
 
 
 def import_legacy(source: Path, target: Path, *, progress: Callable[[dict], None] | None = None,
@@ -217,3 +245,4 @@ def import_legacy(source: Path, target: Path, *, progress: Callable[[dict], None
                 return summary
             finally:
                 reader.close()
+

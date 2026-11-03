@@ -35,6 +35,8 @@ def working_set_bytes() -> int | None:
 
     counters = _Counters()
     counters.cb = ctypes.sizeof(_Counters)
+    ctypes.windll.kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+    ctypes.windll.psapi.GetProcessMemoryInfo.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]  # secret-scan:allow Win32 API signature, not a credential
     handle = ctypes.windll.kernel32.GetCurrentProcess()
     ok = ctypes.windll.psapi.GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.cb)  # secret-scan:allow Win32 API name
     return int(counters.WorkingSetSize) if ok else None

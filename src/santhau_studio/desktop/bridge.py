@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Signal, Slot
+from PySide6.QtCore import QObject, QThreadPool, Signal, Slot
 
 from santhau_studio.desktop.backend import StudioBackend
 from santhau_studio.desktop.operations import MaintenanceProcess
@@ -24,12 +24,41 @@ from santhau_studio.platform_win.process import (
 
 class BackendBridge(QObject):
     dataRootChanged = Signal()  # noqa: N815 - QML signal naming
+    readReady = Signal(str, int, str)  # noqa: N815 - QML signal
 
     def __init__(self, backend: StudioBackend, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.backend = backend
         self.supervisor = WorkerSupervisor(backend.data_root)
         self.maintenance = MaintenanceProcess(self)
+        self.pool = QThreadPool(self)
+        self.pool.setMaxThreadCount(2)
+        self.generation = 0
+        self.serial = 0
+        self.latest = {}
+        self.pending = {}
+
+    @Slot()
+    def invalidateReads(self):
+        self.generation += 1
+        self.latest.clear()
+
+    @Slot(str, str, str, result=int)
+    def requestRead(self, key, method, payload_json):
+        from santhau_studio.desktop.async_reads import ReadTask
+        self.serial += 1
+        self.latest[key] = self.serial
+        task = ReadTask(self.backend, key, self.serial, self.generation, method, self._payload(payload_json))
+        task.signals.completed.connect(self._read_done)
+        self.pending[self.serial] = task
+        self.pool.start(task)
+        return self.serial
+
+    @Slot(str, int, int, str)
+    def _read_done(self, key, serial, generation, value):
+        self.pending.pop(serial, None)
+        if generation == self.generation and self.latest.get(key) == serial:
+            self.readReady.emit(key, serial, value)
 
     @staticmethod
     def _dump(value: object) -> str:
@@ -78,6 +107,7 @@ class BackendBridge(QObject):
                 release_single_instance(new_name)
             return self._dump({"ok": False, "error": str(exc)})
         self.backend = StudioBackend(selected)
+        self.invalidateReads()
         self.supervisor = WorkerSupervisor(selected)
         if old_name != new_name:
             release_single_instance(old_name)
@@ -143,3 +173,7 @@ class BackendBridge(QObject):
     @Slot(result=str)
     def maintenanceStatus(self) -> str:
         return self._dump(self.maintenance.state)
+
+    @Slot(result=str)
+    def cancelMaintenance(self) -> str:
+        return self._dump(self.maintenance.cancel())

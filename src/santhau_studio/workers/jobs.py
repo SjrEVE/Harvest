@@ -49,7 +49,7 @@ from santhau_studio.storage.rawstore import LAYOUT_SEGMENTS
 from santhau_studio.storage.serving import build_serving_db, mark_stale
 from santhau_studio.storage.warehouse import WarehouseWriter, connect_read_only
 from santhau_studio.workers.deep_run import LANE_KINDS, DeepFetcher, SpecProvider, run_deep_batch
-from santhau_studio.workers.runner import IntervalOutcome, PageSource, Runner
+from santhau_studio.workers.runner import IntervalOutcome, PageSource, RunLimits, Runner
 
 JOB_KINDS = (
     "INDEX", "BACKFILL", "INCREMENTAL", "RECONCILE",
@@ -99,6 +99,15 @@ class JobRequest:
         if not self.created_at:
             raise JobError("created_at is required (the request is immutable, so stamp it once)")
         _parse_iso(self.created_at)
+        for name, maximum in (("max_pages",10000),("max_records",1000000),("max_requests",30000),("max_seconds",86400)):
+            if name in self.request_limits:
+                value = self.request_limits[name]
+                if type(value) is not int or not 1 <= value <= maximum:
+                    raise JobError(f"{name} must be an integer from 1 to {maximum}")
+        if "pacing_seconds" in self.request_limits:
+            pacing = self.request_limits["pacing_seconds"]
+            if type(pacing) not in (int,float) or not 3 <= pacing <= 300:
+                raise JobError("pacing_seconds must be 3..300")
 
     @classmethod
     def from_json(cls, text: str) -> JobRequest:
@@ -332,6 +341,7 @@ class WorkerLoop:
         self._writer: WarehouseWriter | None = None
         self._current: JobRequest | None = None
         self._paused_job: str | None = None
+        self.progress = {}
 
     # -- called from the IPC thread
     def post_command(self, *, job_id: str | None, command: str, sid: str) -> None:
@@ -341,6 +351,10 @@ class WorkerLoop:
         page boundary of a run that is already in flight — it would sit in the queue until the
         run finished, which is exactly what §2.3's "kết thúc page hiện hành" forbids.
         """
+        if command in ("PAUSE", "STOP_GRACEFUL") and job_id and (not self._current or self._current.job_id != job_id):
+            raise JobError("JOB_TARGET_NOT_RUNNING")
+        if command == "RESUME" and job_id != self._paused_job:
+            raise JobError("JOB_TARGET_NOT_PAUSED")
         if command == "PAUSE":
             self.flag.request_pause()
         elif command == "STOP_GRACEFUL":
@@ -511,8 +525,15 @@ class WorkerLoop:
         if page_source is None:
             return "BLOCKED", {"reason": "PAGE_SOURCE_UNAVAILABLE"}
         endpoint = str(source.get("endpoint") or SOURCES[str(source["source_key"])].endpoint)
+        limits = RunLimits.for_family(family)
+        limits = RunLimits(min(limits.max_pages, request.request_limits.get("max_pages", limits.max_pages)),
+                           min(limits.max_records, request.request_limits.get("max_records", limits.max_records)), limits.page_size)
+        from santhau_studio.collectors.lane_source import bounded_source
+        page_source = bounded_source(page_source,
+            max_pages=request.request_limits.get("max_pages", 10000),
+            max_records=request.request_limits.get("max_records", 1000000))
         runner = Runner(
-            writer=self._writer,
+            writer=self._writer, limits=limits, progress=lambda value: setattr(self, "progress", {"job_id":request.job_id, **value}),
             source_key=str(source["source_key"]),
             family=str(source["family"]),
             endpoint=endpoint,
@@ -560,13 +581,7 @@ class WorkerLoop:
             (job_id, seq, command.command, command.issued_at, command.sid, _now()),
         )
         writer.conn.commit()
-        if command.command == "PAUSE":
-            self.flag.request_pause()
-        elif command.command == "STOP_GRACEFUL":
-            self.flag.request_stop()
-        elif command.command == "FORCE_TERMINATE":
-            self.flag.request_shutdown()
-        elif command.command == "RESUME" and command.job_id and self._paused_job == command.job_id:
+        if command.command == "RESUME" and command.job_id and self._paused_job == command.job_id:
             requeue_active_job(self.data_root, command.job_id)
             self._paused_job = None
 
@@ -596,11 +611,12 @@ class WorkerController:
             if command not in COMMANDS:
                 return {"ok": False, "error": "UNKNOWN_COMMAND"}
             job_id = payload.get("job_id")
-            self.loop.post_command(
-                job_id=job_id if isinstance(job_id, str) and job_id else None,
-                command=str(command),
-                sid=sid,
-            )
+            try:
+                self.loop.post_command(
+                    job_id=job_id if isinstance(job_id, str) and job_id else None,
+                    command=str(command), sid=sid)
+            except JobError as exc:
+                return {"ok": False, "error": str(exc)}
             return {"ok": True, "queued": True}
         return {"ok": False, "error": "UNKNOWN_OP"}
 
@@ -633,7 +649,7 @@ class WorkerController:
                     ],
                 }
             )
-        return {"runs": runs}
+        return {"runs": runs, "progress": self.loop.progress if self.loop.progress.get("job_id") == job_id else {}}
 
     def _read_conn(self) -> sqlite3.Connection:
         if self._conn is None:

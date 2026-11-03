@@ -18,6 +18,10 @@ class MaintenanceProcess(QObject):
         self.state: dict = {"running": False}
         self.process.finished.connect(self._finished)
         self.process.errorOccurred.connect(self._failed)
+        self.process.readyReadStandardOutput.connect(self._read_output)
+        self.buffer = ''
+        self.final = None
+        self.root = None
 
     def start(self, action: str, root: Path, source: str = "") -> dict:
         if self.state.get("running"):
@@ -34,18 +38,39 @@ class MaintenanceProcess(QObject):
         args = [*command[1:], "--data-root", str(root), "--maintenance", action]
         if source:
             args.extend(["--source", source])
+        self.root = root
+        (root / 'maintenance.cancel').unlink(missing_ok=True)
+        self.buffer, self.final = '', None
         self.state = {"running": True, "action": action}
         self.process.start(command[0], args)
         return {"ok": True, "running": True}
 
     def _finished(self, code: int, _status) -> None:
-        output = bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace")
-        try:
-            result = json.loads(output.strip().splitlines()[-1])
-        except (ValueError, IndexError):
+        self._read_output()
+        result = self.final
+        if result is None:
             detail = bytes(self.process.readAllStandardError()).decode("utf-8", errors="replace")
             result = {"ok": False, "error": detail[-400:] or f"Collector exit {code}"}
         self.state.update(result, running=False)
+
+    def _read_output(self):
+        self.buffer += bytes(self.process.readAllStandardOutput()).decode('utf-8', errors='replace')
+        while '\n' in self.buffer:
+            line, self.buffer = self.buffer.split('\n',1)
+            try:
+                value = json.loads(line)
+            except ValueError:
+                continue
+            if 'progress' in value:
+                self.state['progress'] = value['progress']
+            else:
+                self.final = value
+
+    def cancel(self):
+        if self.state.get('running') and self.state.get('action') == 'import-legacy' and self.root:
+            (self.root / 'maintenance.cancel').write_text('stop at event boundary', encoding='utf-8')
+            return {'ok':True}
+        return {'ok':False,'error':'Tác vụ này cần hoàn tất để bảo toàn dữ liệu.'}
 
     def _failed(self, _error) -> None:
         self.state.update(running=False, ok=False, error=self.process.errorString())

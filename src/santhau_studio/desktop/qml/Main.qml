@@ -34,16 +34,16 @@ Window {
         running: root.operation.running
         onTriggered: {
             root.operation = root.parse(backend.maintenanceStatus())
+            if (root.operation.progress) root.operationMessage = "Import · " + JSON.stringify(root.operation.progress)
             if (!root.operation.running) {
                 root.operationMessage = root.operation.ok
                     ? "Hoàn tất · " + (root.operation.path || JSON.stringify(root.operation))
                     : "Không hoàn tất · " + (root.operation.error || JSON.stringify(root.operation))
                 page10.reload()
+                if (root.pageIndex === 6) page7.reload()
             }
         }
     }
-    Keys.onDownPressed: pageIndex = Math.min(pageIndex + 1, navItems.length - 1)
-    Keys.onUpPressed: pageIndex = Math.max(pageIndex - 1, 0)
     property var navItems: [
         "01 · Onboarding", "02 · Control Center", "03 · Sources", "04 · Collection Jobs",
         "05 · Coverage Matrix", "06 · Data Explorer", "07 · Record Detail",
@@ -57,6 +57,12 @@ Window {
 
     Connections {
         target: backend
+        function onReadReady(key, serial, text) {
+            var pages = {page1:page1,page2:page2,page3:page3,page4:page4,page5:page5,page8:page8,page9:page9,page10:page10}
+            if (pages[key]) pages[key].state = root.parse(text)
+            if (key === "proof") { evidenceText.text = JSON.stringify(root.parse(text), null, 2); evidenceDialog.open() }
+            if (key === "jobAction") { page4.enqueueResult = text; page4.reload() }
+        }
         function onDataRootChanged() {
             root.detailRecordId = 0
             rootPath.text = backend.dataRootPath()
@@ -66,13 +72,18 @@ Window {
             page4.reload()
             page5.reload()
             page6.state = { hits: [] }
-            page7.state = ({})
+            page7.state = ({present:false})
             page8.reload()
             page9.reload()
             page10.reload()
         }
     }
 
+    Dialog {
+        id:evidenceDialog; title:"Bằng chứng / cấu hình"; width:Math.min(root.width-60,850); height:Math.min(root.height-80,620)
+        anchors.centerIn:parent; modal:true; standardButtons:Dialog.Close
+        ScrollView { anchors.fill:parent; TextArea { id:evidenceText; readOnly:true; selectByMouse:true; wrapMode:TextEdit.WrapAnywhere } }
+    }
     RowLayout {
         anchors.fill: parent
         spacing: 0
@@ -161,12 +172,19 @@ Window {
                     id: page1
                     property var state: ({})
                     Component.onCompleted: reload()
-                    function reload() { state = root.parse(backend.onboarding()) }
+                    function reload() { backend.requestRead("page1", "onboarding", "{}") }
 
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 18
+                    ScrollView {
+                        anchors.fill: parent; anchors.margins: 18; clip: true
+                        contentWidth: availableWidth
+                        ColumnLayout {
+                        width: parent.width
                         spacing: 10
+                        RowLayout {
+                            Button { text: "Tạo kho / khởi tạo collector"; onClicked: { root.pageIndex = 3; backend.requestRead("jobAction", "start_worker", "{}") } }
+                            Button { text: "Import kho harvester cũ"; onClicked: root.pageIndex = 9 }
+                        }
+
 
                         Text { text: "Data root"; color: "#9aa4ae"; font.pixelSize: 12 }
                         RowLayout {
@@ -213,7 +231,8 @@ Window {
                         }
                         Text { text: page1.state.policy_note || ""; color: "#8b959f"; font.pixelSize: 11 }
                         Button { text: "Tải lại"; onClicked: page1.reload() }
-                        Item { Layout.fillHeight: true }
+                        Item { Layout.preferredHeight: 8 }
+                        }
                     }
                 }
 
@@ -223,7 +242,7 @@ Window {
                     property var state: ({ families: [] })
                     Component.onCompleted: reload()
                     onVisibleChanged: if (visible) reload()
-                    function reload() { state = root.parse(backend.controlCenter()) }
+                    function reload() { backend.requestRead("page2", "control_center", "{}") }
 
                     Timer {
                         interval: 3000
@@ -232,9 +251,11 @@ Window {
                         onTriggered: page2.reload()
                     }
 
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 18
+                    ScrollView {
+                        anchors.fill: parent; anchors.margins: 18; clip: true
+                        contentWidth: availableWidth
+                        ColumnLayout {
+                        width: parent.width
                         spacing: 8
 
                         Text {
@@ -300,7 +321,8 @@ Window {
                             color: "#e07a7a"
                             font.pixelSize: 11
                         }
-                        Item { Layout.fillHeight: true }
+                        Item { Layout.preferredHeight: 8 }
+                        }
                     }
                 }
 
@@ -310,13 +332,24 @@ Window {
                     property var state: ({ registry: [], boundary_rules: [] })
                     Component.onCompleted: reload()
                     onVisibleChanged: if (visible) reload()
-                    function reload() { state = root.parse(backend.sources()) }
+                    function reload() { backend.requestRead("page3", "sources", "{}") }
 
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 18
+                    ScrollView {
+                        anchors.fill: parent; anchors.margins: 18; clip: true
+                        contentWidth: availableWidth
+                        ColumnLayout {
+                        width: parent.width
                         spacing: 8
 
+                        Repeater {
+                            model: page3.state.families || []
+                            delegate: Label {
+                                required property var modelData
+                                Layout.fillWidth:true; wrapMode:Text.Wrap; color:modelData.blocked_reason ? "#edbc8b" : "#9dd9b4"
+                                text:modelData.family + " · " + modelData.state + " · " + (modelData.blocked_reason ? "BLOCKED · " + modelData.blocked_reason : "rule có bằng chứng")
+                            }
+                        }
+                        Button { text:"Lịch sử canary / access"; onClicked: { evidenceText.text=JSON.stringify(page3.state.access_events || [],null,2); evidenceDialog.open() } }
                         Text { text: "Kênh nguồn"; color: "#9aa4ae"; font.pixelSize: 12 }
                         Repeater {
                             model: page3.state.registry || []
@@ -375,7 +408,8 @@ Window {
                                 }
                             }
                         }
-                        Item { Layout.fillHeight: true }
+                        Item { Layout.preferredHeight: 8 }
+                        }
                     }
                 }
 
@@ -386,11 +420,14 @@ Window {
                     property string enqueueResult: ""
                     Component.onCompleted: reload()
                     onVisibleChanged: if (visible) reload()
-                    function reload() { state = root.parse(backend.jobs()) }
+                    function reload() { backend.requestRead("page4", "jobs", "{}") }
+                    Timer { interval:1500; repeat:true; running:page4.visible; onTriggered:page4.reload() }
 
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 18
+                    ScrollView {
+                        anchors.fill: parent; anchors.margins: 18; clip: true
+                        contentWidth: availableWidth
+                        ColumnLayout {
+                        width: parent.width
                         spacing: 8
 
                         Text {
@@ -401,56 +438,71 @@ Window {
                             font.pixelSize: 12
                         }
 
-                        RowLayout {
-                            spacing: 8
+                        GridLayout {
+                            columns: width < 1000 ? 2 : 3
+                            columnSpacing: 8
+                            rowSpacing: 8
                             ComboBox {
                                 id: kindBox
                                 model: ["BACKFILL", "INCREMENTAL", "RECONCILE"]
-                                Layout.preferredWidth: 150
+                                Layout.fillWidth: true
                             }
                             TextField {
                                 id: familyField
                                 placeholderText: "family (vd TBMT)"
                                 text: "TBMT"
-                                Layout.preferredWidth: 120
+                                Layout.fillWidth: true
                                 color: "#e6e9ec"
                                 background: Rectangle { color: "#20262d"; border.color: "#333c45"; radius: 4 }
                             }
                             TextField {
                                 id: fromField
                                 placeholderText: "from (ISO Z)"
-                                Layout.preferredWidth: 220
+                                Layout.fillWidth: true
                                 color: "#e6e9ec"
                                 background: Rectangle { color: "#20262d"; border.color: "#333c45"; radius: 4 }
                             }
                             TextField {
                                 id: toField
                                 placeholderText: "to (ISO Z)"
-                                Layout.preferredWidth: 220
+                                Layout.fillWidth: true
                                 color: "#e6e9ec"
                                 background: Rectangle { color: "#20262d"; border.color: "#333c45"; radius: 4 }
                             }
                             Button {
                                 text: "Xếp hàng job"
                                 onClicked: {
-                                    page4.enqueueResult = backend.enqueueCollection(JSON.stringify({
+                                    backend.requestRead("jobAction", "enqueue_collection", JSON.stringify({
                                         job_kind: kindBox.currentText,
                                         family: familyField.text,
                                         from: fromField.text,
-                                        to: toField.text
+                                        to: toField.text,
+                                        request_limits: {max_pages:pageBudget.value,max_requests:requestBudget.value,max_seconds:timeBudget.value,pacing_seconds:pacingBudget.value}
                                     }))
                                     page4.reload()
                                 }
                             }
                         }
-                        Text { text: page4.enqueueResult; color: "#d1a47f"; font.pixelSize: 11 }
+                        GridLayout {
+                            columns: 4; Layout.fillWidth: true
+                            Label { text: "Pages / job"; color:"#a9b4bf" }
+                            SpinBox { id: pageBudget; from:1; to:10000; value:1000; editable:true; Accessible.name:"Ngân sách trang" }
+                            Label { text: "Requests / job"; color:"#a9b4bf" }
+                            SpinBox { id: requestBudget; from:1; to:30000; value:3000; editable:true; Accessible.name:"Ngân sách request" }
+                            Label { text: "Thời gian (s)"; color:"#a9b4bf" }
+                            SpinBox { id: timeBudget; from:1; to:86400; value:3600; editable:true; Accessible.name:"Ngân sách giây" }
+                            Label { text: "Pacing (s)"; color:"#a9b4bf" }
+                            SpinBox { id: pacingBudget; from:3; to:300; value:3; editable:true; Accessible.name:"Pacing giây" }
+                        }
+                        Label { Layout.fillWidth:true; wrapMode:Text.WrapAnywhere; color:"#9dbdae"; text: JSON.stringify(page4.state.active_status || {}) }
+                        Text { Layout.fillWidth: true; wrapMode: Text.WrapAnywhere; text: page4.enqueueResult; color: "#d1a47f"; font.pixelSize: 11 }
 
                         RowLayout {
                             spacing: 8
                             Button {
                                 text: "Khởi động worker"
                                 onClicked: {
-                                    page4.enqueueResult = backend.startWorker()
+                                    backend.requestRead("jobAction", "start_worker", "{}")
                                     page4.reload()
                                 }
                             }
@@ -458,26 +510,26 @@ Window {
                                 text: "PAUSE"
                                 onClicked: {
                                     var active = page4.state.active || []
-                                    if (active.length) page4.enqueueResult = backend.workerCommand("PAUSE", active[0].job_id)
+                                    if (active.length) backend.requestRead("jobAction", "worker_command", JSON.stringify({command:"PAUSE",job_id:active[0].job_id}))
                                 }
                             }
                             Button {
                                 text: "RESUME"
                                 onClicked: {
                                     var active = page4.state.active || []
-                                    if (active.length) page4.enqueueResult = backend.workerCommand("RESUME", active[0].job_id)
+                                    if (active.length) backend.requestRead("jobAction", "worker_command", JSON.stringify({command:"RESUME",job_id:active[0].job_id}))
                                 }
                             }
                             Button {
                                 text: "STOP_GRACEFUL"
                                 onClicked: {
                                     var active = page4.state.active || []
-                                    if (active.length) page4.enqueueResult = backend.workerCommand("STOP_GRACEFUL", active[0].job_id)
+                                    if (active.length) backend.requestRead("jobAction", "worker_command", JSON.stringify({command:"STOP_GRACEFUL",job_id:active[0].job_id}))
                                 }
                             }
                             Button {
                                 text: "FORCE_TERMINATE"
-                                onClicked: page4.enqueueResult = backend.workerCommand("FORCE_TERMINATE", "")
+                                onClicked: backend.requestRead("jobAction", "worker_command", JSON.stringify({command:"FORCE_TERMINATE"}))
                             }
                             Button { text: "Tải lại"; onClicked: page4.reload() }
                         }
@@ -514,7 +566,8 @@ Window {
                                 }
                             }
                         }
-                        Item { Layout.fillHeight: true }
+                        Item { Layout.preferredHeight: 8 }
+                        }
                     }
                 }
 
@@ -523,11 +576,13 @@ Window {
                     id: page5
                     property var state: ({ intervals: [], summary: [], watermarks: [] })
                     onVisibleChanged: if (visible) reload()
-                    function reload() { state = root.parse(backend.coverage("")) }
+                    function reload() { backend.requestRead("page5", "coverage", "{}") }
 
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 18
+                    ScrollView {
+                        anchors.fill: parent; anchors.margins: 18; clip: true
+                        contentWidth: availableWidth
+                        ColumnLayout {
+                        width: parent.width
                         spacing: 8
 
                         Repeater {
@@ -536,7 +591,7 @@ Window {
                                 required property var modelData
                                 Layout.fillWidth: true
                                 height: 34
-                                color: "#1b2128"
+                                color: modelData.status === "COMPLETE" ? "#193d30" : (modelData.status === "BLOCKED" ? "#472c2c" : "#302c23")
                                 radius: 4
                                 Row {
                                     anchors.verticalCenter: parent.verticalCenter
@@ -565,8 +620,12 @@ Window {
                             delegate: Rectangle {
                                 required property var modelData
                                 Layout.fillWidth: true
-                                height: 28
-                                color: "#1b2128"
+                                height: 36
+                                Button { anchors.fill:parent; flat:true; Accessible.name:modelData.family + " " + modelData.status + " proof"; onClicked: {
+                                    if (modelData.proof_id) backend.requestRead("proof","coverage_proof",JSON.stringify({proof_id:modelData.proof_id}))
+                                    else { evidenceText.text=JSON.stringify(modelData,null,2); evidenceDialog.open() }
+                                } }
+                                color: modelData.status === "COMPLETE" ? "#193d30" : (modelData.status === "BLOCKED" ? "#472c2c" : "#302c23")
                                 radius: 4
                                 Row {
                                     anchors.verticalCenter: parent.verticalCenter
@@ -593,228 +652,26 @@ Window {
                                 }
                             }
                         }
-                        Item { Layout.fillHeight: true }
+                        Button { text:"Coverage legacy (chưa xác minh)"; onClicked: { evidenceText.text=JSON.stringify(page5.state.legacy || [],null,2); evidenceDialog.open() } }
+                        Item { Layout.preferredHeight: 8 }
+                        }
                     }
                 }
 
                 // ------------------------------------------------ UI-06 Data Explorer
-                Item {
+                ExplorerPage {
                     id: page6
-                    property var state: ({ hits: [] })
-                    function run() {
-                        state = root.parse(backend.search(JSON.stringify({
-                            text: queryField.text, family: familyBox.text, limit: 50, offset: 0
-                        })))
-                    }
-                    function loadMore() {
-                        var next = root.parse(backend.search(JSON.stringify({
-                            text: queryField.text, family: familyBox.text, limit: 50,
-                            offset: (state.hits || []).length
-                        })))
-                        state = { hits: (state.hits || []).concat(next.hits || []), note: next.note }
-                    }
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 18
-                        spacing: 8
-
-                        RowLayout {
-                            spacing: 8
-                            TextField {
-                                id: queryField
-                                Layout.fillWidth: true
-                                placeholderText: "mã / tên / CĐT / MST / tỉnh / loại …"
-                                color: "#e6e9ec"
-                                background: Rectangle { color: "#20262d"; border.color: "#333c45"; radius: 4 }
-                                onAccepted: page6.run()
-                            }
-                            TextField {
-                                id: familyBox
-                                placeholderText: "family"
-                                Layout.preferredWidth: 110
-                                color: "#e6e9ec"
-                                background: Rectangle { color: "#20262d"; border.color: "#333c45"; radius: 4 }
-                            }
-                            Button { text: "Tìm"; onClicked: page6.run() }
-                            Button { text: "Tải thêm"; onClicked: page6.loadMore() }
-                            Button { text: "Xuất kho CSV"; enabled: !root.operation.running; onClicked: root.startAction("export", "") }
-                        }
-
-                        Text { text: page6.state.note || ""; color: "#8b959f"; font.pixelSize: 11 }
-                        Text {
-                            visible: !!page6.state.error
-                            text: page6.state.error || ""
-                            color: "#e07a7a"
-                            font.pixelSize: 11
-                        }
-                        ListView {
-                            id: searchResults
-                            objectName: "searchResults"
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            clip: true
-                            spacing: 8
-                            ScrollBar.vertical: ScrollBar {}
-                            model: page6.state.hits || []
-                            delegate: Rectangle {
-                                required property var modelData
-                                width: searchResults.width
-                                height: 44
-                                color: "#1b2128"
-                                radius: 4
-                                Column {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.left: parent.left
-                                    anchors.leftMargin: 10
-                                    anchors.right: parent.right
-                                    anchors.rightMargin: 10
-                                    spacing: 2
-                                    Text {
-                                        width: parent.width
-                                        elide: Text.ElideRight
-                                        text: (modelData.title_display || "(không tiêu đề)") + "  ·  " + modelData.natural_key
-                                        color: "#e6e9ec"
-                                        font.pixelSize: 12
-                                    }
-                                    Text {
-                                        width: parent.width
-                                        elide: Text.ElideRight
-                                        text: modelData.family + " · " + (modelData.investor_display || "—")
-                                              + " · version " + modelData.version_state
-                                              + (modelData.version_raw ? (" (" + modelData.version_raw + ")") : "")
-                                        color: "#9aa4ae"
-                                        font.pixelSize: 11
-                                    }
-                                }
-                                MouseArea {
-                                    anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        root.detailRecordId = modelData.record_id
-                                        root.pageIndex = 6
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    bridge: backend
+                    onOpenRecord: function(recordId) { root.detailRecordId = recordId; root.pageIndex = 6 }
+                    onExportRequested: root.startAction("export", "")
                 }
 
-                // ------------------------------------------------ UI-07 Record Detail
-                Item {
+                RecordPage {
                     id: page7
-                    property var state: ({ present: false })
-                    onVisibleChanged: if (visible) reload()
-                    function reload() {
-                        state = root.detailRecordId > 0 ? root.parse(backend.recordDetail(root.detailRecordId))
-                                                        : ({ present: false })
-                    }
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 18
-                        spacing: 6
-
-                        Text {
-                            text: page7.state.present ? ("" + page7.state.record.family + " · " + page7.state.record.natural_key) : "Chọn một hồ sơ ở Data Explorer"
-                            color: "#e6e9ec"
-                            font.pixelSize: 15
-                            font.bold: true
-                        }
-                        Text {
-                            text: page7.state.present
-                                ? ("version " + page7.state.record.version_state
-                                   + (page7.state.record.version_raw ? (" (" + page7.state.record.version_raw + ")") : "")
-                                   + " · integrity " + page7.state.record.integrity_status
-                                   + " · observations " + page7.state.observations)
-                                : ""
-                            color: "#9aa4ae"
-                            font.pixelSize: 12
-                        }
-
-                        Text { text: "Timeline content version"; color: "#6f7a84"; font.pixelSize: 11 }
-                        Repeater {
-                            model: page7.state.versions || []
-                            delegate: Text {
-                                required property var modelData
-                                text: "v" + modelData.content_version_seq + " · " + modelData.change_kind
-                                      + " · " + modelData.content_hash.slice(0, 18) + "… · " + modelData.fetched_at_utc
-                                color: "#c8d0d8"
-                                font.pixelSize: 11
-                            }
-                        }
-                        Text { text: "Raw revision (bytes thay đổi không đổi nghĩa cũng hiện ở đây)"; color: "#6f7a84"; font.pixelSize: 11; topPadding: 4 }
-                        Repeater {
-                            model: page7.state.raw_revisions || []
-                            delegate: Text {
-                                required property var modelData
-                                text: "#" + modelData.revision_no + " · " + modelData.reason
-                                      + " · " + modelData.record_object_sha.slice(0, 18) + "… · " + modelData.first_observed_at_utc
-                                color: "#c8d0d8"
-                                font.pixelSize: 11
-                            }
-                        }
-                        Text {
-                            text: "Deep capture · lots · goods · documents"
-                            color: "#6f7a84"
-                            font.pixelSize: 11
-                            topPadding: 4
-                        }
-                        Repeater {
-                            model: page7.state.deep_captures || []
-                            delegate: Text {
-                                required property var modelData
-                                text: modelData.lane + "/" + modelData.endpoint_kind + " · " + modelData.completeness
-                                      + (modelData.stale ? " · STALE " + modelData.stale_reason : " · fresh")
-                                      + " · captured " + modelData.captured_at_utc
-                                color: modelData.stale ? "#d1a47f" : "#7fd1a4"
-                                font.pixelSize: 11
-                            }
-                        }
-                        Repeater {
-                            model: page7.state.lots || []
-                            delegate: Text {
-                                required property var modelData
-                                text: "Lô " + modelData.lot_no_raw + " · " + (modelData.lot_label || "—")
-                                      + " · goods " + (modelData.goods_count === null ? "?" : modelData.goods_count)
-                                color: "#c8d0d8"
-                                font.pixelSize: 11
-                            }
-                        }
-                        Repeater {
-                            model: page7.state.goods_rows || []
-                            delegate: Text {
-                                required property var modelData
-                                text: "  · " + modelData.name + " · " + (modelData.unit || "—")
-                                      + " · SL " + modelData.quantity_presence
-                                      + (modelData.quantity_presence === "KNOWN" ? (" = " + modelData.quantity)
-                                         : (modelData.quantity_raw ? (" (" + modelData.quantity_raw + ")") : ""))
-                                color: "#9aa4ae"
-                                font.pixelSize: 11
-                            }
-                        }
-                        Repeater {
-                            model: page7.state.documents || []
-                            delegate: Text {
-                                required property var modelData
-                                text: "  · " + modelData.document_kind + " · " + modelData.name
-                                color: "#9aa4ae"
-                                font.pixelSize: 11
-                            }
-                        }
-                        Repeater {
-                            model: page7.state.contractor_memberships || []
-                            delegate: Text {
-                                required property var modelData
-                                text: "  · " + modelData.role + " · " + modelData.party_name
-                                      + " · MST " + modelData.party_tax_id_presence
-                                      + " · share " + modelData.membership_share_presence
-                                color: "#9aa4ae"
-                                font.pixelSize: 11
-                            }
-                        }
-                        Item { Layout.fillHeight: true }
-                    }
+                    bridge: backend
+                    recordId: root.detailRecordId
+                    onBackRequested: root.pageIndex = 5
+                    onIdentityRequested: function(requestJson) { root.startAction("identity", requestJson) }
                 }
 
                 // ------------------------------------------------ UI-08 Deep Collection
@@ -822,11 +679,13 @@ Window {
                     id: page8
                     property var state: ({ rows: [], summary: {} })
                     onVisibleChanged: if (visible) reload()
-                    function reload() { state = root.parse(backend.deepQueue()) }
+                    function reload() { backend.requestRead("page8", "deep_queue", "{}") }
 
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 18
+                    ScrollView {
+                        anchors.fill: parent; anchors.margins: 18; clip: true
+                        contentWidth: availableWidth
+                        ColumnLayout {
+                        width: parent.width
                         spacing: 6
 
                         Text {
@@ -879,7 +738,8 @@ Window {
                                 }
                             }
                         }
-                        Item { Layout.fillHeight: true }
+                        Item { Layout.preferredHeight: 8 }
+                        }
                     }
                 }
 
@@ -888,11 +748,13 @@ Window {
                     id: page9
                     property var state: ({ raw_objects: {}, quarantine: [], unresolved: {}, gaps: [], markers: [] })
                     onVisibleChanged: if (visible) reload()
-                    function reload() { state = root.parse(backend.integrity()) }
+                    function reload() { backend.requestRead("page9", "integrity", "{}") }
 
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 18
+                    ScrollView {
+                        anchors.fill: parent; anchors.margins: 18; clip: true
+                        contentWidth: availableWidth
+                        ColumnLayout {
+                        width: parent.width
                         spacing: 8
 
                         Text {
@@ -933,7 +795,8 @@ Window {
                             font.pixelSize: 11
                             wrapMode: Text.WrapAnywhere
                         }
-                        Item { Layout.fillHeight: true }
+                        Item { Layout.preferredHeight: 8 }
+                        }
                     }
                 }
 
@@ -942,7 +805,7 @@ Window {
                     id: page10
                     property var state: ({ settings: [], backups: [], snapshot: {} })
                     onVisibleChanged: if (visible) reload()
-                    function reload() { state = root.parse(backend.settings()) }
+                    function reload() { backend.requestRead("page10", "settings", "{}") }
 
                     Dialog {
                         id: restoreConfirm
@@ -958,9 +821,11 @@ Window {
                         onAccepted: root.startAction("restore", restorePath.text)
                     }
 
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 18
+                    ScrollView {
+                        anchors.fill: parent; anchors.margins: 18; clip: true
+                        contentWidth: availableWidth
+                        ColumnLayout {
+                        width: parent.width
                         spacing: 8
 
                         Text {
@@ -1013,6 +878,18 @@ Window {
                             font.pixelSize: 12
                         }
 
+                        RowLayout {
+                            TextField { id: legacyPath; Layout.fillWidth: true; placeholderText: "Thư mục harvester cũ / export bundle"; Accessible.name: placeholderText }
+                            Button { text: "Kiểm tra kho cũ"; enabled: !root.operation.running && legacyPath.text.length > 0; onClicked: root.startAction("inspect-legacy", legacyPath.text) }
+                            Button { text: "Import"; enabled: !root.operation.running && legacyPath.text.length > 0; onClicked: root.startAction("import-legacy", legacyPath.text) }
+                        }
+                        Text { Layout.fillWidth: true; wrapMode: Text.WordWrap; color: "#d1a47f"; text: "Legacy giữ lịch sử và nguồn gốc. COMPLETE cũ chưa có proof mới luôn là LEGACY_UNVERIFIED." }
+                        RowLayout {
+                            Button { text:"Host policy / storage"; onClicked: { evidenceText.text=JSON.stringify({host_policy:page10.state.host_policy,snapshot:page10.state.snapshot,data_root:page10.state.data_root},null,2); evidenceDialog.open() } }
+                            Button { text:"Logs"; onClicked: { evidenceText.text=JSON.stringify(page10.state.logs || [],null,2); evidenceDialog.open() } }
+                            Button { text:"Version / license"; onClicked: { evidenceText.text=page10.state.app_version + "\n" + page10.state.licensing; evidenceDialog.open() } }
+                        }
+                        Button { visible:root.operation.running && root.operation.action === "import-legacy"; text:"Dừng import sau event hiện tại"; onClicked:backend.cancelMaintenance() }
                         Text { text: "Settings"; color: "#6f7a84"; font.pixelSize: 11; topPadding: 4 }
                         Repeater {
                             model: page10.state.settings || []
@@ -1041,7 +918,8 @@ Window {
                             color: "#8b959f"
                             font.pixelSize: 11
                         }
-                        Item { Layout.fillHeight: true }
+                        Item { Layout.preferredHeight: 8 }
+                        }
                     }
                 }
             }

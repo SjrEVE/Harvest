@@ -84,6 +84,9 @@ def build_serving_db(warehouse: Path, target: Path) -> PublishResult:
         dest.execute("PRAGMA journal_mode=WAL")
         _copy_schema_and_rows(source, dest)
         _build_search_index(dest)
+        from santhau_studio.storage.read_model import materialise_records
+
+        materialise_records(dest, warehouse.parent)
         _materialise_family_stats(dest)
         dest.execute(
             "CREATE TABLE IF NOT EXISTS serving_meta ("
@@ -141,38 +144,13 @@ def build_serving_db(warehouse: Path, target: Path) -> PublishResult:
 
 
 def _copy_schema_and_rows(source: sqlite3.Connection, dest: sqlite3.Connection) -> None:
-    for name, sql, kind in source.execute(
-        "SELECT name, sql, type FROM sqlite_master WHERE sql IS NOT NULL AND type IN ('table','view') ORDER BY name"
-    ):
-        if name in ("software_migrations",):
-            continue
-        try:
-            dest.execute(sql)
-        except sqlite3.Error as exc:
-            raise SnapshotRejected(f"could not recreate {kind} {name}: {exc}") from exc
-    tables = [
-        r[0] for r in source.execute("SELECT name FROM sqlite_master WHERE type='table' AND name != 'software_migrations'")
-    ]
-    for table in tables:
-        cursor = source.execute(f"SELECT * FROM '{table}'")
-        while rows := cursor.fetchmany(FTS_BATCH):
-            columns = rows[0].keys()
-            placeholders = ",".join("?" * len(columns))
-            dest.executemany(
-                f"INSERT INTO '{table}' ({','.join(columns)}) VALUES ({placeholders})",
-                [tuple(r) for r in rows],
-            )
-    # Indexes go last: they reference tables that only exist after the loop above.
-    for name, sql in source.execute(
-        "SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL AND type='index'"
-        " AND name NOT LIKE 'sqlite_%' ORDER BY name"
-    ):
-        if sql is None:
-            continue
-        try:
-            dest.execute(sql)
-        except sqlite3.Error as exc:
-            raise SnapshotRejected(f"could not recreate index {name}: {exc}") from exc
+    """SQLite copies a consistent image in bounded pages, including indexes and WAL state."""
+    source.backup(dest, pages=1024)
+    dest.execute("PRAGMA journal_mode=WAL")
+    dest.execute("DELETE FROM serving_meta")
+    # Canonical contract stays intact; these are disposable read-side projections.
+    dest.execute("DROP TABLE IF EXISTS record_fields")
+    dest.execute("DROP TABLE IF EXISTS serving_family_stats")
 
 
 def _materialise_family_stats(dest: sqlite3.Connection) -> None:
@@ -225,18 +203,17 @@ def _build_search_index(dest: sqlite3.Connection) -> None:
         "        COALESCE(json_extract(v.normalized_json, '$.investorName'), ''),"
         "        COALESCE(v.normalized_json, '')"
         " FROM source_records sr"
-        " LEFT JOIN source_record_versions v ON v.id = ("
-        "   SELECT id FROM source_record_versions WHERE source_record_id=sr.id"
-        "   ORDER BY content_version_seq DESC LIMIT 1)"
+        " LEFT JOIN source_record_versions v ON v.source_record_id=sr.id"
+        " AND v.content_version_seq=sr.current_content_version"
     )
     while True:
         rows = cursor.fetchmany(FTS_BATCH)
         if not rows:
             break
         dest.executemany(
-            "INSERT INTO search_index (record_id, family, natural_key, title, investor_name, body) VALUES (?,?,?,?,?,?)",
+            "INSERT INTO search_index (rowid, record_id, family, natural_key, title, investor_name, body) VALUES (?,?,?,?,?,?,?)",
             [
-                (record_id, fold_vietnamese(family), fold_vietnamese(natural_key),
+                (record_id, record_id, fold_vietnamese(family), fold_vietnamese(natural_key),
                  fold_vietnamese(title), fold_vietnamese(investor), fold_vietnamese(body))
                 for record_id, family, natural_key, title, investor, body in rows
             ],

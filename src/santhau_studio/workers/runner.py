@@ -121,6 +121,7 @@ class Runner:
         clock: Callable[[], datetime] | None = None,
         stop_requested: StopCheck | None = None,
         max_split_granularity: str = "MINUTE",
+        progress=None,
     ) -> None:
         self.writer = writer
         self.conn = writer.conn
@@ -136,6 +137,7 @@ class Runner:
         self._rule_for = rule_for or self._rule_from_db
         self._rule_cache: dict[str, BoundaryRule | None] = {}
         self.reconcile_outcomes: list[IntervalOutcome] = []
+        self.progress = progress
 
     # ------------------------------------------------------------------ boundary rules
 
@@ -181,7 +183,7 @@ class Runner:
         try:
             pages = self.page_source(interval, granularity, window)
         except (AccessBlocked, FetchFailed) as exc:
-            return self._refusal(outcome, exc)
+            return self._refusal(outcome, exc, run_id, 0)
         seen_records = 0
         page_no = 0
         while True:
@@ -202,7 +204,7 @@ class Runner:
                 outcome.blockers = ("NO_TERMINAL_EVIDENCE",)
                 return outcome
             except (AccessBlocked, FetchFailed) as exc:
-                return self._refusal(outcome, exc)
+                return self._refusal(outcome, exc, run_id, page_no)
 
             counted = bool(page.attempt_log) or page.payload is not None
             outcome.requests += 1 if counted else 0
@@ -240,6 +242,10 @@ class Runner:
             outcome.malformed += report.malformed_members
             outcome.identity_keys.update(_identity_keys(self.family, report.records))
             seen_records += len(report.records)
+            if self.progress:
+                self.progress({"family":self.family,"from":_iso(interval.from_utc),"to":_iso(interval.to_utc),
+                    "granularity":granularity,"pages":outcome.pages,"rows":outcome.rows,"requests":outcome.requests,
+                    "total_hint":outcome.total_last,"state":"COLLECTING"})
             if seen_records >= self.limits.max_records:
                 outcome.max_records_hit = seen_records
                 outcome.status = "PARTIAL"
@@ -260,10 +266,19 @@ class Runner:
             outcome.blockers = (f"TOTAL_CHANGED {outcome.total_first}->{outcome.total_last}",)
         return outcome
 
-    def _refusal(self, outcome: IntervalOutcome, exc: Exception) -> IntervalOutcome:
+    def _refusal(self, outcome: IntervalOutcome, exc: Exception, run_id: str, page_no: int) -> IntervalOutcome:
         """The lane gave up: an access refusal blocks the interval, a dead request stays partial."""
         outcome.requests += 1
         outcome.unrecovered_requests += 1
+        attempts = getattr(exc, "attempt_log", ())
+        outcome.attempts += len(attempts)
+        outcome.attempt_errors += len(attempts)
+        for attempt in attempts:
+            self.writer.ensure_attempt(run_id=run_id, family=self.family, endpoint=self.endpoint,
+                interval_from=_iso(outcome.interval.from_utc), interval_to=_iso(outcome.interval.to_utc),
+                page_no=page_no, attempt_no=attempt.attempt_no, outcome=_ddl_outcome(attempt),
+                http_status=attempt.http_status, error_kind=attempt.error_kind, response=None)
+
         if isinstance(exc, AccessBlocked):
             outcome.status = "BLOCKED"
             outcome.blockers = (f"ACCESS_BLOCKED:{type(exc).__name__}",)

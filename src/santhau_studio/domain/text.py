@@ -15,14 +15,16 @@ from __future__ import annotations
 import unicodedata
 
 _EXTRA_FOLD = str.maketrans({"đ": "d", "Đ": "D", "ơ": "o", "Ơ": "O"})
+_MARKS = {code: None for code in range(0x110000) if unicodedata.category(chr(code)) == "Mn"}
+_FOLD_TRANSLATION = {**_MARKS, **_EXTRA_FOLD}
 
 
 def fold_vietnamese(text: str | None) -> str:
     if not text:
         return ""
-    decomposed = unicodedata.normalize("NFD", text)
-    without_marks = "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
-    return without_marks.translate(_EXTRA_FOLD).casefold()
+    if text.isascii():
+        return text.casefold()
+    return unicodedata.normalize("NFD", text).translate(_FOLD_TRANSLATION).casefold()
 
 
 def fold_for_query(query: str) -> str:

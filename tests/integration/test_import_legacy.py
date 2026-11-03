@@ -40,6 +40,26 @@ def test_three_imports_preserve_history_without_duplicate_observations(tmp_path:
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
+def test_newer_archive_then_older_overlap_keeps_latest_and_full_history(tmp_path):
+    from santhau_studio.storage.import_legacy import import_legacy
+    full = make_legacy(tmp_path / 'full')
+    newer = tmp_path / 'newer'
+    shutil.copytree(full,newer)
+    with sqlite3.connect(newer / 'warehouse.sqlite') as conn:
+        conn.execute('DELETE FROM record_versions WHERE version_no < 4')
+        conn.execute('DELETE FROM observations WHERE id < 4')
+    target = tmp_path / 'studio'
+    assert import_legacy(newer,target)['status'] == 'IMPORTED'
+    result = import_legacy(full,target)
+    assert result['status'] == 'IMPORTED', result
+    assert counts(target) == (1,3,4,5)
+    with sqlite3.connect(target/'warehouse.sqlite') as conn:
+        row = conn.execute('SELECT v.normalized_json,v.fetched_at_utc FROM source_records r JOIN source_record_versions v ON v.source_record_id=r.id AND v.content_version_seq=r.current_content_version').fetchone()
+        assert json.loads(row[0])['title'] == 'A'
+        assert row[1] == '2026-10-04T03:00:00Z'
+    assert import_legacy(full,target)['status'] == 'ALREADY_IMPORTED'
+
+
 @pytest.mark.parametrize("problem", ["missing", "corrupt", "traversal"])
 def test_bad_raw_is_reported_without_fabricating_records(tmp_path: Path, problem: str) -> None:
     from santhau_studio.storage.import_legacy import import_legacy

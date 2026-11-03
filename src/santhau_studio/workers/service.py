@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import sys
 import threading
 import time
@@ -70,7 +71,14 @@ def _default_builder(writer, request):
     source = request.sources[0] if request.sources else None
     if not isinstance(source, dict) or "family" not in source:
         return None
-    return egp_page_source(family=str(source["family"]))
+    from santhau_studio.collectors.budget import RequestBudget
+    from santhau_studio.collectors.http_client import FetchLane
+    from santhau_studio.collectors.source_registry import SOURCES
+    limits = request.request_limits
+    budget = RequestBudget(limits.get("max_requests", 30000), limits.get("max_seconds", 3600))
+    key = source["source_key"]
+    return egp_page_source(family=str(source["family"]), pacing_seconds=limits.get("pacing_seconds", 3),
+        lane_factory=lambda: FetchLane(url=SOURCES[key].endpoint, source_key=key, budget=budget))
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -108,9 +116,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             _log_failure(args.data_root, f"page source module unusable: {args.page_source_file}")
             return EXIT_BAD_PAGE_SOURCE
 
+    deep_fetcher = deep_specs = None
+    if os.environ.get("SANTHAU_OFFLINE_ACCEPTANCE_ROOT") == str(args.data_root.resolve()):
+        from santhau_studio.collectors.offline_acceptance import builder as offline_builder
+        from santhau_studio.collectors.offline_acceptance import deep_fetch, deep_spec, enabled
+        if not enabled(args.data_root):
+            return EXIT_BAD_PAGE_SOURCE
+        builder, deep_fetcher, deep_specs = offline_builder, deep_fetch, deep_spec
+
     loop = WorkerLoop(
         args.data_root,
-        page_source_builder=builder,
+        page_source_builder=builder, deep_fetcher=deep_fetcher, deep_specs=deep_specs,
         poll_seconds=args.poll_seconds,
         idle_exit_seconds=args.idle_exit_seconds,
         scheduled=args.scheduled,
