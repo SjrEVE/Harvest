@@ -426,7 +426,7 @@ class StudioBackend:
                 hits = [
                     dict(row)
                     for row in conn.execute(
-                        "SELECT s.record_id, s.family, s.natural_key,"
+                        "SELECT s.record_id, COALESCE(sr.family, s.family) AS family, s.natural_key,"
                         f"       {_TITLE_SQL} AS title_display,"
                         "        COALESCE(json_extract(v.normalized_json, '$.investorName'), '') AS investor_display,"
                         "        sr.version_state, sr.version_raw, sr.last_seen_at_utc"

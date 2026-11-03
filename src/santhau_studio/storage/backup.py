@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from santhau_studio.storage.rawstore import RawObjectStore
+from santhau_studio.storage.rawstore import ObjectCorruptError, RawObjectStore
 
 MANIFEST_NAME = "backup-manifest.json"
 MANIFEST_VERSION = 1
@@ -94,25 +94,29 @@ def create_backup(data_root: Path, destination: Path | None = None) -> BackupRes
         conn.close()
 
     entries = []
-    for row in rows:
-        source = _locate_object(data_root, row)
-        if source is None:
-            raise RestoreBlocked(
-                f"cannot back up: object row without file, sha256={row['sha256']} "
-                f"status={row['integrity_status']}"
+    store = RawObjectStore(data_root)
+    try:
+        for row in rows:
+            payload = _read_object_for_backup(store, data_root, row)
+            if payload is None:
+                raise RestoreBlocked(
+                    f"cannot back up: object row without file or readable bytes, sha256={row['sha256']} "
+                    f"status={row['integrity_status']}"
+                )
+            relative = f"{row['sha256']}.bin.gz"
+            (objects_dir / relative).write_bytes(gzip.compress(payload, 6, mtime=0))
+            entries.append(
+                {
+                    "sha256": row["sha256"],
+                    "byte_len": row["byte_len"],
+                    "codec": row["codec"],
+                    "file": relative,
+                    "integrity_status": row["integrity_status"],
+                    "redaction_policy_version": row["redaction_policy_version"],
+                }
             )
-        relative = f"{row['sha256']}.bin.gz"
-        shutil.copyfile(source, objects_dir / relative)
-        entries.append(
-            {
-                "sha256": row["sha256"],
-                "byte_len": row["byte_len"],
-                "codec": row["codec"],
-                "file": relative,
-                "integrity_status": row["integrity_status"],
-                "redaction_policy_version": row["redaction_policy_version"],
-            }
-        )
+    finally:
+        store.close()
 
     manifest = {
         "version": MANIFEST_VERSION,
@@ -132,13 +136,13 @@ def create_backup(data_root: Path, destination: Path | None = None) -> BackupRes
     )
 
 
-def _locate_object(data_root: Path, row: sqlite3.Row) -> Path | None:
-    """An object's bytes live at their canonical path, or in quarantine if §5.5 moved them."""
-    candidates = (
-        data_root / row["storage_rel_path"],
-        data_root / "quarantine" / f"{row['sha256']}.bin.gz",
-    )
-    return next((path for path in candidates if path.exists()), None)
+def _read_object_for_backup(store: RawObjectStore, data_root: Path, row: sqlite3.Row) -> bytes | None:
+    """Object bytes through the store (dual-read), falling back to quarantine (§5.5 evidence)."""
+    try:
+        return store.read(row["sha256"])
+    except ObjectCorruptError:
+        quarantined = data_root / "quarantine" / f"{row['sha256']}.bin.gz"
+        return _decompress(quarantined) if quarantined.exists() else None
 
 
 def load_manifest(source: Path) -> dict:

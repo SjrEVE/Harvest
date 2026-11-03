@@ -20,6 +20,7 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
+from santhau_studio.collectors.lane_source import egp_page_source
 from santhau_studio.platform_win.process import current_process_sid
 from santhau_studio.workers.ipc import PipeNameConflictError, PipeServer, worker_pipe_name
 from santhau_studio.workers.jobs import WorkerController, WorkerLoop
@@ -56,6 +57,19 @@ def _log_failure(data_root: Path, text: str) -> None:
         pass
 
 
+def _default_builder(writer, request):
+    """The live lane, used when no offline page-source module is supplied.
+
+    It performs no request until the runner asks for a page, and the runner only asks once a
+    canary-verified boundary rule exists — so an unverified source cannot be hit by accident.
+    """
+    del writer
+    source = request.sources[0] if request.sources else None
+    if not isinstance(source, dict) or "family" not in source:
+        return None
+    return egp_page_source(family=str(source["family"]))
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="santhau-collector")
     parser.add_argument("--data-root", required=True, type=Path)
@@ -68,7 +82,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _log_failure(args.data_root, "cannot read the process token; refusing to serve (§2.4 fail-closed)")
         print("cannot read the process token; refusing to serve (§2.4 fail-closed)", file=sys.stderr)
         return EXIT_STARTUP_FAILED
-    builder = None
+    builder = _default_builder
     if args.page_source_file is not None:
         builder = _load_builder(args.page_source_file)
         if builder is None:

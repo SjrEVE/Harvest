@@ -66,7 +66,7 @@ class Stats:
             "logical_bytes": self.logical_bytes,
             "allocated_bytes": self.allocated_bytes,
             "allocation_overhead_pct": round(100 * (self.allocated_bytes / max(self.logical_bytes, 1) - 1), 1),
-            "sequential_read_mb_per_s": round(self.logical_bytes / read / 1e6, 1),
+            "sequential_read_mb_per_s": round(self.logical_bytes / read / 1e6, 2),
             "read_seconds_scaled": round(self.read_seconds, 3),
             "verify_seconds_scaled": round(self.verify_seconds, 3),
             "verify_failures": self.verify_failures,
@@ -102,7 +102,7 @@ def allocated_bytes(path: Path, cluster: int) -> int:
     return max(cluster, ((size + cluster - 1) // cluster) * cluster)
 
 
-def make_pages(pages: int, records_per_page: int, seed: int = 20261103) -> list[tuple[bytes, list[bytes]]]:
+def iter_pages(pages: int, records_per_page: int, seed: int = 20261103):
     """Synthetic pages shaped like the real payload: shared keys, varied Vietnamese text.
 
     Compressibility and object size are the whole game for layout B, so the generator keeps the
@@ -112,7 +112,6 @@ def make_pages(pages: int, records_per_page: int, seed: int = 20261103) -> list[
     """
     rng = random.Random(seed)
     verbs = ("xây lắp", "thiết bị y tế", "tư vấn giám sát", "sửa chữa đường", "mua sắm tập trung")
-    out: list[tuple[bytes, list[bytes]]] = []
     for page_no in range(pages):
         records = [
             {
@@ -136,13 +135,14 @@ def make_pages(pages: int, records_per_page: int, seed: int = 20261103) -> list[
             for _ in range(records_per_page)
         ]
         page = {"code": 200, "page": {"number": page_no, "size": records_per_page, "content": records}}
-        out.append(
-            (
-                json.dumps(page, ensure_ascii=False).encode("utf-8"),
-                [json.dumps(record, ensure_ascii=False).encode("utf-8") for record in records],
-            )
+        yield (
+            json.dumps(page, ensure_ascii=False).encode("utf-8"),
+            [json.dumps(record, ensure_ascii=False).encode("utf-8") for record in records],
         )
-    return out
+
+
+def make_pages(pages: int, records_per_page: int, seed: int = 20261103) -> list[tuple[bytes, list[bytes]]]:
+    return list(iter_pages(pages, records_per_page, seed))
 
 
 def compress(payload: bytes) -> bytes:
@@ -162,14 +162,16 @@ def _fsync_file(path: Path, data: bytes, *, fsync: bool) -> None:
 
 def run_object_layout(
     root: Path,
-    pages: list[tuple[bytes, list[bytes]]],
+    pages_factory,
     cluster: int,
     *,
+    pages_total: int,
+    records_per_page: int,
     fsync: bool = True,
     read_sample: float = 1.0,
 ) -> Stats:
     """One file per object, sharded by hash prefix: the shipped design (§5.1)."""
-    stats = Stats(layout="object-per-page+record", pages=len(pages), records_per_page=len(pages[0][1]))
+    stats = Stats(layout="object-per-page+record", pages=pages_total, records_per_page=records_per_page)
     base = root / "objects"
     index: dict[str, Path] = {}
 
@@ -185,7 +187,7 @@ def run_object_layout(
         stats.logical_bytes += len(blob)
 
     start = time.perf_counter()
-    for page, records in pages:
+    for page, records in pages_factory():
         write_one(page)
         for record in records:
             write_one(record)
@@ -200,25 +202,28 @@ def run_object_layout(
     start = time.perf_counter()
     read_bytes = 0
     for path in sampled:
-        with gzip.open(path, "rb") as handle:
-            read_bytes += len(handle.read())
+        try:
+            with gzip.open(path, "rb") as handle:
+                read_bytes += len(handle.read())
+        except (OSError, EOFError, gzip.BadGzipFile) as exc:
+            stats.notes.append(f"READ_FAILED {path} size={path.stat().st_size}: {type(exc).__name__}: {exc}")
+            raise
     stats.read_seconds = _scale(time.perf_counter() - start, len(sampled), len(index))
     stats.notes.append(
         f"sequential read over {len(sampled)} of {len(index)} files, {read_bytes} bytes decompressed,"
         " time scaled to the full set"
     )
 
-    verified = _sample([payload for payload, _records in pages], read_sample)
+    verified = _sample(list(index), read_sample)
     start = time.perf_counter()
-    for payload in verified:
-        sha = hashlib.sha256(payload).hexdigest()
+    for sha in verified:
         try:
             with gzip.open(index[sha], "rb") as handle:
                 if hashlib.sha256(handle.read()).hexdigest() != sha:
                     stats.verify_failures += 1
         except (OSError, EOFError, gzip.BadGzipFile, KeyError):
             stats.verify_failures += 1
-    stats.verify_seconds = _scale(time.perf_counter() - start, len(verified), len(pages))
+    stats.verify_seconds = _scale(time.perf_counter() - start, len(verified), len(index))
     return stats
 
 
@@ -241,14 +246,16 @@ def _sample(sequence: list, fraction: float) -> list:
 
 def run_segment_layout(
     root: Path,
-    pages: list[tuple[bytes, list[bytes]]],
+    pages_factory,
     cluster: int,
     *,
+    pages_total: int,
+    records_per_page: int,
     fsync: bool = True,
     read_sample: float = 1.0,
 ) -> Stats:
     """Appends into fixed-size segment files, addressed by (segment, offset, length)."""
-    stats = Stats(layout="byte-offset segments", pages=len(pages), records_per_page=len(pages[0][1]))
+    stats = Stats(layout="byte-offset segments", pages=pages_total, records_per_page=records_per_page)
     base = root / "segments"
     base.mkdir(parents=True, exist_ok=True)
     index: dict[str, tuple[Path, int, int]] = {}
@@ -285,7 +292,7 @@ def run_segment_layout(
         stats.logical_bytes += len(blob)
 
     start = time.perf_counter()
-    for page, records in pages:
+    for page, records in pages_factory():
         write_one(page, pages_writer)
         for record in records:
             write_one(record, records_writer)
@@ -331,20 +338,19 @@ def run_segment_layout(
         " time scaled to the full set"
     )
 
-    verified = _sample([payload for payload, _records in pages], read_sample)
+    verified = _sample(list(index), read_sample)
     start = time.perf_counter()
-    for page in verified:
-        sha = hashlib.sha256(page).hexdigest()
-        path, offset, length = index[sha]
-        with path.open("rb") as handle:
-            handle.seek(offset)
-            blob = handle.read(length)
+    for sha in verified:
         try:
+            path, offset, length = index[sha]
+            with path.open("rb") as handle:
+                handle.seek(offset)
+                blob = handle.read(length)
             if hashlib.sha256(gzip.decompress(blob)).hexdigest() != sha:
                 stats.verify_failures += 1
         except (OSError, EOFError, gzip.BadGzipFile, KeyError):
             stats.verify_failures += 1
-    stats.verify_seconds = _scale(time.perf_counter() - start, len(verified), len(pages))
+    stats.verify_seconds = _scale(time.perf_counter() - start, len(verified), len(index))
     return stats
 
 
@@ -376,9 +382,25 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     args.workdir.mkdir(parents=True, exist_ok=True)
+    lock_path = args.workdir / "bench.lock"
+    try:
+        lock = lock_path.open("x")
+    except FileExistsError:
+        print(f"another benchmark owns {lock_path}; refusing to share a work directory", file=sys.stderr)
+        return 2
+    lock.close()
+    try:
+        return _run_benchmark(args)
+    finally:
+        lock_path.unlink(missing_ok=True)
+
+
+def _run_benchmark(args: argparse.Namespace) -> int:
     cluster = cluster_size(args.workdir)
     print(f"generating {args.pages} synthetic pages x {args.records_per_page} records (cluster={cluster})", flush=True)
-    pages = make_pages(args.pages, args.records_per_page)
+
+    def pages_factory():
+        return iter_pages(args.pages, args.records_per_page)
 
     report: dict[str, object] = {
         "generated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -399,7 +421,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"running {tag} ...", flush=True)
             stats, delta = measure_free_space_drop(
                 lambda r, run=run, durable=durable: run(
-                    r, pages, cluster, fsync=durable, read_sample=args.read_sample
+                    r, pages_factory, cluster, pages_total=args.pages,
+                    records_per_page=args.records_per_page,
+                    fsync=durable, read_sample=args.read_sample,
                 ),
                 root,
             )
@@ -429,7 +453,7 @@ def main(argv: list[str] | None = None) -> int:
         start = time.perf_counter()
         conn.executemany(
             "INSERT OR IGNORE INTO idx VALUES (?,?,?,?)",
-            [(hashlib.sha256(p).hexdigest(), "s", i, 1000) for i, (p, _r) in enumerate(pages)],
+            [(hashlib.sha256(p).hexdigest(), "s", i, 1000) for i, (p, _r) in enumerate(iter_pages(args.pages, args.records_per_page))],
         )
         conn.commit()
         report["sqlite_index_seconds"] = round(time.perf_counter() - start, 3)

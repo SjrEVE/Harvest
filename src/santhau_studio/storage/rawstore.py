@@ -26,9 +26,21 @@ import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
+from santhau_studio.storage.segments import (
+    DEFAULT_SEGMENT_BYTES,
+    FaultHook,
+    SegmentCorruptError,
+    SegmentMissing,
+    SegmentStore,
+)
+
 CODEC = "gzip"
 GZIP_LEVEL = 6
 CHUNK = 1 << 16
+
+LAYOUT_OBJECTS = "objects"
+LAYOUT_SEGMENTS = "segments"
+LAYOUTS = (LAYOUT_OBJECTS, LAYOUT_SEGMENTS)
 
 
 class ObjectCorruptError(RuntimeError):
@@ -42,6 +54,8 @@ class ObjectRef:
     storage_rel_path: str
     codec: str = CODEC
     already_existed: bool = False
+    segment: int | None = None
+    offset: int | None = None
 
 
 def _rel_path(sha256: str) -> str:
@@ -49,14 +63,50 @@ def _rel_path(sha256: str) -> str:
 
 
 class RawObjectStore:
-    def __init__(self, data_root: Path, *, redaction_policy_version: int = 1) -> None:
+    def __init__(
+        self,
+        data_root: Path,
+        *,
+        redaction_policy_version: int = 1,
+        layout: str = LAYOUT_OBJECTS,
+        segment_bytes: int = DEFAULT_SEGMENT_BYTES,
+        fault: FaultHook | None = None,
+    ) -> None:
+        if layout not in LAYOUTS:
+            raise ValueError(f"unknown raw layout {layout!r}")
         self.root = Path(data_root)
         self.objects_dir = self.root / "raw" / "objects"
         self.staging_dir = self.root / "staging"
         self.quarantine_dir = self.root / "quarantine"
         self.redaction_policy_version = redaction_policy_version
+        self.layout = layout
+        self.segment_bytes = segment_bytes
+        self._fault = fault
+        self._segments: SegmentStore | None = None
         for directory in (self.objects_dir, self.staging_dir, self.quarantine_dir):
             directory.mkdir(parents=True, exist_ok=True)
+        if layout == LAYOUT_SEGMENTS:
+            _ = self.segments  # create the segment directory up front for this layout
+
+    @property
+    def segments_dir(self) -> Path:
+        return self.root / "raw" / "segments"
+
+    @property
+    def segments(self) -> SegmentStore | None:
+        """Segment backend, opened lazily: legacy roots must not gain segment files just by reading."""
+        if self._segments is None and (
+            self.layout == LAYOUT_SEGMENTS or (self.segments_dir / "index.sqlite").exists()
+        ):
+            self._segments = SegmentStore(
+                self.root, segment_bytes=self.segment_bytes, fault=self._fault
+            )
+        return self._segments
+
+    def close(self) -> None:
+        if self._segments is not None:
+            self._segments.close()
+            self._segments = None
 
     # ------------------------------------------------------------------ write
 
@@ -64,6 +114,12 @@ class RawObjectStore:
         """Persist one object. Never overwrites: content addressing means same bytes = same object."""
         if not isinstance(payload, bytes):
             raise TypeError("raw store takes post-redaction bytes")
+        if self.layout == LAYOUT_SEGMENTS:
+            assert self.segments is not None
+            sha, location, existed = self.segments.put(payload)
+            rel = self.segments.rel_path(sha) or ""
+            return ObjectRef(sha, len(payload), rel, already_existed=existed,
+                             segment=location.segment, offset=location.offset)
         sha = hashlib.sha256(payload).hexdigest()
         rel = _rel_path(sha)
         final = self.root / rel
@@ -99,6 +155,14 @@ class RawObjectStore:
         return self.root / _rel_path(sha256)
 
     def read(self, sha256: str) -> bytes:
+        segments = self.segments
+        if segments is not None and segments.has(sha256):
+            try:
+                return segments.read(sha256)
+            except SegmentMissing:
+                pass
+            except SegmentCorruptError as exc:
+                raise ObjectCorruptError(str(exc)) from exc
         path = self.path_for(sha256)
         if not path.exists():
             raise ObjectCorruptError(f"object row without file: {sha256}")
@@ -124,7 +188,7 @@ class RawObjectStore:
     # ------------------------------------------------------------------ recovery / GC
 
     def scan_files(self) -> set[str]:
-        """sha256 of every object file physically present.
+        """sha256 of every object file physically present (legacy layout).
 
         Path.stem on "<sha>.bin.gz" yields "<sha>.bin", not "<sha>" — using it made every
         object look simultaneously missing and orphaned, which would have marked a healthy
@@ -132,14 +196,22 @@ class RawObjectStore:
         """
         return {path.name.removesuffix(".bin.gz") for path in self.objects_dir.rglob("*.bin.gz")}
 
+    def known_shas(self) -> set[str]:
+        """Every sha the store can serve, across both layouts (dual-read)."""
+        known = self.scan_files()
+        segments = self.segments
+        if segments is not None:
+            known |= segments.known_shas()
+        return known
+
     def recover(self, conn: sqlite3.Connection) -> RecoveryReport:
-        """§5.2 step 5: reconcile rows against files. Never raises for a single bad object.
+        """§5.2 step 5: reconcile rows against bytes. Never raises for a single bad object.
 
         Marking CORRUPT is a DB write, not a deletion: §5.1 forbids deleting or reusing a
         damaged object, and §5.5 requires quarantine to stay visible.
         """
         rows = {row["sha256"]: row for row in conn.execute("SELECT sha256, storage_rel_path FROM raw_objects")}
-        files = self.scan_files()
+        files = self.known_shas()
 
         missing_files = sorted(set(rows) - files)
         orphan_files = sorted(files - set(rows))
@@ -185,9 +257,10 @@ class RawObjectStore:
         )
 
     def collect_orphan_files(self, conn: sqlite3.Connection, *, dry_run: bool = True) -> tuple[str, ...]:
-        """Delete object files that no row references (§5.2: safe after the verifying job finished).
+        """Delete legacy object files that no row references (§5.2: after the verifying job).
 
         Row orphans are never collected here — §5.2 says keep them and age out separately.
+        Segment objects cannot be deleted in place; `compact(keep)` is their collection path.
         """
         rows = {row[0] for row in conn.execute("SELECT sha256 FROM raw_objects")}
         orphans = sorted(self.scan_files() - rows)
@@ -196,10 +269,35 @@ class RawObjectStore:
                 self.path_for(sha).unlink(missing_ok=True)
         return tuple(orphans)
 
+    def segment_orphans(self, conn: sqlite3.Connection) -> tuple[str, ...]:
+        """Segment objects no row references; dropped by the next compact, never deleted inline."""
+        segments = self.segments
+        if segments is None:
+            return ()
+        rows = {row[0] for row in conn.execute("SELECT sha256 FROM raw_objects")}
+        return tuple(sorted(segments.known_shas() - rows))
+
+    def compact_segments(self, conn: sqlite3.Connection) -> dict[str, int]:
+        """Rewrite live segment objects into fresh segments, dropping orphans."""
+        segments = self.segments
+        if segments is None:
+            return {"kept": 0, "dropped": 0}
+        keep = {row[0] for row in conn.execute("SELECT sha256 FROM raw_objects")}
+        return segments.compact(keep)
+
     def quarantine_page(self, response_sha: str) -> Path:
-        """Move an unreadable page out of the readable set without destroying it (§5.5)."""
-        source = self.path_for(response_sha)
+        """Move an unreadable page out of the readable set without destroying it (§5.5).
+
+        In segment layout the bytes are immutable inside a segment: the object is exported to
+        the quarantine directory and the segment is left untouched (its index row remains, so
+        the evidence trail is not edited by an integrity response).
+        """
         target = self.quarantine_dir / f"{response_sha}.bin.gz"
+        segments = self.segments
+        if segments is not None and segments.has(response_sha):
+            segments.export(response_sha, target)
+            return target
+        source = self.path_for(response_sha)
         if source.exists():
             shutil.move(str(source), str(target))
         return target
