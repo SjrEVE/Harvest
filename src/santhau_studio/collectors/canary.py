@@ -142,8 +142,8 @@ def canary_state(conn, source_key: str, family: str, adapter_sha: str | None = N
         " JOIN coverage_proofs cp ON cp.id = ci.proof_id"
         " JOIN filter_boundary_rules r ON r.id = cp.boundary_rule_id"
         " WHERE ci.status='COMPLETE' AND ci.family=? AND ci.source_key=?"
-        "   AND r.canary_verified=1 LIMIT 1",
-        (family, source_key),
+        "   AND r.canary_verified=1" + (" AND cp.adapter_sha=?" if adapter_sha is not None else "") + " LIMIT 1",
+        (family, source_key, adapter_sha) if adapter_sha is not None else (family, source_key),
     ).fetchone()
     if proven:
         return {"state": COLLECTION_PROVEN, "rule_verified": True, "probe_ok": True}

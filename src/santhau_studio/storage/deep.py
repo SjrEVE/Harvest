@@ -27,6 +27,7 @@ from santhau_studio.collectors.deep import (
     parse_detail,
 )
 from santhau_studio.domain.identity import canonical_bytes, content_hash
+from santhau_studio.domain.redaction import redact_payload
 from santhau_studio.storage.warehouse import WarehouseWriter
 
 STALE_SOURCE_VERSION_CHANGED = "SOURCE_VERSION_CHANGED"
@@ -65,6 +66,8 @@ def record_deep_capture(
     the capture cites both shas, so a derivation row can always be re-cut from bytes that
     still exist (FAULT-16 posture).
     """
+    response_payload = redact_payload(response_payload)
+    detail = redact_payload(detail)
     parsed = parse_detail(spec, detail)
     conn = writer.conn
     days = spec.refresh_after_days if refresh_after_days is None else refresh_after_days

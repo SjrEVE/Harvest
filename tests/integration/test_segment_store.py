@@ -238,6 +238,39 @@ def test_dual_read_serves_legacy_and_segment_objects(root: Path) -> None:
 
 # ------------------------------------------------------------------ compaction
 
+def test_invalid_swap_marker_cannot_delete_an_unrelated_directory(root: Path, tmp_path: Path) -> None:
+    import json
+
+    from santhau_studio.storage.segments import SWAP_MARKER, SegmentCorruptError, SegmentStore
+
+    outside = tmp_path / "unrelated"
+    outside.mkdir()
+    sentinel = outside / "keep.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    (root / "raw").mkdir(parents=True)
+    (root / "raw" / SWAP_MARKER).write_text(json.dumps({"new": str(outside), "old": str(tmp_path / "another")}), encoding="utf-8")
+    with pytest.raises(SegmentCorruptError):
+        SegmentStore(root)
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+
+
+def test_reopen_after_process_dies_between_retire_and_promote(root: Path) -> None:
+    import json
+    import shutil
+
+    from santhau_studio.storage.segments import SWAP_MARKER, SegmentStore
+
+    with SegmentStore(root) as store:
+        sha, _, _ = store.put(b"committed before process death")
+    live = root / "raw" / "segments"
+    staging = live.with_name("segments.compact")
+    retired = live.with_name("segments.old-20261103T000000Z")
+    shutil.copytree(live, staging)
+    (live.parent / SWAP_MARKER).write_text(json.dumps({"old": str(retired), "new": str(staging)}), encoding="utf-8")
+    live.replace(retired)
+    with SegmentStore(root) as restored:
+        assert restored.read(sha) == b"committed before process death"
+
 def test_compact_drops_orphans_and_keeps_live_objects(root: Path) -> None:
     writer = WarehouseWriter.open(root, create_schema=True, raw_layout=LAYOUT_SEGMENTS, )
     try:

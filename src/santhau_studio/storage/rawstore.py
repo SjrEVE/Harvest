@@ -67,10 +67,11 @@ class RawObjectStore:
         self,
         data_root: Path,
         *,
-        redaction_policy_version: int = 1,
+        redaction_policy_version: int = 2,
         layout: str = LAYOUT_OBJECTS,
         segment_bytes: int = DEFAULT_SEGMENT_BYTES,
         fault: FaultHook | None = None,
+        read_only: bool = False,
     ) -> None:
         if layout not in LAYOUTS:
             raise ValueError(f"unknown raw layout {layout!r}")
@@ -82,9 +83,11 @@ class RawObjectStore:
         self.layout = layout
         self.segment_bytes = segment_bytes
         self._fault = fault
+        self.read_only = read_only
         self._segments: SegmentStore | None = None
-        for directory in (self.objects_dir, self.staging_dir, self.quarantine_dir):
-            directory.mkdir(parents=True, exist_ok=True)
+        if not read_only:
+            for directory in (self.objects_dir, self.staging_dir, self.quarantine_dir):
+                directory.mkdir(parents=True, exist_ok=True)
         if layout == LAYOUT_SEGMENTS:
             _ = self.segments  # create the segment directory up front for this layout
 
@@ -99,7 +102,7 @@ class RawObjectStore:
             self.layout == LAYOUT_SEGMENTS or (self.segments_dir / "index.sqlite").exists()
         ):
             self._segments = SegmentStore(
-                self.root, segment_bytes=self.segment_bytes, fault=self._fault
+                self.root, segment_bytes=self.segment_bytes, fault=self._fault, read_only=self.read_only
             )
         return self._segments
 
@@ -111,6 +114,8 @@ class RawObjectStore:
     # ------------------------------------------------------------------ write
 
     def put(self, payload: bytes) -> ObjectRef:
+        if self.read_only:
+            raise PermissionError("raw store is read-only")
         """Persist one object. Never overwrites: content addressing means same bytes = same object."""
         if not isinstance(payload, bytes):
             raise TypeError("raw store takes post-redaction bytes")

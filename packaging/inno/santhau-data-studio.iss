@@ -30,7 +30,7 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=..\..\build\inno
-OutputBaseFilename=SanThau-Data-Studio-Setup-0.0.1-spike
+OutputBaseFilename=SanThau-Data-Studio-Setup-0.0.1-RC2
 Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
@@ -46,8 +46,7 @@ UninstallFilesDir={app}
 ; locked DLL behind in {app} (observed in the G0-A smoke run: 37 files remained).
 CloseApplications=yes
 RestartApplications=no
-; The GUI does not create a named mutex yet, so Inno falls back to its "files in use"
-; detection. Establishing an app-wide mutex is a G2 item (worker/controller lifecycle).
+; Both GUI and worker register a runtime mutex. [Code] waits for graceful shutdown.
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -75,29 +74,55 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: no
 ; is created by the application under a user-chosen path and is left untouched.
 
 [Code]
-// Ask a running GUI to exit before files are replaced/deleted. Restart Manager did not close
-// this Qt app during silent runs, so the app polls this named event instead (see
-// platform_win/shutdown_signal.py). The wait gives Qt time to tear the window down.
-procedure SignalAppShutdown;
+// The installer owns the signal until file operations finish. Every GUI/worker observes it.
+// Never kill a writer mid-commit: refuse installation if graceful shutdown times out.
+function ShutdownMarker: String;
+begin
+  Result := ExpandConstant('{localappdata}\SanThauDataStudio\shutdown.flag');
+end;
+
+function SignalAppShutdown: Boolean;
 var
-  Marker: String;
+  Attempt: Integer;
 begin
-  Marker := ExpandConstant('{localappdata}\SanThauDataStudio\shutdown.flag');
-  ForceDirectories(ExtractFileDir(Marker));
-  SaveStringToFile(Marker, '1', False);
-  Sleep(4000);
-  DeleteFile(Marker);
+  Result := False;
+  ForceDirectories(ExtractFileDir(ShutdownMarker));
+  if not SaveStringToFile(ShutdownMarker, '1', False) then exit;
+  Sleep(1000);
+  for Attempt := 1 to 120 do
+  begin
+    if not CheckForMutexes('Local\SanThauDataStudio-Runtime') then
+    begin
+      Result := True;
+      exit;
+    end;
+    Sleep(250);
+  end;
+  DeleteFile(ShutdownMarker);
 end;
 
-procedure InitializeUninstall;
+function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
-  SignalAppShutdown;
+  Result := '';
+  if not SignalAppShutdown then
+    Result := 'Collector is still saving data. Stop it from Collection Jobs, then retry.';
 end;
 
-procedure CurStepChanged(CurStep: TSetupStep);
+function InitializeUninstall: Boolean;
 begin
-  if CurStep = ssInstall then
-    SignalAppShutdown;
+  Result := SignalAppShutdown;
+  if not Result then
+    MsgBox('Collector is still saving data. Stop it from Collection Jobs, then retry.', mbError, MB_OK);
+end;
+
+procedure DeinitializeSetup;
+begin
+  DeleteFile(ShutdownMarker);
+end;
+
+procedure DeinitializeUninstall;
+begin
+  DeleteFile(ShutdownMarker);
 end;
 
 // Guard against the one uninstall mistake that would violate §11: deleting collected data.

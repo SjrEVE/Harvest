@@ -26,6 +26,7 @@ from santhau_studio.domain.identity import (
     notice_group_key,
 )
 from santhau_studio.domain.records import IntegrityMismatchError, NormalizedRecord
+from santhau_studio.domain.redaction import REDACTION_POLICY_VERSION, redact_payload
 from santhau_studio.platform_win.os_lock import DataRootLock
 from santhau_studio.storage.migrations import migrate
 from santhau_studio.storage.rawstore import LAYOUT_OBJECTS, ObjectRef, RawObjectStore
@@ -124,7 +125,7 @@ class WarehouseWriter:
         create_schema: bool = False,
         role: str = "worker",
         source_key: str = "egp_home",
-        redaction_policy_version: int = 1,
+        redaction_policy_version: int = REDACTION_POLICY_VERSION,
         raw_layout: str | None = None,
     ) -> WarehouseWriter:
         """The entry point for any process that intends to write (§5.2 single writer).
@@ -182,7 +183,7 @@ class WarehouseWriter:
         )
 
     def store_response(self, payload: Any) -> ObjectRef:
-        return self.store.put(canonical_bytes(payload))
+        return self.store.put(canonical_bytes(redact_payload(payload)))
 
     def ensure_attempt(
         self, *, run_id: str, family: str, endpoint: str, interval_from: str, interval_to: str,
@@ -247,6 +248,8 @@ class WarehouseWriter:
         try:
             self._register_object(response_ref)
             for extracted in records:
+                if redact_payload(extracted.payload) != extracted.payload:
+                    raise IntegrityMismatchError("record contains credentials; extract through the redaction boundary")
                 locator = extracted.locator
                 normalized = extracted.normalized
                 record_ref = self.store.put(canonical_bytes(extracted.payload))

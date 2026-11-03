@@ -10,6 +10,7 @@ suy giảm như thể đầy đủ").
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -69,8 +70,10 @@ def build_serving_db(warehouse: Path, target: Path) -> PublishResult:
     `target` is only replaced when every gate passes. Callers can therefore treat the
     existing serving file as always-readable.
     """
-    source = sqlite3.connect(f"file:{warehouse}?mode=ro", uri=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    source = sqlite3.connect(warehouse.resolve().as_uri() + "?mode=ro", uri=True)
     source.row_factory = sqlite3.Row
+    source.execute("BEGIN")  # every table and reconciliation count sees the same snapshot
     candidate = target.with_suffix(target.suffix + ".tmp")
     if candidate.exists():
         candidate.unlink()
@@ -115,15 +118,23 @@ def build_serving_db(warehouse: Path, target: Path) -> PublishResult:
         dest.close()
         candidate.unlink(missing_ok=True)
         _mark_stale(warehouse, str(exc))
+        mark_stale(target, str(exc))
         return PublishResult(published=False, snapshot_rows={}, reason=str(exc), stale=True)
-    except sqlite3.Error as exc:
+    except (sqlite3.Error, OSError) as exc:
         dest.close()
         candidate.unlink(missing_ok=True)
+        mark_stale(target, str(exc))
         return PublishResult(published=False, snapshot_rows={}, reason=f"sqlite error: {exc}", stale=True)
     else:
         dest.close()
         target.parent.mkdir(parents=True, exist_ok=True)
-        candidate.replace(target)  # atomic on the same volume; old snapshot never half-overwritten
+        try:
+            candidate.replace(target)  # old snapshot never half-overwritten
+        except OSError as exc:
+            candidate.unlink(missing_ok=True)
+            mark_stale(target, str(exc))
+            return PublishResult(False, {}, reason=str(exc), stale=True)
+        target.with_suffix(".stale.json").unlink(missing_ok=True)
         return PublishResult(published=True, snapshot_rows=counts, degraded=bool(degradation))
     finally:
         source.close()
@@ -143,15 +154,14 @@ def _copy_schema_and_rows(source: sqlite3.Connection, dest: sqlite3.Connection) 
         r[0] for r in source.execute("SELECT name FROM sqlite_master WHERE type='table' AND name != 'software_migrations'")
     ]
     for table in tables:
-        rows = source.execute(f"SELECT * FROM '{table}'").fetchall()
-        if not rows:
-            continue
-        columns = rows[0].keys()
-        placeholders = ",".join("?" * len(columns))
-        dest.executemany(
-            f"INSERT OR IGNORE INTO '{table}' ({','.join(columns)}) VALUES ({placeholders})",
-            [tuple(r) for r in rows],
-        )
+        cursor = source.execute(f"SELECT * FROM '{table}'")
+        while rows := cursor.fetchmany(FTS_BATCH):
+            columns = rows[0].keys()
+            placeholders = ",".join("?" * len(columns))
+            dest.executemany(
+                f"INSERT INTO '{table}' ({','.join(columns)}) VALUES ({placeholders})",
+                [tuple(r) for r in rows],
+            )
     # Indexes go last: they reference tables that only exist after the loop above.
     for name, sql in source.execute(
         "SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL AND type='index'"
@@ -294,10 +304,35 @@ def _parse_marker(raw: str | None) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def mark_stale(serving: Path, reason: str) -> None:
+    """Keep stale evidence next to the snapshot the GUI reads, even when a publish fails."""
+    marker = serving.with_suffix(".stale.json")
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    temporary = marker.with_suffix(".tmp")
+    with temporary.open("w", encoding="utf-8") as handle:
+        json.dump({"reason": reason[:400], "at": _now()}, handle)
+        handle.flush()
+        os.fsync(handle.fileno())
+    temporary.replace(marker)
+
+
 def serving_state(serving: Path) -> dict[str, object]:
+    try:
+        state = _read_serving_state(serving)
+    except (sqlite3.Error, OSError, ValueError) as exc:
+        state = {"present": serving.exists(), "stale": True, "reason": f"Snapshot unreadable: {exc}"}
+    try:
+        marker = json.loads(serving.with_suffix(".stale.json").read_text(encoding="utf-8"))
+        state.update(stale=True, reason=marker["reason"])
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return state
+
+
+def _read_serving_state(serving: Path) -> dict[str, object]:
     if not serving.exists():
         return {"present": False}
-    conn = sqlite3.connect(f"file:{serving}?mode=ro", uri=True)
+    conn = sqlite3.connect(serving.resolve().as_uri() + "?mode=ro", uri=True)
     try:
         if not _exists(conn, "serving_meta"):
             return {"present": True, "built_at": None}

@@ -134,9 +134,18 @@ class FakePortal:
         rows = documents(family, page_no, self.per_page)
         if page_no == self.total_pages - 1:
             rows = rows[: self.last_page_rows]
-        if self.drop_doc and self.drop_doc[0] == family and self.drop_doc[1] < len(rows):
-            rows = rows[: self.drop_doc[1]] + rows[self.drop_doc[1] + 1 :]
-        return httpx.Response(200, json={"page": {"content": rows, "totalElements": self.total}})
+        total = self.total
+        if self.drop_doc and self.drop_doc[0] == family:
+            # A source deletion reflows pagination and changes the reported total. Dropping
+            # a row from every page while retaining the old total simulates truncation instead.
+            all_rows = [row for p in range(self.total_pages)
+                        for row in documents(family, p, self.per_page)[:
+                            self.last_page_rows if p == self.total_pages - 1 else self.per_page]]
+            if self.drop_doc[1] < len(all_rows):
+                del all_rows[self.drop_doc[1]]
+            total = len(all_rows)
+            rows = all_rows[page_no * self.per_page:(page_no + 1) * self.per_page]
+        return httpx.Response(200, json={"page": {"content": rows, "totalElements": total}})
 
     def lane(self) -> FetchLane:
         client = httpx.Client(transport=self.transport())

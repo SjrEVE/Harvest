@@ -115,6 +115,9 @@ class ExtractionReport:
 
 def extract_page(response: Any, spec: FamilySpec) -> ExtractionReport:
     """Walk the response and produce one ExtractedRecord per member, with a real locator."""
+    from santhau_studio.domain.redaction import redact_payload
+
+    response = redact_payload(response)
     report = ExtractionReport()
     for locator, member in _members(response, spec.content_path):
         if not isinstance(member, dict):
@@ -149,6 +152,9 @@ def verify_extraction(response: Any, report: ExtractionReport) -> None:
     This is the production-side guard that makes a fabricated derivation row detectable
     rather than merely discouraged.
     """
+    from santhau_studio.domain.redaction import redact_payload
+
+    response = redact_payload(response)
     for record in report.records:
         resolved = resolve_locator(response, record.locator)
         canonical = canonical_bytes(_as_json_object(resolved))

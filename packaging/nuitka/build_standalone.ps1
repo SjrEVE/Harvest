@@ -13,16 +13,28 @@ Set-Location $Repo
 
 $Py = Join-Path $Repo '.venv\Scripts\python.exe'
 if (-not (Test-Path $Py)) { throw "missing venv python: $Py" }
+& $Py tools/release_manifest.py capture
+if ($LASTEXITCODE -ne 0) { throw 'source manifest capture failed' }
 
 $Out = Join-Path $Repo 'build\nuitka'
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
+
+function Assert-BuildPath([string]$Candidate) {
+    $full = [System.IO.Path]::GetFullPath($Candidate)
+    $allowed = [System.IO.Path]::GetFullPath((Join-Path $Repo 'build')) + '\'
+    if (-not $full.StartsWith($allowed, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "refusing filesystem operation outside build: $full"
+    }
+    return $full
+}
 
 # Clear previous outputs before building. Doing it afterwards races with any process
 # still holding the folder (a shell whose cwd is inside it, or a running exe), which
 # leaves a half-deleted dist behind.
 foreach ($stale in @('app_main.dist', 'service.dist', 'worker_main.dist', 'SanThauDataStudio.dist', 'SanThauCollector.dist')) {
     $path = Join-Path $Out $stale
-    if (Test-Path $path) { Remove-Item -Recurse -Force $path }
+    $path = Assert-BuildPath $path
+    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
 }
 
 Write-Host '--- building SanThauDataStudio.exe (Qt Quick/QML) ---'
@@ -69,9 +81,11 @@ $Renames = @(
 foreach ($rename in $Renames) {
     $source = Join-Path $Out $rename.From
     $target = Join-Path $Out $rename.To
+    $source = Assert-BuildPath $source
+    $target = Assert-BuildPath $target
     if (Test-Path $source) {
-        if (Test-Path $target) { Remove-Item -Recurse -Force $target }
-        Move-Item -Path $source -Destination $target
+        if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+        Move-Item -LiteralPath $source -Destination $target
     }
     if (-not (Test-Path $target)) { throw "dist folder missing: $target" }
     $files = (Get-ChildItem -Recurse -File $target | Measure-Object).Count
@@ -86,7 +100,8 @@ Write-Host 'BUILD_OK'
 # are merged here; shared runtimes (python312.dll, msvcp140*.dll) are identical
 # between them, so the app copy wins and the collector copy is skipped on conflict.
 $Stage = Join-Path $Repo 'build\stage'
-if (Test-Path $Stage) { Remove-Item -Recurse -Force $Stage }
+$Stage = Assert-BuildPath $Stage
+if (Test-Path -LiteralPath $Stage) { Remove-Item -LiteralPath $Stage -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 
 foreach ($source in @('SanThauDataStudio.dist', 'SanThauCollector.dist')) {
@@ -108,3 +123,5 @@ $stageFiles = (Get-ChildItem -Recurse -File $Stage | Measure-Object).Count
 $stageBytes = (Get-ChildItem -Recurse -File $Stage | Measure-Object -Sum Length).Sum
 Write-Host ("stage {0}: files={1} bytes={2:N0}" -f $Stage, $stageFiles, $stageBytes)
 Write-Host 'ASSEMBLE_OK'
+& $Py tools/release_manifest.py seal
+if ($LASTEXITCODE -ne 0) { throw 'build provenance verification failed' }

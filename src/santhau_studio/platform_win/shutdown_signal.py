@@ -15,6 +15,7 @@ if sys.platform != "win32":  # pragma: no cover - Windows-only product
     raise ImportError("santhau_studio.platform_win.shutdown_signal is Windows-only")
 
 import os
+import time
 from pathlib import Path
 
 SHUTDOWN_MARKER_ENV = "LOCALAPPDATA"
@@ -26,23 +27,27 @@ def shutdown_marker_path() -> Path:
 
 
 def open_shutdown_event() -> str | None:
-    """Compatibility name: clears any stale marker and returns the path the GUI should poll."""
+    """Each process observes the same signal; only the installer owns its removal."""
     path = shutdown_marker_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.unlink(missing_ok=True)
         return str(path)
     except OSError:
         return None
 
 
 def shutdown_requested(marker: str | None) -> bool:
-    return bool(marker) and Path(marker).exists()
+    if not marker:
+        return False
+    try:
+        # A crashed installer must not prevent launching forever.
+        return 0 <= time.time() - Path(marker).stat().st_mtime < 300
+    except OSError:
+        return False
 
 
 def close_shutdown_event(marker: str | None) -> None:
-    if marker:
-        Path(marker).unlink(missing_ok=True)
+    del marker  # another GUI or worker may not have observed the shared signal yet
 
 
 def signal_shutdown() -> bool:

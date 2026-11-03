@@ -83,6 +83,11 @@ kernel32.DisconnectNamedPipe.restype = wintypes.BOOL
 kernel32.ReadFile.argtypes = (wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD,
                               ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p)
 kernel32.ReadFile.restype = wintypes.BOOL
+kernel32.PeekNamedPipe.argtypes = (
+    wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.c_void_p,
+    ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p,
+)
+kernel32.PeekNamedPipe.restype = wintypes.BOOL
 kernel32.WriteFile.argtypes = (wintypes.HANDLE, ctypes.c_char_p, wintypes.DWORD,
                                ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p)
 kernel32.WriteFile.restype = wintypes.BOOL
@@ -158,14 +163,24 @@ def client_sid(handle: wintypes.HANDLE) -> str | None:
 class _LineReader:
     """Accumulates pipe reads into newline-terminated JSON lines with a hard size cap."""
 
-    def __init__(self, handle: wintypes.HANDLE, max_bytes: int = MAX_MESSAGE_BYTES) -> None:
+    def __init__(self, handle: wintypes.HANDLE, max_bytes: int = MAX_MESSAGE_BYTES, timeout_seconds: float = 5.0) -> None:
         self._handle = handle
         self._max = max_bytes
         self._buffer = b""
+        self._timeout = timeout_seconds
 
     def read_line(self) -> bytes | None:
         """The next line without its newline, or None when the peer is gone or overflowed."""
+        deadline = time.monotonic() + self._timeout
         while b"\n" not in self._buffer:
+            available = wintypes.DWORD()
+            if not kernel32.PeekNamedPipe(self._handle, None, 0, None, ctypes.byref(available), None):
+                return None
+            if not available.value:
+                if time.monotonic() >= deadline:
+                    return None
+                time.sleep(0.005)
+                continue
             chunk = self._read_chunk()
             if chunk is None:
                 return None
@@ -196,7 +211,7 @@ def _write_all(handle: wintypes.HANDLE, data: bytes) -> bool:
         if written.value == 0:
             return False
         data = data[written.value :]
-    return bool(kernel32.FlushFileBuffers(handle))
+    return True  # WriteFile queues bytes; FlushFileBuffers waits indefinitely for a stalled peer
 
 
 class PipeServer:
@@ -320,9 +335,9 @@ class PipeServer:
 class PipeClient:
     """A JSON-line client for the control pipe; one request, one response."""
 
-    def __init__(self, handle: wintypes.HANDLE) -> None:
+    def __init__(self, handle: wintypes.HANDLE, timeout_seconds: float = 5.0) -> None:
         self._handle = handle
-        self._reader = _LineReader(handle)
+        self._reader = _LineReader(handle, timeout_seconds=timeout_seconds)
 
     @classmethod
     def connect(cls, name: str, *, timeout_seconds: float = 5.0) -> PipeClient:
@@ -332,7 +347,7 @@ class PipeClient:
                 name, GENERIC_READ | GENERIC_WRITE, 0, None, OPEN_EXISTING, 0, None
             )
             if handle and handle != INVALID_HANDLE_VALUE:
-                return cls(handle)
+                return cls(handle, timeout_seconds=timeout_seconds)
             error = ctypes.get_last_error()
             if error != ERROR_PIPE_BUSY or time.monotonic() >= deadline:
                 raise PipeTransportError(f"cannot connect to {name} (error {error})")

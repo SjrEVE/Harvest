@@ -21,7 +21,11 @@ from PySide6.QtQuick import QQuickWindow
 
 from santhau_studio.desktop.backend import StudioBackend, default_data_root
 from santhau_studio.desktop.bridge import BackendBridge
-from santhau_studio.platform_win.process import acquire_single_instance, single_instance_name
+from santhau_studio.platform_win.process import (
+    acquire_single_instance,
+    register_runtime,
+    single_instance_name,
+)
 from santhau_studio.platform_win.restart_manager import (
     deployed_files,
     register_with_restart_manager,
@@ -89,6 +93,11 @@ def main(argv: list[str] | None = None) -> int:
     smoke_record, argv = _take_int_flag(argv, "--smoke-record", 0)
     smoke_shot = _take_smoke_args(argv)
 
+    shutdown_handle = open_shutdown_event()
+    if shutdown_requested(shutdown_handle):
+        return 0
+    register_runtime()
+
     app = QGuiApplication(argv)
     app.setApplicationName("SanThauDataStudio")
     root_path = Path(data_root) if data_root else default_data_root()
@@ -101,11 +110,14 @@ def main(argv: list[str] | None = None) -> int:
         _log_gui_failure(root_path, "another GUI instance already owns this data root")
         return 0
     backend = BackendBridge(StudioBackend(data_root))
-    shutdown_handle = open_shutdown_event()
     if shutdown_handle:
         watcher = QTimer(app)
         watcher.setInterval(250)
-        watcher.timeout.connect(lambda: app.quit() if shutdown_requested(shutdown_handle) else None)
+        watcher.timeout.connect(
+            lambda: app.quit()
+            if shutdown_requested(shutdown_handle) and not backend.maintenance.state.get("running")
+            else None
+        )
         watcher.start()
         app.aboutToQuit.connect(lambda: close_shutdown_event(shutdown_handle))
     qml_path = qml_entry_point()

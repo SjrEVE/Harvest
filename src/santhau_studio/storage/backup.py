@@ -17,14 +17,17 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import re
 import shutil
 import sqlite3
 import tempfile
+import uuid
 import zlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from santhau_studio.platform_win.os_lock import DataRootBusy, DataRootLock
 from santhau_studio.storage.rawstore import ObjectCorruptError, RawObjectStore
 
 MANIFEST_NAME = "backup-manifest.json"
@@ -73,8 +76,10 @@ def create_backup(data_root: Path, destination: Path | None = None) -> BackupRes
     if not warehouse.exists():
         raise RestoreBlocked(f"no warehouse at {warehouse}")
 
-    target = Path(destination) if destination else data_root / "backups" / f"backup-{_stamp()}"
-    target.mkdir(parents=True, exist_ok=True)
+    target = Path(destination) if destination else data_root / "backups" / f"backup-{_stamp()}-{uuid.uuid4().hex[:8]}"
+    if target.exists():
+        raise RestoreBlocked(f"backup destination already exists; refusing to overwrite: {target}")
+    target.mkdir(parents=True, exist_ok=False)
     objects_dir = target / RAW_DIR_NAME
     objects_dir.mkdir(exist_ok=True)
 
@@ -84,17 +89,21 @@ def create_backup(data_root: Path, destination: Path | None = None) -> BackupRes
     # self-contained file with no sidecars.
     conn = sqlite3.connect(warehouse)
     try:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT sha256, byte_len, codec, storage_rel_path, integrity_status,"
-            " redaction_policy_version FROM raw_objects ORDER BY sha256"
-        ).fetchall()
         _snapshot_into(conn, target / WAREHOUSE_NAME)
     finally:
         conn.close()
+    snapshot = sqlite3.connect((target / WAREHOUSE_NAME).resolve().as_uri() + "?mode=ro&immutable=1", uri=True)
+    try:
+        snapshot.row_factory = sqlite3.Row
+        rows = snapshot.execute(
+            "SELECT sha256, byte_len, codec, storage_rel_path, integrity_status,"
+            " redaction_policy_version FROM raw_objects ORDER BY sha256"
+        ).fetchall()
+    finally:
+        snapshot.close()
 
     entries = []
-    store = RawObjectStore(data_root)
+    store = RawObjectStore(data_root, read_only=True)
     try:
         for row in rows:
             payload = _read_object_for_backup(store, data_root, row)
@@ -146,13 +155,32 @@ def _read_object_for_backup(store: RawObjectStore, data_root: Path, row: sqlite3
 
 
 def load_manifest(source: Path) -> dict:
-    manifest = json.loads((Path(source) / MANIFEST_NAME).read_text(encoding="utf-8"))
+    try:
+        manifest = json.loads((Path(source) / MANIFEST_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RestoreBlocked(f"unreadable backup manifest: {exc}") from exc
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("objects"), list):
+        raise RestoreBlocked("backup manifest must contain an objects list")
     if manifest.get("version") != MANIFEST_VERSION:
         raise RestoreBlocked(f"unsupported backup manifest version: {manifest.get('version')!r}")
     if not (Path(source) / WAREHOUSE_NAME).exists():
         raise RestoreBlocked(f"backup has no warehouse snapshot: {source}")
-    if manifest["object_count"] != len(manifest["objects"]):
+    if manifest.get("object_count") != len(manifest["objects"]):
         raise RestoreBlocked("backup manifest object_count disagrees with its object list")
+    seen = set()
+    raw_root = (Path(source) / RAW_DIR_NAME).resolve()
+    for entry in manifest["objects"]:
+        if not isinstance(entry, dict):
+            raise RestoreBlocked("backup object entry is not an object")
+        sha = entry.get("sha256")
+        if not isinstance(sha, str) or not re.fullmatch(r"[a-f0-9]{64}", sha) or sha in seen:
+            raise RestoreBlocked("backup contains an invalid or duplicate object hash")
+        seen.add(sha)
+        if type(entry.get("byte_len")) is not int or entry["byte_len"] < 0:
+            raise RestoreBlocked("backup contains an invalid object length")
+        name = entry.get("file")
+        if name != f"{sha}.bin.gz" or not (raw_root / name).resolve().is_relative_to(raw_root):
+            raise RestoreBlocked("backup object path escapes its raw directory")
     return manifest
 
 
@@ -186,6 +214,15 @@ def verify_backup(source: Path) -> RestoreReport:
 
 
 def restore_backup(source: Path, data_root: Path) -> RestoreReport:
+    """Hold the writer lock for the complete restore, including object writes."""
+    try:
+        with DataRootLock(Path(data_root), role="restore"):
+            return _restore_backup(source, data_root)
+    except DataRootBusy as exc:
+        return RestoreReport(False, 0, (), (), reason=str(exc))
+
+
+def _restore_backup(source: Path, data_root: Path) -> RestoreReport:
     """Verify first, then stage objects, then swap the warehouse. Never a partial swap."""
     source = Path(source)
     report = verify_backup(source)
@@ -235,6 +272,9 @@ def restore_backup(source: Path, data_root: Path) -> RestoreReport:
 
         final = data_root / WAREHOUSE_NAME
         try:
+            from santhau_studio.storage.serving import mark_stale
+
+            mark_stale(data_root / "serving.sqlite", "Restore in progress; rebuild the serving snapshot")
             _swap_warehouse(data_root, final, staged_warehouse)
         except OSError as exc:
             raise RestoreBlocked(
@@ -251,6 +291,7 @@ def restore_backup(source: Path, data_root: Path) -> RestoreReport:
             reason=str(exc),
         )
     finally:
+        store.close()
         shutil.rmtree(staged, ignore_errors=True)
 
     return RestoreReport(

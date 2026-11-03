@@ -19,12 +19,15 @@ import os
 import re
 import shutil
 import sqlite3
+import sys
+import tempfile
 import uuid
 from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from santhau_studio.desktop.preferences import selected_data_root
 from santhau_studio.domain.text import fold_vietnamese
 from santhau_studio.platform_win.os_lock import LOCK_SUFFIX, DataRootBusy, DataRootLock, holder_info
 from santhau_studio.storage.serving import serving_state
@@ -52,6 +55,9 @@ def default_data_root() -> Path:
     override = os.environ.get("SANTHAU_DATA_ROOT")
     if override:
         return Path(override)
+    selected = selected_data_root()
+    if selected is not None:
+        return selected
     base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
     return Path(base) / "SanThauDataStudio" / "data"
 
@@ -111,13 +117,19 @@ class StudioBackend:
 
     def validate_data_root(self, path_text: str) -> dict[str, Any]:
         """UI-01: a data root is usable when we can write a probe and the volume reports size."""
-        path = Path(path_text).expanduser()
+        if not path_text.strip():
+            return {"ok": False, "error": "Chọn một thư mục dữ liệu trước."}
+        path = Path(path_text).expanduser().resolve()
         result: dict[str, Any] = {"path": str(path), "ok": False, "writable": False}
         try:
+            forbidden = [Path(p).resolve() for key in ("ProgramFiles", "ProgramFiles(x86)") if (p := os.environ.get(key))]
+            if Path(sys.executable).name.lower() == "santhaudatastudio.exe":
+                forbidden.append(Path(sys.executable).resolve().parent)
+            if str(path).startswith("\\\\") or any(path.is_relative_to(base) for base in forbidden):
+                raise OSError("Data Root phải nằm trên ổ cục bộ, bên ngoài thư mục chương trình.")
             path.mkdir(parents=True, exist_ok=True)
-            probe = path / ".write-probe"
-            probe.write_text("ok", encoding="utf-8")
-            probe.unlink()
+            with tempfile.TemporaryFile(dir=path) as probe:
+                probe.write(b"ok")
             usage = shutil.disk_usage(path)
             result.update(
                 ok=True,
@@ -166,6 +178,8 @@ class StudioBackend:
             lock.acquire()
         except DataRootBusy:
             return True
+        except OSError:
+            return False
         else:
             lock.release()
             return False

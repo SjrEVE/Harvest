@@ -135,6 +135,7 @@ class Runner:
         self.max_split_granularity = max_split_granularity
         self._rule_for = rule_for or self._rule_from_db
         self._rule_cache: dict[str, BoundaryRule | None] = {}
+        self.reconcile_outcomes: list[IntervalOutcome] = []
 
     # ------------------------------------------------------------------ boundary rules
 
@@ -420,11 +421,14 @@ class Runner:
     def reconcile(self, run_id: str, span: Interval) -> list[dict[str, Any]]:
         """§4.4: re-scan proven intervals and write findings. A record is never deleted here."""
         gaps: list[dict[str, Any]] = []
+        self.reconcile_outcomes = []
         resolution = coverage.resolve(self.conn, self.source_key, self.family, span.from_utc, span.to_utc)
         for proven in resolution.proven:
             before = _stored_identities(self.conn, self.source_key, self.family, proven)
             outcome = self.fetch_interval(proven, interval_granularity(proven), run_id)
-            if outcome.status in ("BLOCKED", "INTERRUPTED"):
+            self._record(outcome, run_id)
+            self.reconcile_outcomes.append(outcome)
+            if outcome.status != "COMPLETE":
                 continue  # a failed re-scan proves nothing about absence
             for key in sorted(before - outcome.identity_keys):
                 gap = {"kind": "MISSING_FROM_SOURCE_IN_VERIFIED_WINDOW", "identity_hash": key}

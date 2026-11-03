@@ -7,18 +7,29 @@ queries stay testable as plain Python.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
-from PySide6.QtCore import QObject, Slot
+from PySide6.QtCore import QObject, Signal, Slot
 
 from santhau_studio.desktop.backend import StudioBackend
+from santhau_studio.desktop.operations import MaintenanceProcess
+from santhau_studio.desktop.preferences import save_data_root
 from santhau_studio.desktop.supervisor import WorkerSupervisor
+from santhau_studio.platform_win.process import (
+    acquire_single_instance,
+    release_single_instance,
+    single_instance_name,
+)
 
 
 class BackendBridge(QObject):
+    dataRootChanged = Signal()  # noqa: N815 - QML signal naming
+
     def __init__(self, backend: StudioBackend, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.backend = backend
         self.supervisor = WorkerSupervisor(backend.data_root)
+        self.maintenance = MaintenanceProcess(self)
 
     @staticmethod
     def _dump(value: object) -> str:
@@ -47,6 +58,31 @@ class BackendBridge(QObject):
     @Slot(str, result=str)
     def validateDataRoot(self, path: str) -> str:
         return self._dump(self.backend.validate_data_root(path))
+
+    @Slot(str, result=str)
+    def selectDataRoot(self, path: str) -> str:
+        if self.maintenance.state.get("running"):
+            return self._dump({"ok": False, "error": "Chờ tác vụ bảo trì hoàn tất trước khi đổi thư mục."})
+        result = self.backend.validate_data_root(path)
+        if not result["ok"]:
+            return self._dump(result)
+        selected = Path(result["path"])
+        old_name = single_instance_name(str(self.backend.data_root))
+        new_name = single_instance_name(str(selected))
+        if not acquire_single_instance(new_name):
+            return self._dump({"ok": False, "error": "Thư mục này đang mở trong cửa sổ khác."})
+        try:
+            save_data_root(selected)
+        except OSError as exc:
+            if old_name != new_name:
+                release_single_instance(new_name)
+            return self._dump({"ok": False, "error": str(exc)})
+        self.backend = StudioBackend(selected)
+        self.supervisor = WorkerSupervisor(selected)
+        if old_name != new_name:
+            release_single_instance(old_name)
+        self.dataRootChanged.emit()
+        return self._dump({"ok": True, "path": str(selected)})
 
     @Slot(result=str)
     def controlCenter(self) -> str:
@@ -99,3 +135,11 @@ class BackendBridge(QObject):
     @Slot(result=str)
     def settings(self) -> str:
         return self._dump(self.backend.settings())
+
+    @Slot(str, str, result=str)
+    def startMaintenance(self, action: str, source: str) -> str:
+        return self._dump(self.maintenance.start(action, self.backend.data_root, source))
+
+    @Slot(result=str)
+    def maintenanceStatus(self) -> str:
+        return self._dump(self.maintenance.state)

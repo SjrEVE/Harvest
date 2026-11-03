@@ -93,6 +93,23 @@ def pid_alive(pid: int) -> bool:
 
 
 _single_instance_handles: dict[str, int] = {}
+_runtime_handle = None
+RUNTIME_MUTEX = r"Local\SanThauDataStudio-Runtime"
+
+
+def register_runtime() -> None:
+    """Every GUI/worker holds this shared mutex; installer waits until all handles close."""
+    global _runtime_handle
+    if _runtime_handle is None:
+        _runtime_handle = kernel32.CreateMutexW(None, False, RUNTIME_MUTEX)
+        if not _runtime_handle:
+            raise OSError(ctypes.get_last_error(), "cannot register application runtime")
+
+
+def release_single_instance(name: str) -> None:
+    handle = _single_instance_handles.pop(name, None)
+    if handle:
+        kernel32.CloseHandle(handle)
 
 
 def acquire_single_instance(name: str) -> bool:

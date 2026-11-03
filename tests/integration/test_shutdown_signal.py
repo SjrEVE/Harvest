@@ -25,7 +25,7 @@ def test_marker_roundtrip(tmp_path: Path, monkeypatch) -> None:
     assert signal_shutdown() is True
     assert shutdown_requested(marker) is True
     close_shutdown_event(marker)
-    assert shutdown_requested(marker) is False
+    assert shutdown_requested(marker) is True  # installer, not one consumer, removes it
 
 
 def test_stale_marker_is_cleared_on_start(tmp_path: Path, monkeypatch) -> None:
@@ -33,5 +33,9 @@ def test_stale_marker_is_cleared_on_start(tmp_path: Path, monkeypatch) -> None:
     path = Path(tmp_path) / "SanThauDataStudio" / "shutdown.flag"
     path.parent.mkdir(parents=True)
     path.write_text("1", encoding="utf-8")
+    import os
+    import time
+
+    os.utime(path, (time.time() - 600, time.time() - 600))
     marker = open_shutdown_event()
     assert shutdown_requested(marker) is False, "a stale marker must not kill the next launch"

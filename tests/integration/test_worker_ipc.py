@@ -110,6 +110,27 @@ def job_request(**overrides) -> JobRequest:
     return JobRequest(**values)
 
 
+def test_response_timeout_does_not_freeze_a_client() -> None:
+    name = f"\\\\.\\pipe\\santhau-timeout-{uuid.uuid4().hex}"
+    def slow_handler(_payload, _sid):
+        time.sleep(0.3)
+        return {"ok": True}
+
+    server = PipeServer(name, allowed_sid=current_process_sid(), handler=slow_handler)
+    stop = threading.Event()
+    thread = threading.Thread(target=server.serve_until, args=(stop,), daemon=True)
+    thread.start()
+    client = PipeClient.connect(name, timeout_seconds=0.05)
+    try:
+        with pytest.raises(PipeClosedError):
+            client.request({"op": "ping"})
+    finally:
+        client.close()
+        stop.set()
+        server.wake()
+        thread.join(timeout=2)
+
+
 class Harness:
     """Loop + pipe server wired like service.main, but in-process and fully observable."""
 

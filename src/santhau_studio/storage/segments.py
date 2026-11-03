@@ -30,6 +30,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import struct
@@ -86,17 +87,23 @@ class SegmentStore:
         segment_bytes: int = DEFAULT_SEGMENT_BYTES,
         fault: FaultHook | None = None,
         directory: Path | None = None,
+        read_only: bool = False,
     ) -> None:
         self.root = Path(data_root)
         self.directory = Path(directory) if directory else self.root / "raw" / "segments"
         self.segment_bytes = segment_bytes
         self._fault = fault
-        self.directory.mkdir(parents=True, exist_ok=True)
+        self.read_only = read_only
         self._seq: int | None = None
         self._handle = None  # type: ignore[assignment]
         self._pos = 0
+        self._conn = None
+        if not read_only:
+            self.recover_swap()  # before mkdir/open_index: an empty live directory is not a promotion
+            self.directory.mkdir(parents=True, exist_ok=True)
         self._conn = self._open_index()
-        self.recover_swap()
+        if read_only:
+            return  # readers must never recover/truncate a writer's in-flight segment
         if not (self.directory.parent / SWAP_MARKER).exists():
             shutil.rmtree(self.directory.with_name(self.directory.name + ".compact"), ignore_errors=True)
         self.recover_tail()
@@ -107,6 +114,11 @@ class SegmentStore:
         return self.directory / INDEX_NAME
 
     def _open_index(self) -> sqlite3.Connection:
+        if self.read_only:
+            conn = sqlite3.connect(self._index_path().resolve().as_uri() + "?mode=ro", uri=True)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA query_only=ON")
+            return conn
         conn = sqlite3.connect(self._index_path())
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
@@ -138,6 +150,8 @@ class SegmentStore:
 
     def put(self, payload: bytes) -> tuple[str, Location, bool]:
         """Append one object; returns (sha256, location, already_existed)."""
+        if self.read_only:
+            raise PermissionError("segment store is read-only")
         sha = hashlib.sha256(payload).hexdigest()
         existing = self._location(sha)
         if existing is not None:
@@ -359,14 +373,27 @@ class SegmentStore:
             return False
         try:
             state = json.loads(marker.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            marker.unlink(missing_ok=True)
-            return False
-        staging = Path(state.get("new", ""))
-        retired = Path(state.get("old", ""))
+            staging = Path(state["new"])
+            retired = Path(state["old"])
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise SegmentCorruptError("invalid segment swap marker; no files changed") from exc
+        expected_staging = self.directory.with_name(self.directory.name + ".compact")
+        parent = self.directory.parent.resolve()
+        if (staging.resolve() != expected_staging.resolve()
+                or retired.resolve().parent != parent
+                or not re.fullmatch(re.escape(self.directory.name) + r"\.old-[0-9TZ.\-]+", retired.name)
+                or staging.is_symlink() or retired.is_symlink()):
+            raise SegmentCorruptError("unsafe segment swap paths; no files changed")
         # Adopt the completed side: if the live directory is missing, promotion never finished.
-        if staging.exists() and not self.directory.exists():
-            staging.replace(self.directory)
+        if not self.directory.exists():
+            if staging.exists() and (staging / INDEX_NAME).is_file():
+                staging.replace(self.directory)
+            elif retired.exists() and (retired / INDEX_NAME).is_file():
+                retired.replace(self.directory)
+            else:
+                raise SegmentCorruptError("no complete segment directory to recover; files preserved")
+        if not (self.directory / INDEX_NAME).is_file():
+            raise SegmentCorruptError("recovered segment index missing; retired data preserved")
         marker.unlink(missing_ok=True)
         for leftover in (staging, retired):
             if leftover and leftover.resolve() != self.directory.resolve() and leftover.exists():

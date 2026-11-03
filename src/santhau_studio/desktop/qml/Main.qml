@@ -15,6 +15,33 @@ Window {
 
     property int pageIndex: 0
     property int detailRecordId: 0
+    property var operation: ({ running: false })
+    property string operationMessage: ""
+    function startAction(action, source) {
+        var result = root.parse(backend.startMaintenance(action, source || ""))
+        operationMessage = result.ok ? "Đang thực hiện…" : (result.error || "Không khởi chạy được")
+        operation = root.parse(backend.maintenanceStatus())
+    }
+    onClosing: function(close) {
+        if (operation.running) {
+            close.accepted = false
+            operationMessage = "Chờ tác vụ hoàn tất trước khi đóng ứng dụng."
+        }
+    }
+    Timer {
+        interval: 750
+        repeat: true
+        running: root.operation.running
+        onTriggered: {
+            root.operation = root.parse(backend.maintenanceStatus())
+            if (!root.operation.running) {
+                root.operationMessage = root.operation.ok
+                    ? "Hoàn tất · " + (root.operation.path || JSON.stringify(root.operation))
+                    : "Không hoàn tất · " + (root.operation.error || JSON.stringify(root.operation))
+                page10.reload()
+            }
+        }
+    }
     Keys.onDownPressed: pageIndex = Math.min(pageIndex + 1, navItems.length - 1)
     Keys.onUpPressed: pageIndex = Math.max(pageIndex - 1, 0)
     property var navItems: [
@@ -26,6 +53,24 @@ Window {
     function parse(text) {
         try { return JSON.parse(text) }
         catch (error) { return { error: "bad json: " + error } }
+    }
+
+    Connections {
+        target: backend
+        function onDataRootChanged() {
+            root.detailRecordId = 0
+            rootPath.text = backend.dataRootPath()
+            page1.reload()
+            page2.reload()
+            page3.reload()
+            page4.reload()
+            page5.reload()
+            page6.state = { hits: [] }
+            page7.state = ({})
+            page8.reload()
+            page9.reload()
+            page10.reload()
+        }
     }
 
     RowLayout {
@@ -139,6 +184,13 @@ Window {
                                     validation.text = result.ok
                                         ? "OK · free " + Math.round(result.free_bytes / 1048576) + " MB"
                                         : "KHÔNG DÙNG ĐƯỢC · " + (result.error || "")
+                                }
+                            }
+                            Button {
+                                text: "Dùng thư mục này"
+                                onClicked: {
+                                    var result = root.parse(backend.selectDataRoot(rootPath.text))
+                                    validation.text = result.ok ? "Đã chọn · " + result.path : result.error
                                 }
                             }
                         }
@@ -586,6 +638,7 @@ Window {
                             }
                             Button { text: "Tìm"; onClicked: page6.run() }
                             Button { text: "Tải thêm"; onClicked: page6.loadMore() }
+                            Button { text: "Xuất kho CSV"; enabled: !root.operation.running; onClicked: root.startAction("export", "") }
                         }
 
                         Text { text: page6.state.note || ""; color: "#8b959f"; font.pixelSize: 11 }
@@ -595,11 +648,18 @@ Window {
                             color: "#e07a7a"
                             font.pixelSize: 11
                         }
-                        Repeater {
+                        ListView {
+                            id: searchResults
+                            objectName: "searchResults"
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            clip: true
+                            spacing: 8
+                            ScrollBar.vertical: ScrollBar {}
                             model: page6.state.hits || []
                             delegate: Rectangle {
                                 required property var modelData
-                                Layout.fillWidth: true
+                                width: searchResults.width
                                 height: 44
                                 color: "#1b2128"
                                 radius: 4
@@ -607,13 +667,19 @@ Window {
                                     anchors.verticalCenter: parent.verticalCenter
                                     anchors.left: parent.left
                                     anchors.leftMargin: 10
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 10
                                     spacing: 2
                                     Text {
+                                        width: parent.width
+                                        elide: Text.ElideRight
                                         text: (modelData.title_display || "(không tiêu đề)") + "  ·  " + modelData.natural_key
                                         color: "#e6e9ec"
                                         font.pixelSize: 12
                                     }
                                     Text {
+                                        width: parent.width
+                                        elide: Text.ElideRight
                                         text: modelData.family + " · " + (modelData.investor_display || "—")
                                               + " · version " + modelData.version_state
                                               + (modelData.version_raw ? (" (" + modelData.version_raw + ")") : "")
@@ -631,7 +697,6 @@ Window {
                                 }
                             }
                         }
-                        Item { Layout.fillHeight: true }
                     }
                 }
 
@@ -879,6 +944,20 @@ Window {
                     onVisibleChanged: if (visible) reload()
                     function reload() { state = root.parse(backend.settings()) }
 
+                    Dialog {
+                        id: restoreConfirm
+                        title: "Khôi phục kho dữ liệu"
+                        modal: true
+                        anchors.centerIn: parent
+                        standardButtons: Dialog.Ok | Dialog.Cancel
+                        Text {
+                            text: "Dừng worker trước khi khôi phục. Warehouse hiện tại được giữ làm bản dự phòng.\nChỉ tiếp tục khi đúng thư mục backup và Data Root đang hiển thị."
+                            wrapMode: Text.WordWrap
+                            width: 480
+                        }
+                        onAccepted: root.startAction("restore", restorePath.text)
+                    }
+
                     ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 18
@@ -890,6 +969,38 @@ Window {
                                   + " · pipe " + (page10.state.worker_pipe || "")
                             color: "#c8d0d8"
                             font.pixelSize: 12
+                        }
+                        RowLayout {
+                            Button { text: "Tạo backup"; enabled: !root.operation.running; onClicked: root.startAction("backup", "") }
+                            Button { text: "Kiểm tra dữ liệu"; enabled: !root.operation.running; onClicked: root.startAction("verify", "") }
+                            Button { text: "Xuất CSV"; enabled: !root.operation.running; onClicked: root.startAction("export", "") }
+                        }
+                        RowLayout {
+                            TextField {
+                                id: restorePath
+                                Layout.fillWidth: true
+                                placeholderText: "Đường dẫn thư mục backup cần khôi phục"
+                            }
+                            Button { text: "Khôi phục…"; enabled: !root.operation.running && restorePath.text.trim().length > 0; onClicked: restoreConfirm.open() }
+                        }
+                        RowLayout {
+                            Button { text: "Bật lịch 08:00 / 20:00"; enabled: !root.operation.running; onClicked: root.startAction("schedule-enable", "") }
+                            Button { text: "Tắt lịch"; enabled: !root.operation.running; onClicked: root.startAction("schedule-disable", "") }
+                            Button { text: "Xem lịch"; enabled: !root.operation.running; onClicked: root.startAction("schedule-status", "") }
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Lịch chỉ thu tăng dần các family đã có quyền truy cập và quy tắc canary được xác minh."
+                            color: "#8b959f"
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.operationMessage
+                            color: root.operation.ok === false ? "#e07a7a" : "#7fd1a4"
+                            font.pixelSize: 12
+                            wrapMode: Text.WrapAnywhere
                         }
                         Text {
                             text: {

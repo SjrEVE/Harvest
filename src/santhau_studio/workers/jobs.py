@@ -24,6 +24,7 @@ Lifecycle rules enforced here:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import queue
@@ -36,7 +37,7 @@ import traceback
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,7 @@ from santhau_studio.collectors.source_registry import SOURCES, source_for
 from santhau_studio.domain.coverage import Interval
 from santhau_studio.platform_win.os_lock import DataRootBusy
 from santhau_studio.storage.rawstore import LAYOUT_SEGMENTS
+from santhau_studio.storage.serving import build_serving_db, mark_stale
 from santhau_studio.storage.warehouse import WarehouseWriter, connect_read_only
 from santhau_studio.workers.deep_run import LANE_KINDS, DeepFetcher, SpecProvider, run_deep_batch
 from santhau_studio.workers.runner import IntervalOutcome, PageSource, Runner
@@ -109,6 +111,12 @@ class JobRequest:
         missing = {"job_id", "job_kind", "requested_by", "sources", "scope", "created_at"} - set(document)
         if missing:
             raise JobError(f"request is missing {sorted(missing)}")
+        if not isinstance(document["sources"], list) or not all(isinstance(s, dict) for s in document["sources"]):
+            raise JobError("sources must be a list of objects")
+        if not isinstance(document["scope"], dict) or not isinstance(document.get("request_limits", {}), dict):
+            raise JobError("scope and request_limits must be objects")
+        if type(document.get("policy_version", 1)) is not int:
+            raise JobError("policy_version must be an integer")
         return cls(
             job_id=str(document["job_id"]),
             job_kind=str(document["job_kind"]),
@@ -146,11 +154,14 @@ def enqueue_job(data_root: Path, request: JobRequest) -> Path:
     root = Path(data_root) / "jobs"
     target = root / _QUEUE_DIR / _file_name(request)
     for directory in (_QUEUE_DIR, _ACTIVE_DIR, _DONE_DIR):
-        if (root / directory / _file_name(request)).exists():
+        if any((root / directory).glob(f"*-{request.job_id}.json")):
             raise JobAlreadyQueued(f"job {request.job_id} is already in jobs/{directory}")
     (root / _QUEUE_DIR).mkdir(parents=True, exist_ok=True)
     staging = root / _QUEUE_DIR / f".{request.job_id}.part"
-    staging.write_text(request.to_json(), encoding="utf-8")
+    with staging.open("x", encoding="utf-8") as handle:
+        handle.write(request.to_json())
+        handle.flush()
+        os.fsync(handle.fileno())
     staging.replace(target)
     return target
 
@@ -166,7 +177,9 @@ def claim_next_job(data_root: Path) -> JobRequest | None:
     for path in sorted((root / _QUEUE_DIR).glob("*.json")):
         try:
             request = JobRequest.from_json(path.read_text(encoding="utf-8"))
-        except JobError:
+            if path.name != _file_name(request):
+                raise JobError("queue filename does not match immutable job identity")
+        except (JobError, ValueError, TypeError, UnicodeError):
             _move(root, path, _REJECTED_DIR)
             continue
         try:
@@ -301,6 +314,7 @@ class WorkerLoop:
         idle_exit_seconds: float | None = None,
         deep_fetcher: DeepFetcher | None = None,
         deep_specs: SpecProvider | None = None,
+        scheduled: bool = False,
     ) -> None:
         self.data_root = Path(data_root)
         self.flag = CommandFlag()
@@ -313,6 +327,7 @@ class WorkerLoop:
         self._idle_since = time.monotonic()
         self._deep_fetcher = deep_fetcher
         self._deep_specs = deep_specs
+        self._scheduled = scheduled
         self._commands: queue.Queue[Command] = queue.Queue()
         self._writer: WarehouseWriter | None = None
         self._current: JobRequest | None = None
@@ -349,6 +364,21 @@ class WorkerLoop:
             return
         try:
             recover_interrupted_runs(self._writer.conn, self.data_root)
+            for source in SOURCES.values():
+                state = "NEEDS_USER_SESSION" if source.requires_user_session else (
+                    "UNVERIFIED" if source.enabled_by_default else "DISABLED"
+                )
+                self._writer.conn.execute(
+                    "INSERT OR IGNORE INTO source_registry (source_key, display_name, endpoint_family, access_state) VALUES (?,?,?,?)",
+                    (source.key, source.display_name, source.key, state),
+                )
+            self._writer.conn.commit()
+            self._writer.store.recover(self._writer.conn)
+            if self._scheduled:
+                self._enqueue_scheduled()
+            if not (self.data_root / "serving.sqlite").exists() or (self.data_root / "serving.stale.json").exists():
+                self._publish_snapshot()
+            self._idle_since = time.monotonic()
             while True:
                 self._drain_commands()
                 if stop.is_set() or self.flag.shutdown_requested:
@@ -363,6 +393,8 @@ class WorkerLoop:
                     continue
                 self._idle_since = time.monotonic()
                 self._execute(request)
+                self._publish_snapshot()
+                self._idle_since = time.monotonic()
         except Exception:
             self.exit_code = 1
             self.last_error = traceback.format_exc()
@@ -374,12 +406,41 @@ class WorkerLoop:
                 self._writer = None
 
     # -- one job, claim to terminal row
+    def _enqueue_scheduled(self) -> None:
+        assert self._writer is not None
+        now = self._clock()
+        seen = set()
+        for row in self._writer.conn.execute(
+            "SELECT r.* FROM filter_boundary_rules r JOIN source_registry s ON s.source_key=r.source_key"
+            " WHERE r.canary_verified=1 AND s.access_state='ALLOWED_AND_VERIFIED' ORDER BY r.rule_version DESC"
+        ):
+            key = (row["source_key"], row["family"])
+            if key in seen:
+                continue
+            seen.add(key)
+            request = JobRequest(
+                job_id=f"scheduled-{now:%Y%m%d%H}-{row['family']}", job_kind="INCREMENTAL", requested_by="scheduler",
+                sources=({"source_key": row["source_key"], "family": row["family"], "endpoint": row["endpoint"], "adapter_sha": row["adapter_sha"]},),
+                scope={"from": (now - timedelta(days=3)).isoformat(), "to": now.isoformat()}, created_at=now.isoformat(),
+            )
+            with contextlib.suppress(JobAlreadyQueued):
+                enqueue_job(self.data_root, request)
+
+    def _publish_snapshot(self) -> None:
+        try:
+            result = build_serving_db(self.data_root / "warehouse.sqlite", self.data_root / "serving.sqlite")
+            if not result.published:
+                self.last_error = f"Snapshot publish failed: {result.reason}"
+        except (OSError, sqlite3.Error) as exc:
+            self.last_error = f"Snapshot publish failed: {exc}"
+
     def _execute(self, request: JobRequest) -> None:
         writer = self._writer
         if writer is None:  # pragma: no cover - run() owns the writer
             return
         self.flag.reset_run_flags()
         self._current = request
+        mark_stale(self.data_root / "serving.sqlite", "Collection in progress; showing the previous snapshot")
         run_id = f"run-{uuid.uuid4().hex}"
         conn = writer.conn
         writer.register_run(run_id, request.job_id, request.job_kind, requested_by=request.requested_by)
@@ -421,6 +482,12 @@ class WorkerLoop:
             # egp_v2 needs a browser session (B7); quarantined hosts are disabled. A job must
             # never fall through to the public lane because the source key was not checked.
             return "BLOCKED", {"reason": f"SOURCE_ACCESS_{policy}"}
+        assert self._writer is not None
+        stored_state = self._writer.conn.execute(
+            "SELECT access_state FROM source_registry WHERE source_key=?", (source_key,)
+        ).fetchone()
+        if stored_state and stored_state[0] in ("DISABLED", "BLOCKED", "NEEDS_USER_SESSION"):
+            return "BLOCKED", {"reason": f"SOURCE_ACCESS_{stored_state[0]}"}
         if source_for(family).key != source_key:
             return "BLOCKED", {"reason": "SOURCE_NOT_REGISTERED_FOR_FAMILY"}
         if kind in LANE_KINDS:
@@ -458,7 +525,7 @@ class WorkerLoop:
             outcomes = runner.incremental(run_id, now=self._clock())
         elif kind == "RECONCILE":
             gaps = runner.reconcile(run_id, request.interval())
-            return "COMPLETED", {"gaps": len(gaps)}
+            return _judge(runner.reconcile_outcomes), {"gaps": len(gaps)}
         else:
             outcomes = runner.backfill(run_id, request.interval())
         leaves = [leaf for outcome in outcomes for leaf in _leaves(outcome)]

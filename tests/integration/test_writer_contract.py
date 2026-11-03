@@ -184,6 +184,7 @@ def test_raw_only_change_bumps_revision_not_version(env) -> None:
 def test_redaction_policy_replay_does_not_inflate_business_counters(env) -> None:
     """Fix #3 through the writer: policy change is REPLAY, not a business revision."""
     writer, conn, _store = env
+    writer.store.redaction_policy_version = 1  # explicitly exercise the historical 1 -> 2 transition
     page = page_of([{"notifyNo": "IB26782", "notifyVersion": "00", "bidName": "t"}])
     commit(writer, page)
     record_id = int(scalar(conn, "SELECT id FROM source_records"))

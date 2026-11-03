@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import sys
 import threading
 import time
@@ -21,9 +22,11 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from santhau_studio.collectors.lane_source import egp_page_source
-from santhau_studio.platform_win.process import current_process_sid
+from santhau_studio.platform_win.process import current_process_sid, register_runtime
+from santhau_studio.platform_win.shutdown_signal import open_shutdown_event, shutdown_requested
 from santhau_studio.workers.ipc import PipeNameConflictError, PipeServer, worker_pipe_name
 from santhau_studio.workers.jobs import WorkerController, WorkerLoop
+from santhau_studio.workers.maintenance import ACTIONS, perform
 
 EXIT_OK = 0
 EXIT_STARTUP_FAILED = 1
@@ -73,6 +76,8 @@ def _default_builder(writer, request):
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="santhau-collector")
     parser.add_argument("--data-root", required=True, type=Path)
+    parser.add_argument("--maintenance", choices=ACTIONS)
+    parser.add_argument("--source")
     parser.add_argument("--page-source-file", type=Path, default=None)
     parser.add_argument("--poll-seconds", type=float, default=0.05)
     parser.add_argument("--scheduled", action="store_true", help="khởi chạy bởi Task Scheduler")
@@ -80,6 +85,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--idle-exit-seconds", type=float, default=None,
                         help="thoát khi hàng đợi trống đủ lâu (scheduled runs)")
     args = parser.parse_args(argv)
+
+    shutdown_handle = open_shutdown_event()
+    if shutdown_requested(shutdown_handle):
+        return EXIT_OK
+    register_runtime()
+    if args.maintenance:
+        result = perform(args.maintenance, args.data_root, args.source)
+        if sys.stdout is not None:
+            print(json.dumps(result, ensure_ascii=True), flush=True)
+        return 0 if result["ok"] else 1
 
     sid = current_process_sid()
     if sid is None:
@@ -98,6 +113,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         page_source_builder=builder,
         poll_seconds=args.poll_seconds,
         idle_exit_seconds=args.idle_exit_seconds,
+        scheduled=args.scheduled,
     )
     controller = WorkerController(loop)
     try:
@@ -105,14 +121,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     except PipeNameConflictError:
         _log_failure(args.data_root, f"pipe {worker_pipe_name(data_root=args.data_root)} is already owned by another process")
         print(f"pipe {worker_pipe_name(data_root=args.data_root)} is already owned by another process", file=sys.stderr)
-        return EXIT_PIPE_CONFLICT
+        return EXIT_OK if args.scheduled else EXIT_PIPE_CONFLICT
 
     stop = threading.Event()
     loop_thread = threading.Thread(target=loop.run, args=(stop,), name="santhau-worker", daemon=True)
     pipe_thread = threading.Thread(target=server.serve_until, args=(stop,), name="santhau-pipe", daemon=True)
     loop_thread.start()
     pipe_thread.start()
-    loop_thread.join()
+    while loop_thread.is_alive():
+        if shutdown_requested(shutdown_handle):
+            loop.flag.request_shutdown()
+            stop.set()
+        loop_thread.join(timeout=0.1)
     stop.set()
     server.wake()
     pipe_thread.join(timeout=5)

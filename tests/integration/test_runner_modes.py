@@ -439,6 +439,13 @@ def test_reconcile_records_absence_without_deleting_anything(writer) -> None:
     assert "identity_hash" in rows[0]["evidence_json"]
 
 
+def test_partial_reconcile_cannot_claim_missing_records(writer) -> None:
+    make_runner(writer, FakePortal({"DAY": [page_of(0, 3, prefix="A")]})).run_interval(DAY, "DAY", "run-1")
+    incomplete = FakePortal({"DAY": [page_of(0, 1, total=3, prefix="A")]})
+    gaps = make_runner(writer, incomplete).reconcile("run-2", DAY)
+    assert gaps == [], "a truncated re-scan does not prove that the other records disappeared"
+
+
 def test_reconcile_flags_new_rows_as_count_drift(writer) -> None:
     portal = FakePortal({"DAY": [page_of(0, 2, prefix="A")]})
     make_runner(writer, portal).run_interval(DAY, "DAY", "run-1")

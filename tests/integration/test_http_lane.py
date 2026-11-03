@@ -198,13 +198,13 @@ def test_query_string_on_the_endpoint_is_refused() -> None:
         FetchLane(url=URL + "?token=notarealsecret", source_key="egp_home")
 
 
-def test_legacy_tls_relaxation_is_scoped_to_the_one_host() -> None:
-    """The portal's small-DH certificate needs SECLEVEL=1; that must not travel to other hosts."""
+def test_portal_tls_keeps_the_same_security_policy_as_other_hosts() -> None:
+    """Spec section 6 forbids lowering TLS security even for the portal."""
     portal = build_ssl_context("muasamcong.mof.gov.vn")
     other = build_ssl_context("example.org")
     portal_ciphers = {c["name"] for c in portal.get_ciphers()}
     other_ciphers = {c["name"] for c in other.get_ciphers()}
-    assert other_ciphers < portal_ciphers, "SECLEVEL=1 must admit strictly more ciphers than the default"
+    assert other_ciphers == portal_ciphers
     assert build_ssl_context("MUASAMCONG.MOF.GOV.VN").get_ciphers()[0]["name"] == portal.get_ciphers()[0]["name"]
 
 

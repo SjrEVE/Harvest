@@ -12,9 +12,8 @@ Structural differences from the source behaviour, each with a reason:
   host nobody approved" (FAULT-11), and the only way to be sure is to not make the second request.
 * **cookies are discarded after every response.** This channel is token-free and session-free by
   contract; an accumulated cookie is a session even if nobody meant to open one.
-* **the legacy TLS workaround is host-scoped.** Lowering the cipher security level globally would
-  weaken every other host the app might talk to; the portal's small-DH certificate is the only
-  documented reason it exists.
+* **TLS keeps the platform security floor.** A source with incompatible TLS stays blocked;
+  the collector never lowers OpenSSL's security level to make a canary pass.
 """
 
 from __future__ import annotations
@@ -39,15 +38,10 @@ from santhau_studio.collectors.network_policy import (
     scrub_exception,
     scrub_url,
 )
+from santhau_studio.platform_win.host_gate import HostRequestGate
 
 TIMEOUT = httpx.Timeout(30.0, connect=5.0)
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-)
-
-# Only this host needs the small-DH workaround; everything else keeps the default level.
-LEGACY_DH_HOSTS = frozenset({"muasamcong.mof.gov.vn"})
+USER_AGENT = "SanThauDataStudio/0.0.1"
 
 _BASE_HEADERS = {
     "User-Agent": USER_AGENT,
@@ -103,10 +97,10 @@ class FetchOutcome:
 
 
 def build_ssl_context(host: str) -> ssl.SSLContext:
-    """Default context, except for the one host whose certificate needs SECLEVEL=1."""
+    """Verified TLS >= 1.2 for every host, including the procurement portal."""
+    del host
     context = ssl.create_default_context()
-    if host.lower() in LEGACY_DH_HOSTS:
-        context.set_ciphers("DEFAULT:@SECLEVEL=1")
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     return context
 
 
@@ -188,7 +182,13 @@ class FetchLane:
             started = self._clock()
             record.wait_seconds = self.limiter.acquire(min_interval=min_interval, sleeper=self._pacing_sleeper)
             try:
-                response = self._client.post(self.url, json=body)
+                if self._own_client:
+                    with HostRequestGate(self.host, max(self.limiter.floor, min_interval or 0.0)) as gate:
+                        response = self._client.post(self.url, json=body)
+                        if response.status_code == 429:
+                            gate.defer(parse_retry_after(response.headers.get("Retry-After")))
+                else:
+                    response = self._client.post(self.url, json=body)
             except httpx.HTTPError as exc:
                 # Transport failure: bounded retry, but the message is scrubbed before it can
                 # become a reason string that outlives this call.

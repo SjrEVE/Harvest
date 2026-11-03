@@ -1,5 +1,8 @@
 # SĂN THẦU DATA STUDIO — RELEASE-CANDIDATE-READINESS
 
+> Báo cáo lịch sử của vòng RC. Trạng thái và bằng chứng sau vòng sửa 04/11/2026 nằm ở
+> [RC2-READINESS.md](RC2-READINESS.md). Các số liệu và blocker dưới đây giữ nguyên theo thời điểm báo cáo.
+
 **Ngày:** 03/11/2026 · **Spec nền:** Master Spec Consolidated v1.3 · **Repo:** `D:\Harvest\santhau-data-studio` (local, không remote, không push)
 **Phạm vi batch:** STABILIZATION & RELEASE CANDIDATE (A–G). Báo cáo G1 trước đó: `REPORT-G1.md`.
 

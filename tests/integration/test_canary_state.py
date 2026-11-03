@@ -120,6 +120,16 @@ def test_collection_proven_only_after_a_completed_run(tmp_path: Path) -> None:
         writer.close()
 
 
+def test_collection_proof_for_old_adapter_does_not_verify_a_new_adapter(tmp_path: Path) -> None:
+    writer = WarehouseWriter.open(tmp_path / "data", create_schema=True)
+    try:
+        seed_rule(writer, "TBMT")
+        run_day(writer, "TBMT", FakePortal())
+        assert canary_state(writer.conn, SOURCE_EGP_HOME, "TBMT", "b" * 64)["state"] == PROBE_UNVERIFIED
+    finally:
+        writer.close()
+
+
 def test_unverified_rule_blocks_probe_from_promotion(tmp_path: Path) -> None:
     writer = WarehouseWriter.open(tmp_path / "data", create_schema=True)
     try:
