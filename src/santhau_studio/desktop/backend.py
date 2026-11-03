@@ -29,6 +29,7 @@ from santhau_studio.domain.text import fold_vietnamese
 from santhau_studio.platform_win.os_lock import LOCK_SUFFIX, DataRootBusy, DataRootLock, holder_info
 from santhau_studio.storage.serving import serving_state
 from santhau_studio.storage.warehouse import connect_read_only
+from santhau_studio.workers.deep_run import LANE_READINESS, LIVE_BLOCK_REASON
 from santhau_studio.workers.ipc import (
     PipeClient,
     PipeClosedError,
@@ -588,7 +589,15 @@ class StudioBackend:
         for row in rows:
             due = row["refresh_due_at_utc"]
             row["needs_refresh"] = bool(row["stale"]) or row["completeness"] != "FULL" or (due is not None and due <= now)
-        return {"present": True, "rows": rows, "summary": summary}
+        return {
+            "present": True,
+            "rows": rows,
+            "summary": summary,
+            "lanes": [
+                {"lane": lane, "state": state, "live_reason": LIVE_BLOCK_REASON if state == "BLOCKED" else None}
+                for lane, state in sorted(LANE_READINESS.items())
+            ],
+        }
 
     # ------------------------------------------------------------------ UI-09 integrity
 

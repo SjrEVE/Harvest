@@ -45,6 +45,7 @@ from santhau_studio.domain.coverage import Interval
 from santhau_studio.platform_win.os_lock import DataRootBusy
 from santhau_studio.storage.rawstore import LAYOUT_SEGMENTS
 from santhau_studio.storage.warehouse import WarehouseWriter, connect_read_only
+from santhau_studio.workers.deep_run import LANE_KINDS, DeepFetcher, SpecProvider, run_deep_batch
 from santhau_studio.workers.runner import IntervalOutcome, PageSource, Runner
 
 JOB_KINDS = (
@@ -297,6 +298,8 @@ class WorkerLoop:
         poll_seconds: float = 0.05,
         clock: Clock | None = None,
         idle_exit_seconds: float | None = None,
+        deep_fetcher: DeepFetcher | None = None,
+        deep_specs: SpecProvider | None = None,
     ) -> None:
         self.data_root = Path(data_root)
         self.flag = CommandFlag()
@@ -307,6 +310,8 @@ class WorkerLoop:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._idle_exit = idle_exit_seconds
         self._idle_since = time.monotonic()
+        self._deep_fetcher = deep_fetcher
+        self._deep_specs = deep_specs
         self._commands: queue.Queue[Command] = queue.Queue()
         self._writer: WarehouseWriter | None = None
         self._current: JobRequest | None = None
@@ -403,11 +408,24 @@ class WorkerLoop:
     def _dispatch(self, request: JobRequest, run_id: str) -> tuple[str, dict[str, Any]]:
         """Run the job kind; return the run_tasks status and its detail summary."""
         kind = request.job_kind
-        if kind not in ("BACKFILL", "INCREMENTAL", "RECONCILE"):
+        if kind not in ("BACKFILL", "INCREMENTAL", "RECONCILE", *LANE_KINDS):
             return "BLOCKED", {"reason": f"KIND_{kind}_NOT_DISPATCHABLE"}
         source = request.sources[0] if request.sources else None
         if not isinstance(source, dict) or "source_key" not in source or "family" not in source:
             return "BLOCKED", {"reason": "NO_SOURCE_IN_REQUEST"}
+        if kind in LANE_KINDS:
+            assert self._writer is not None
+            result = run_deep_batch(
+                self._writer,
+                run_id=run_id,
+                family=str(source["family"]),
+                lane=kind,
+                scope=request.scope,
+                fetcher=self._deep_fetcher,
+                spec_provider=self._deep_specs,
+                clock=self._clock,
+            )
+            return result.status, result.detail
         adapter_sha = str(source.get("adapter_sha") or "")
         if not adapter_sha:
             return "BLOCKED", {"reason": "NO_ADAPTER_SHA"}

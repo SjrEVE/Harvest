@@ -763,6 +763,17 @@ Window {
                         spacing: 6
 
                         Text {
+                            text: {
+                                var lanes = page8.state.lanes || []
+                                return lanes.length
+                                    ? "Lane: " + lanes.map(function (l) { return l.lane + "=" + l.state }).join(" · ")
+                                    : ""
+                            }
+                            color: "#8b959f"
+                            font.pixelSize: 11
+                            wrapMode: Text.WrapAnywhere
+                        }
+                        Text {
                             text: "FULL " + ((page8.state.summary || {}).FULL || 0)
                                   + " · PARTIAL " + ((page8.state.summary || {}).PARTIAL || 0)
                                   + " · NOT_COLLECTED " + ((page8.state.summary || {}).NOT_COLLECTED || 0)

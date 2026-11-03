@@ -469,7 +469,7 @@ def test_incremental_job_advances_the_watermark(root) -> None:
 
 
 def test_undispatchable_job_kind_is_blocked(harness, root) -> None:
-    request = job_request(job_kind="DETAIL")
+    request = job_request(job_kind="VERIFY")
     enqueue_job(root, request)
     row = wait_terminal(harness, root, request.job_id)
     # A blocked job is a terminated run with a verdict, never a clean FINISH (§3.6).
