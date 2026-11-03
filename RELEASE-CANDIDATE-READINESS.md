@@ -27,11 +27,36 @@
 ## 2. Bằng chứng build/test
 
 ```
-pytest (toàn bộ)            : <FILL>
+pytest (toàn bộ)            : 462 tests passed
 ruff check src tests tools  : All checks passed
-installed runtime           : build/stage (SanThauDataStudio.exe, SanThauCollector.exe)
+stage                       : build/stage — 2.517 file / 202.339.304 bytes
+  SanThauDataStudio.exe     : 17.545.216 bytes  sha256 1c96cbb74b9b14bca64bc9b52fe32236a9be664ad094e7ff65e86d2083513ca9
+  SanThauCollector.exe      : 17.062.400 bytes  sha256 7e1d76bfda6b2104d82de6ffd090e90548426ba77a19c92532269ffb7ece65fa
 installer                   : build/inno/SanThau-Data-Studio-Setup-0.0.1-spike.exe
+                              48.873.377 bytes  sha256 b3353c124ac167600435f80431eb619d0015aba8cbdabd50d99045b40a688698
+                              ISCC compile 92,7 s
 ```
+
+### Vòng đời installer (per-user, thư mục TEMP — máy này, không phải VM sạch)
+
+| Bước | Kết quả |
+|---|---|
+| Silent install (`/VERYSILENT /DIR=%TEMP%\SanThauRC`) | exit 0; exe + qml + LICENSES + notices có mặt; 203 MB |
+| Chạy bản cài (smoke trang 02) | exit 0, ảnh 1475×950, PASS; **không còn process treo** |
+| Reinstall đè (đường upgrade) | exit 0, exe còn nguyên |
+| Uninstall | exit 0; thư mục cài **xoá sạch (0 file)**; uninstall key HKCU = 0 |
+| Data root của người dùng | 97 file trước = 97 file sau (không bị chạm) |
+
+Lần đầu uninstall để lại file vì process GUI smoke cũ còn sống giữ DLL: Qt teardown sau
+`grabWindow` treo, `sys.exit` không kết thúc tiến trình. Đã sửa (thoát cứng sau khi ghi verdict) và
+chạy lại vòng trên — PASS. Đây cũng là lý do Inno `CloseApplications` không cứu được file bị khoá.
+
+### GUI ↔ worker trên binary đóng gói
+
+- Packaged worker: tạo schema, pipe ping/status OK, `raw/segments/` được dùng, FORCE_TERMINATE rc 0.
+- Packaged GUI mở trên data root đang có worker: gắn được (pipe OK), thoát GUI → worker **vẫn chạy**,
+  sau đó FORCE_TERMINATE rc 0.
+- RAM GUI đóng gói lúc khởi động: WorkingSet 167.153.664 B (peak 173.342.720 B).
 
 Commit nhóm trong batch này: xem `git log --oneline` (mỗi nhóm A/B, C, D, E… là một checkpoint
 local, không push).
@@ -70,12 +95,19 @@ Chi tiết + crash tests: `tests/integration/test_segment_store.py` (17 test).
 
 ## 5. C — Desktop
 
-- GUI chạy thật trên Windows (scale 100/125/150%): 1180×760 / 1475×950 / 1770×1140.
-- Screenshot thật (render QML, không phải chụp màn hình): `_evidence/rc/screenshots/page-*.png`
-  (Control Center 6 family, Record Detail có timeline/raw revision, Jobs, Coverage, Deep, Integrity).
-- Worker sống khi client đóng/mở lại: test process thật; pipe theo user + **data root** (test cách ly
-  giữa hai root). Task Scheduler: XML 08:00/20:00 + `IgnoreNew`, tạo/xoá có kiểm soát; test live
-  cần `SANTHAU_SCHEDULER_TEST=1` (chưa chạy trong phiên này).
+- GUI chạy thật trên Windows (scale 100/125/150%): 1180×760 / 1475×950 / 1770×1140 — ảnh chụp
+  bằng render QML (`QQuickWindow.grabWindow`), không phải chụp màn hình nên không thể nhầm app khác.
+- Ảnh: `_evidence/rc/screenshots/page-*.png` (Control Center 6 family, Record Detail timeline +
+  raw revision, Jobs, Coverage, Deep, Integrity) + `packaged-page1.png`, `installed-page1.png`.
+- Tiếng Việt hiển thị đúng trên display thật (SĂN THẦU, "tươi", "đĩa", "Chọn một hồ sơ…").
+- Worker sống khi GUI đóng và attach khi mở lại: test process thật (E) + binary đóng gói ở §2.
+- Pipe theo user + **data root**: hai root khác nhau → hai tên pipe khác nhau (test cách ly trong
+  `test_worker_ipc.py`); SDDL owner-only + SID check giữ nguyên.
+- Task Scheduler XML 08:00/20:00 + `IgnoreNew`, tên task theo data root, create/delete có kiểm soát;
+  scheduled run thoát khi idle để trigger 20:00 không bị nuốt. Live create/delete chưa chạy (opt-in
+  `SANTHAU_SCHEDULER_TEST=1`) — xem blocker §9.
+- Explorer: FTS + phân trang OFFSET ("Tải thêm"); staleness/degraded hiện ở UI-02; integrity +
+  quarantine hiện ở UI-09; lỗi/empty có dòng chữ riêng.
 
 ---
 
@@ -125,6 +157,9 @@ Chi tiết + crash tests: `tests/integration/test_segment_store.py` (17 test).
    segments 22k object + ngoại suy trong §3.
 9. **UI keyboard navigation**: đã cài đặt (sidebar Up/Down, Tab) nhưng chưa có test tự động —
    **MANUAL_ONLY**.
+11. **GUI mutex / Restart Manager**: khi GUI đang mở lúc uninstall, Windows không đóng được app
+    (chưa có named mutex); uninstall có thể để lại file bị khoá. Đã chứng minh chu trình sạch PASS,
+    nhưng "uninstall khi app đang chạy" cần mutex ở vòng sau — **BLOCKED (follow-up)**.
 10. **Kết quả FTS trên 1M**: xem §4; nếu probe timeout sẽ ghi BLOCKED kèm lý do.
 
 ---
