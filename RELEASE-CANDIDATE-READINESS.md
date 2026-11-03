@@ -85,11 +85,25 @@ Chi tiết + crash tests: `tests/integration/test_segment_store.py` (17 test).
 
 ## 4. E — Scale
 
-`tools/scale_probe.py` (100k listing pages → 1M records qua `commit_page`, serving + FTS + UI probe):
+`tools/scale_probe.py`: 100.000 listing pages × 10 = **1.000.000 source records** qua
+`WarehouseWriter.commit_page` (layout segments), rồi build serving (FTS 1M dòng) và đo các truy vấn
+UI thật. Kết quả `_evidence/rc/scale-1m.json`:
 
-```
-<FILL: _evidence/rc/scale-1m.json>
-```
+| Bước | Kết quả |
+|---|---|
+| Ghi 1M records (100k page commit, fsync/page) | **7.392,6 s (~2h03)** — 1.000.000 records, 1.000.000 observations |
+| Build serving + FTS 1M dòng | **634,0 s (~10,5 phút)**, publish **thành công** |
+| `control_center` (đếm theo family trên 1M) | **4,01 s** |
+| `coverage` | 0,009 s |
+| `search` ("gói thầu", 50 hit) | **1,70 s** (family filter 1,65 s) |
+| `record_detail` | 0,27 s |
+| Kết quả tìm kiếm | 50 hit đúng, không lỗi |
+
+**Nhận xét (không tô hồng):** search 1,7 s trên 1M chưa đạt mức "responsive" của §8; dashboard 4 s
+là do GROUP BY trên bảng thô mỗi lần mở trang. Đề xuất RC2: cache counts vào `serving_meta` lúc
+publish, và tối ưu FTS (index tiêu đề tách riêng hoặc bm25 kèm giới hạn hit trước khi rank).
+Scale run 100k pages đọc-lại toàn bộ object layout vẫn **NOT_TESTED** (ước tính ~4 giờ); segments
+đã đo 22k object và ngoại suy trong §3.
 
 ---
 
@@ -128,6 +142,12 @@ Chi tiết + crash tests: `tests/integration/test_segment_store.py` (17 test).
 - Các match "token/secret" trong repo chỉ là literal test cho scrubber + pattern của scanner.
 
 ---
+
+## 7.1 Ghi chú hiệu năng đã đo
+
+- 1M records: ghi ~2h03 (fsync mỗi page — đúng hợp đồng durability, không phải bug); serving publish
+  10,5 phút; **search 1,7 s / dashboard 4 s** — xem ghi chú tối ưu ở §4.
+- GUI đóng gói WorkingSet lúc mở: ~167 MB (dữ liệu không nạp vào RAM; chỉ query serving).
 
 ## 8. UI screenshots
 
