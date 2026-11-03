@@ -16,7 +16,7 @@ from santhau_studio.storage.backup import create_backup, restore_backup
 from santhau_studio.storage.serving import build_serving_db
 from santhau_studio.storage.warehouse import WarehouseWriter, connect_read_only
 
-ACTIONS = ("backup", "restore", "verify", "export", "schedule-enable", "schedule-disable", "schedule-status")
+ACTIONS = ("backup", "restore", "verify", "export", "import-legacy", "inspect-legacy", "schedule-enable", "schedule-disable", "schedule-status")
 
 
 def _cell(value: object) -> str:
@@ -27,6 +27,17 @@ def _cell(value: object) -> str:
 def perform(action: str, root: Path, source: str | None = None) -> dict:
     root = Path(root)
     try:
+        if action in ("import-legacy", "inspect-legacy"):
+            from santhau_studio.storage.import_legacy import import_legacy, inspect_legacy
+
+            if not source:
+                return {"ok": False, "error": "Chọn thư mục kho harvester hoặc export bundle."}
+            if action == "inspect-legacy":
+                return {"ok": True, **inspect_legacy(Path(source))}
+            result = import_legacy(Path(source), root)
+            published = build_serving_db(root / "warehouse.sqlite", root / "serving.sqlite")
+            return {"ok": result["status"] in ("IMPORTED", "ALREADY_IMPORTED") and published.published,
+                    **result, "snapshot_published": published.published}
         if action == "backup":
             result = create_backup(root)
             return {"ok": True, "path": str(result.path), "objects": result.objects}

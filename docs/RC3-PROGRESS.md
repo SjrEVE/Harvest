@@ -23,7 +23,12 @@ paged DTOs consumed by asynchronous bridge; runtime/canary status feeds UI; rele
 
 ## Tasks
 
-- Task 1: IN_PROGRESS — faithful legacy v5 schema and JSONL.gz envelope inspected.
+- Task 1: CORE IMPLEMENTED — read-only SQLite v1-v5 and checked export bundles; separate version/observation
+  import, deterministic event receipts, source timestamps, legacy coverage and durable catalog chunks.
+  8 targeted tests PASS; backup/maintenance subset 25 PASS. UI and broader overlap/network acceptance remain in Tasks 3-5.
+- Ruling: legacy channels use `legacy:<original source>` to avoid replacing newer live records. Original
+  source/run/version metadata is retained in raw catalog chunks and receipts; these chunks survive backup/restore.
+  Legacy coverage remains in explicit legacy claims and never receives a modern proof.
 - Tasks 2–6: PENDING.
 
 ## External gates
