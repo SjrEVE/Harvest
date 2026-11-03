@@ -48,6 +48,10 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "ARG", "PTH", "RUF"]
 # not faults; an Error suffix would tell the operator the wrong thing.
 ignore = ["E501", "N818"]
 
+[tool.ruff.lint.per-file-ignores]
+# Qt slots are invoked by QML, where the API is camelCase by convention.
+"src/santhau_studio/desktop/bridge.py" = ["N802"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "tools", "tests/contract", "tests/integration", "."]
