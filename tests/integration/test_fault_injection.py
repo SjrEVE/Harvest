@@ -33,7 +33,7 @@ from santhau_studio.storage.rawstore import RawObjectStore
 from santhau_studio.storage.warehouse import WarehouseWriter, connect
 
 SRC_DIR = Path(__file__).resolve().parents[2] / "src"
-RECORD = {"notifyNo": "FA0001", "notifyVersion": "00", "title": "Gói thầu thử fault"}
+RECORD = {"notifyNo": "FA0001", "notifyVersion": "00", "bidName": "Gói thầu thử fault"}
 
 CHILD = '''
 import gzip, json, os, sys

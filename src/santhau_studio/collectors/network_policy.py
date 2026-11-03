@@ -15,11 +15,14 @@ from __future__ import annotations
 import re
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import ClassVar
 from urllib.parse import urlsplit
 
 from santhau_studio.collectors.source_registry import is_allowed_host
+
+Sleeper = Callable[[float], None]
 
 # §6: default pacing floor for the EGP host, counted across retries.
 HOST_PACING_FLOOR = {
@@ -86,6 +89,7 @@ class HostRateLimiter:
         self.floor = HOST_PACING_FLOOR.get(self.host, DEFAULT_PACING_FLOOR)
         self._lock = threading.Lock()
         self._next_allowed = 0.0
+        self._last_issued: float | None = None
 
     @classmethod
     def for_host(cls, host: str) -> HostRateLimiter:
@@ -103,21 +107,40 @@ class HostRateLimiter:
         with cls._registry_lock:
             cls._registry.clear()
 
-    def acquire(self, *, min_interval: float | None = None) -> float:
-        """Block until the host is allowed to fire. Returns the wait actually taken."""
+    def acquire(self, *, min_interval: float | None = None, sleeper: Sleeper = time.sleep) -> float:
+        """Block until the host may fire. Returns the wait actually taken.
+
+        The granted slot is at least `interval` after the previous grant *as well as* after the
+        standing reservation. Measuring only the reservation let a caller ask for a longer gap
+        and still be served 20 ms after the lane before it, because the earlier caller's
+        interval is what the reservation had encoded.
+
+        `sleeper` is injectable because a worker must be able to wait without owning a thread
+        that is asleep for Retry-After of 17 seconds during a test, or during a pause.
+        """
         interval = max(self.floor, min_interval or 0.0)
         with self._lock:
             now = time.monotonic()
-            wait = max(0.0, self._next_allowed - now)
-            self._next_allowed = max(now, self._next_allowed) + interval
+            earliest = self._next_allowed
+            if self._last_issued is not None:
+                earliest = max(earliest, self._last_issued + interval)
+            wait = max(0.0, earliest - now)
+            issued = now + wait
+            self._next_allowed = issued + interval
+            self._last_issued = issued
         if wait:
-            time.sleep(wait)
+            sleeper(wait)
         return wait
 
     def penalize(self, seconds: float) -> None:
         """Push the next slot out — used for 429 Retry-After and cooldowns."""
         with self._lock:
             self._next_allowed = max(self._next_allowed, time.monotonic() + max(0.0, seconds))
+
+    def seconds_until_next_slot(self) -> float:
+        """Read-only view of the host cooldown, for tests and for the UI's "cooling down" label."""
+        with self._lock:
+            return max(0.0, self._next_allowed - time.monotonic())
 
 
 def enforce_allowlist(url: str) -> str:

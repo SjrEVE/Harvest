@@ -39,3 +39,6 @@ Thumbs.db
 *.pem
 *.p12
 *.key
+
+# Benchmark scratch: 100k+ synthetic object files, never a commit target.
+_evidence/*/bench-work/

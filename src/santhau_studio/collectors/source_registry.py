@@ -56,55 +56,115 @@ class FamilyBinding:
             raise ValueError(f"{self.spec.family}: fetch caps must be positive")
 
 
-def _keep(*names: str):
+def _project(title_from: tuple[str, ...], keep: tuple[str, ...]):
+    """Project a source document onto the fields the product actually reads.
+
+    The names come from the source adapter's own normalizers, verified at
+    `harvester/adapters/egp_home.py` @ aa65f0a, not from the spec's prose. `title` is
+    synthesised because the serving FTS (UI-06) and the record list read one title column
+    across six families whose source fields differ (`bidName` / `name` / `pname` / `ctName`).
+    """
+
     def normalize(record: dict) -> dict:
-        return {name: record.get(name) for name in names if name in record}
+        out: dict = {name: record.get(name) for name in keep if name in record}
+        out["title"] = next(
+            (
+                record[candidate].strip()
+                for candidate in title_from
+                if isinstance(record.get(candidate), str) and record[candidate].strip()
+            ),
+            None,
+        )
+        return out
 
     return normalize
 
 
-_TBMT = FamilySpec(
-    family="TBMT",
-    content_path="/page/content",
-    natural_key_field="notifyNo",
-    version_field="notifyVersion",
-    normalize=_keep("notifyNo", "notifyNoStand", "title", "investorName", "planNo", "publishDate"),
-)
-_KQLCNT = FamilySpec(
-    family="KQLCNT",
-    content_path="/page/content",
-    natural_key_field="notifyNo",
-    version_field="notifyVersion",
-    normalize=_keep("notifyNo", "inputResultId", "title", "investorName", "contractorName", "bidWinningPrice"),
-)
-_HOP_DONG = FamilySpec(
-    family="HOP_DONG",
-    content_path="/page/content",
-    natural_key_field="contractCode",
-    version_field="contractVersion",
-    normalize=_keep("contractCode", "notifyNo", "investorName", "winningContractorName", "ctPriceAfter"),
-)
-_KHLCNT = FamilySpec(
-    family="KHLCNT",
-    content_path="/page/content",
-    natural_key_field="planNo",
-    version_field="planVersion",
-    normalize=_keep("planNo", "planNoStand", "investorName", "bidPrice", "publishDate"),
-)
-_DU_AN = FamilySpec(
-    family="DU_AN",
-    content_path="/page/content",
-    natural_key_field="pno",
-    version_field="pversion",
-    normalize=_keep("pno", "pname", "investorName", "ptitle"),
-)
-_YCBG = FamilySpec(
-    family="YCBG",
-    content_path="/page/content",
-    natural_key_field="notifyNo",
-    version_field="notifyVersion",
-    normalize=_keep("notifyNo", "title", "investorName", "planNo"),
-)
+# (es_type, case_khkq, title fields, kept fields) per family — the request filter and the
+# readable projection for each of the six families that share one ES envelope.
+_FAMILY_SHAPE: dict[str, tuple[str, str | None, tuple[str, ...], tuple[str, ...]]] = {
+    "TBMT": (
+        "es-notify-contractor",
+        "not1",
+        ("bidName", "notifyNoStand"),
+        ("notifyNo", "notifyNoStand", "notifyVersion", "investorName", "investorCode",
+         "procuringEntityName", "publicDate", "bidCloseDate", "status", "bidForm", "bidMode"),
+    ),
+    "KQLCNT": (
+        "es-notify-contractor",
+        "1",
+        ("bidName", "name", "pname"),
+        ("notifyNo", "notifyVersion", "inputResultId", "investorName", "winningContractorName",
+         "contractorName", "winningCode", "bidWinningPrice", "bidPrice", "decisionDate",
+         "numBidderJoin", "numBidderTech", "publicDateKqlcnt", "planNo", "statusForNotify"),
+    ),
+    "HOP_DONG": (
+        "es-ct-contract",
+        None,
+        ("bidName", "ctName", "name"),
+        ("contractCode", "contractVersion", "contractNo", "notifyNo", "contractSignDate",
+         "ctPriceAfter", "winningContractorName", "winningCode", "isDomestic", "investorName"),
+    ),
+    "KHLCNT": (
+        "es-plan-project-p",
+        None,
+        ("name", "pname", "bidName"),
+        ("planNo", "planVersion", "investorName", "bidPrice", "investTotal", "decisionDate",
+         "approvalStatus", "haveBidNotNotify", "planType"),
+    ),
+    "DU_AN": (
+        "es-bidp-project-p",
+        None,
+        ("name", "pname"),
+        ("pno", "pversion", "pname", "investorName", "investTotal", "decisionDate", "pgroup", "location"),
+    ),
+    "YCBG": (
+        "es-ycbg",
+        None,
+        ("bidName", "name", "pname"),
+        ("notifyNo", "notifyVersion", "investorName", "decisionDate", "bidOpenDate"),
+    ),
+}
+
+_VERSION_FIELDS = {
+    "TBMT": ("notifyNo", "notifyVersion"),
+    "KQLCNT": ("notifyNo", "notifyVersion"),
+    "HOP_DONG": ("contractCode", "contractVersion"),
+    "KHLCNT": ("planNo", "planVersion"),
+    "DU_AN": ("pno", "pversion"),
+    "YCBG": ("notifyNo", "notifyVersion"),
+}
+
+
+def _spec(family: str) -> FamilySpec:
+    es_type, case_khkq, title_from, keep = _FAMILY_SHAPE[family]
+    del es_type, case_khkq  # request-side; see search_shape_for()
+    natural, version = _VERSION_FIELDS[family]
+    return FamilySpec(
+        family=family,
+        content_path="/page/content",
+        natural_key_field=natural,
+        version_field=version,
+        normalize=_project(title_from, keep),
+    )
+
+
+@dataclass(frozen=True)
+class SearchShape:
+    """The request-side filter that selects one family inside the shared ES index."""
+
+    es_type: str
+    case_khkq: str | None
+    title_fields: tuple[str, ...]
+
+    @property
+    def known_fields(self) -> tuple[str, ...]:
+        return self.title_fields
+
+
+def search_shape_for(family: str) -> SearchShape:
+    es_type, case_khkq, title_fields, _keep = _FAMILY_SHAPE[family]
+    return SearchShape(es_type=es_type, case_khkq=case_khkq, title_fields=title_fields)
 
 SOURCES: dict[str, SourceSpec] = {
     SOURCE_EGP_HOME: SourceSpec(
@@ -154,25 +214,18 @@ def _register(binding: FamilyBinding) -> None:
     BINDINGS[binding.spec.family] = binding
 
 
-for _family, _spec in (
-    ("TBMT", _TBMT),
-    ("KQLCNT", _KQLCNT),
-    ("HOP_DONG", _HOP_DONG),
-    ("KHLCNT", _KHLCNT),
-    ("DU_AN", _DU_AN),
-    ("YCBG", _YCBG),
-):
+for _family in FAMILY_ORDER:
     _register(
         FamilyBinding(
             source_key=SOURCE_EGP_HOME,
-            spec=_spec,
-            page_size=10,
+            spec=_spec(_family),
+            page_size=10,  # portal clamp: pageSize > 10 is refused with HTTP 400
             max_pages=450,
             max_records=4000,
-            date_filter_field="publishDate",
+            date_filter_field="publicDate",
         )
     )
-del _family, _spec
+del _family
 
 
 def binding_for(family: str) -> FamilyBinding:

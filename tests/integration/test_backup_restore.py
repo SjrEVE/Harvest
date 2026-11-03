@@ -61,7 +61,7 @@ def json_extract_title(conn: sqlite3.Connection) -> list[str]:
 
 def test_backup_copies_every_referenced_object(env) -> None:
     writer, conn, _, data_root = env
-    commit_page(writer, [{"notifyNo": "BK1000", "notifyVersion": "00", "title": "alpha"}])
+    commit_page(writer, [{"notifyNo": "BK1000", "notifyVersion": "00", "bidName": "alpha"}])
     result = backup.create_backup(data_root)
     rows = scalar(conn, "SELECT COUNT(*) FROM raw_objects")
     assert result.objects == rows
@@ -72,8 +72,8 @@ def test_backup_copies_every_referenced_object(env) -> None:
 def test_restore_round_trip_reproduces_the_same_warehouse(env, tmp_path: Path) -> None:
     """Restore into an empty data root; every row and every raw byte must come back readable."""
     writer, conn, _, data_root = env
-    commit_page(writer, [{"notifyNo": "BK1001", "notifyVersion": "00", "title": "one"}])
-    commit_page(writer, [{"notifyNo": "BK1002", "notifyVersion": "00", "title": "two"}], page_no=1)
+    commit_page(writer, [{"notifyNo": "BK1001", "notifyVersion": "00", "bidName": "one"}])
+    commit_page(writer, [{"notifyNo": "BK1002", "notifyVersion": "00", "bidName": "two"}], page_no=1)
     expected_records = scalar(conn, "SELECT COUNT(*) FROM source_records")
     expected_objects = {row[0] for row in conn.execute("SELECT sha256 FROM raw_objects")}
     payloads = {sha: writer.store.read(sha) for sha in expected_objects}
@@ -96,7 +96,7 @@ def test_restore_round_trip_reproduces_the_same_warehouse(env, tmp_path: Path) -
 def test_restore_twice_into_the_same_root_does_not_duplicate_objects(env, tmp_path: Path) -> None:
     """Same bytes = same object, even across restores (§5.1 forbids a second copy of identical content)."""
     writer, _, _, data_root = env
-    commit_page(writer, [{"notifyNo": "BK1003", "notifyVersion": "00", "title": "x"}])
+    commit_page(writer, [{"notifyNo": "BK1003", "notifyVersion": "00", "bidName": "x"}])
     result = backup.create_backup(data_root)
     scratch = tmp_path / "scratch"
     assert backup.restore_backup(result.path, scratch).restored
@@ -110,7 +110,7 @@ def test_restore_twice_into_the_same_root_does_not_duplicate_objects(env, tmp_pa
 def test_restore_over_an_open_warehouse_reports_the_real_blocker(env) -> None:
     """Win32 will not rename a database another handle holds; the failure must name the cause."""
     writer, conn, _, data_root = env
-    commit_page(writer, [{"notifyNo": "BK1099", "notifyVersion": "00", "title": "held"}])
+    commit_page(writer, [{"notifyNo": "BK1099", "notifyVersion": "00", "bidName": "held"}])
     result = backup.create_backup(data_root)
     report = backup.restore_backup(result.path, data_root)
     assert not report.restored
@@ -120,7 +120,7 @@ def test_restore_over_an_open_warehouse_reports_the_real_blocker(env) -> None:
 
 def test_verify_backup_writes_nothing(env) -> None:
     writer, _, _, data_root = env
-    commit_page(writer, [{"notifyNo": "BK1004", "notifyVersion": "00", "title": "y"}])
+    commit_page(writer, [{"notifyNo": "BK1004", "notifyVersion": "00", "bidName": "y"}])
     result = backup.create_backup(data_root)
     listing = {p.name for p in data_root.iterdir()}
     report = backup.verify_backup(result.path)
@@ -143,7 +143,7 @@ def test_empty_warehouse_backs_up_as_zero_objects(tmp_path: Path) -> None:
 def test_backup_missing_one_raw_object_blocks_swap_and_names_it(env) -> None:
     """FAULT-08: one absent object file must abort restore and report that exact hash."""
     writer, conn, _, data_root = env
-    commit_page(writer, [{"notifyNo": "BK1005", "notifyVersion": "00", "title": "z"}])
+    commit_page(writer, [{"notifyNo": "BK1005", "notifyVersion": "00", "bidName": "z"}])
     result = backup.create_backup(data_root)
     entries = json.loads((result.path / backup.MANIFEST_NAME).read_text(encoding="utf-8"))["objects"]
     victim = entries[0]["sha256"]
@@ -161,7 +161,7 @@ def test_backup_missing_one_raw_object_blocks_swap_and_names_it(env) -> None:
 def test_corrupt_raw_object_blocks_swap(env) -> None:
     """A gzip member with flipped bytes decompresses to the wrong content or not at all."""
     writer, _, store, data_root = env
-    commit_page(writer, [{"notifyNo": "BK1006", "notifyVersion": "00", "title": "w"}])
+    commit_page(writer, [{"notifyNo": "BK1006", "notifyVersion": "00", "bidName": "w"}])
     result = backup.create_backup(data_root)
     entries = json.loads((result.path / backup.MANIFEST_NAME).read_text(encoding="utf-8"))["objects"]
     target = result.path / "raw" / entries[0]["file"]
@@ -178,7 +178,7 @@ def test_corrupt_raw_object_blocks_swap(env) -> None:
 def test_manifest_and_warehouse_mismatch_blocks_restore(env) -> None:
     """Gate 2: per-file verification passes, yet the snapshot DB references objects not in the backup."""
     writer, _conn, _, data_root = env
-    commit_page(writer, [{"notifyNo": "BK1007", "notifyVersion": "00", "title": "v"}])
+    commit_page(writer, [{"notifyNo": "BK1007", "notifyVersion": "00", "bidName": "v"}])
     result = backup.create_backup(data_root)
     fabricated = hashlib.sha256(b"never stored").hexdigest()
     with sqlite3.connect(result.path / "warehouse.sqlite") as conn2:
@@ -201,7 +201,7 @@ def test_backup_captures_transactions_still_in_the_wal(env) -> None:
     transaction has not been checkpointed into the main file.
     """
     writer, _conn, _, data_root = env
-    commit_page(writer, [{"notifyNo": "BK1020", "notifyVersion": "00", "title": "hot"}])
+    commit_page(writer, [{"notifyNo": "BK1020", "notifyVersion": "00", "bidName": "hot"}])
     assert (data_root / "warehouse.sqlite-wal").exists(), "the transaction is still in the WAL"
     result = backup.create_backup(data_root)
     assert not (result.path / "warehouse.sqlite-wal").exists(), "a backup must be one self-contained file"
@@ -212,7 +212,7 @@ def test_backup_captures_transactions_still_in_the_wal(env) -> None:
 
 def test_restore_refuses_when_manifest_version_is_unknown(env) -> None:
     writer, _, _, data_root = env
-    commit_page(writer, [{"notifyNo": "BK1008", "notifyVersion": "00", "title": "u"}])
+    commit_page(writer, [{"notifyNo": "BK1008", "notifyVersion": "00", "bidName": "u"}])
     result = backup.create_backup(data_root)
     manifest_path = result.path / backup.MANIFEST_NAME
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -225,7 +225,7 @@ def test_restore_refuses_when_manifest_version_is_unknown(env) -> None:
 def test_backup_refuses_object_row_without_file(env) -> None:
     """A backup that could never restore is refused at creation, not discovered at restore."""
     writer, conn, _, data_root = env
-    commit_page(writer, [{"notifyNo": "BK1009", "notifyVersion": "00", "title": "t"}])
+    commit_page(writer, [{"notifyNo": "BK1009", "notifyVersion": "00", "bidName": "t"}])
     ghost = hashlib.sha256(b"row with no bytes").hexdigest()
     conn.execute(
         "INSERT INTO raw_objects (sha256, byte_len, codec, storage_rel_path, integrity_status,"
@@ -246,7 +246,7 @@ def test_create_backup_without_warehouse_fails_clearly(tmp_path: Path) -> None:
 def test_backup_excludes_orphan_files(env) -> None:
     """§5.2: files with no row are garbage, not data, and must not enter a backup."""
     writer, conn, store, data_root = env
-    commit_page(writer, [{"notifyNo": "BK1010", "notifyVersion": "00", "title": "s"}])
+    commit_page(writer, [{"notifyNo": "BK1010", "notifyVersion": "00", "bidName": "s"}])
     orphan = store.put(b"orphan payload, no row references me")
     rows = scalar(conn, "SELECT COUNT(*) FROM raw_objects")
     result = backup.create_backup(data_root)
@@ -278,7 +278,7 @@ def test_quarantined_object_is_still_backed_up(env) -> None:
 def test_repeated_restores_keep_each_previous_warehouse(env, tmp_path: Path) -> None:
     """The pre-restore copy is the only rollback left, so names must never collide between restores."""
     writer, _, _, data_root = env
-    commit_page(writer, [{"notifyNo": "BK1011", "notifyVersion": "00", "title": "r"}])
+    commit_page(writer, [{"notifyNo": "BK1011", "notifyVersion": "00", "bidName": "r"}])
     result = backup.create_backup(data_root)
     scratch = tmp_path / "scratch"
     for _ in range(4):
@@ -292,9 +292,9 @@ def test_repeated_restores_keep_each_previous_warehouse(env, tmp_path: Path) -> 
 def test_pre_restore_copy_is_a_usable_rollback(env) -> None:
     """Restoring an older backup over a newer warehouse must keep the newer one readable."""
     writer, conn, _, data_root = env
-    commit_page(writer, [{"notifyNo": "BK1012", "notifyVersion": "00", "title": "new"}])
+    commit_page(writer, [{"notifyNo": "BK1012", "notifyVersion": "00", "bidName": "new"}])
     older = backup.create_backup(data_root)
-    commit_page(writer, [{"notifyNo": "BK1013", "notifyVersion": "00", "title": "second"}], attempt_no=2)
+    commit_page(writer, [{"notifyNo": "BK1013", "notifyVersion": "00", "bidName": "second"}], attempt_no=2)
     assert scalar(conn, "SELECT COUNT(*) FROM source_records") == 2
     conn.close()  # the writer must be stopped before its database is swapped out
 
@@ -311,7 +311,7 @@ def test_pre_restore_copy_is_a_usable_rollback(env) -> None:
 def test_restore_leaves_no_stale_wal_beside_the_new_warehouse(env, tmp_path: Path) -> None:
     """A leftover -wal belongs to the replaced database; replaying it onto the restored one is corruption."""
     writer, conn, _, data_root = env
-    commit_page(writer, [{"notifyNo": "BK1014", "notifyVersion": "00", "title": "q"}])
+    commit_page(writer, [{"notifyNo": "BK1014", "notifyVersion": "00", "bidName": "q"}])
     result = backup.create_backup(data_root)
     conn.close()
     scratch = tmp_path / "scratch"

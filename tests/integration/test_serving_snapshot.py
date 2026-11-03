@@ -47,8 +47,8 @@ def commit_page(writer, records: list[dict], *, page_no: int = 0, family: str = 
 
 def test_snapshot_publishes_and_row_counts_match(env, tmp_path: Path) -> None:
     writer, conn, _, data_root = env
-    commit_page(writer, [{"notifyNo": "SV001", "notifyVersion": "00", "title": "Gói thầu xây lắp số 1"}])
-    commit_page(writer, [{"notifyNo": "SV002", "notifyVersion": "00", "title": "Mua sắm thiết bị y tế"}], page_no=1)
+    commit_page(writer, [{"notifyNo": "SV001", "notifyVersion": "00", "bidName": "Gói thầu xây lắp số 1"}])
+    commit_page(writer, [{"notifyNo": "SV002", "notifyVersion": "00", "bidName": "Mua sắm thiết bị y tế"}], page_no=1)
     result = serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")
     assert result.published, result.reason
     assert result.snapshot_rows["source_records"] == 2
@@ -59,7 +59,7 @@ def test_snapshot_publishes_and_row_counts_match(env, tmp_path: Path) -> None:
 def test_fts_searches_title_across_diacritics(env, tmp_path: Path) -> None:
     """UI-06: an ASCII query must hit Vietnamese text, including the letters SQLite does not fold."""
     writer, _, _, data_root = env
-    commit_page(writer, [{"notifyNo": "SV003", "notifyVersion": "00", "title": "Sửa chữa đường giao thông nông thôn"}])
+    commit_page(writer, [{"notifyNo": "SV003", "notifyVersion": "00", "bidName": "Sửa chữa đường giao thông nông thôn"}])
     serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")
     conn = sqlite3.connect(tmp_path / "serving.sqlite")
     for query in ("duong giao thong", "đường giao thông", "SỬA CHỮA ĐƯỜNG", "nong thon"):
@@ -83,7 +83,7 @@ def test_fts_searches_title_across_diacritics(env, tmp_path: Path) -> None:
 def test_query_folding_neutralises_fts_operators(env, tmp_path: Path) -> None:
     """A user typing `AND`, a quote or `NEAR` must get a match error-free, not a reparsed query."""
     writer, _, _, data_root = env
-    commit_page(writer, [{"notifyNo": "SV020", "notifyVersion": "00", "title": "Gói thầu A NEAR B \"cẩn trọng\" AND C"}])
+    commit_page(writer, [{"notifyNo": "SV020", "notifyVersion": "00", "bidName": "Gói thầu A NEAR B \"cẩn trọng\" AND C"}])
     serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")
     conn = sqlite3.connect(tmp_path / "serving.sqlite")
     for query in ('NEAR', 'AND', '"cẩn trọng"', 'gói thầu a near b'):
@@ -94,7 +94,7 @@ def test_query_folding_neutralises_fts_operators(env, tmp_path: Path) -> None:
 
 def test_fts_covers_investor_name_and_natural_key(env, tmp_path: Path) -> None:
     writer, _, _, data_root = env
-    commit_page(writer, [{"notifyNo": "SV004", "notifyVersion": "00", "title": "Gói 1", "investorName": "Ban QLDA xây dựng tỉnh A"}])
+    commit_page(writer, [{"notifyNo": "SV004", "notifyVersion": "00", "bidName": "Gói 1", "investorName": "Ban QLDA xây dựng tỉnh A"}])
     serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")
     conn = sqlite3.connect(tmp_path / "serving.sqlite")
     assert conn.execute("SELECT COUNT(*) FROM search_index WHERE investor_name MATCH 'QLDA'").fetchone()[0] == 1
@@ -105,7 +105,7 @@ def test_fts_covers_investor_name_and_natural_key(env, tmp_path: Path) -> None:
 def test_fts_indexes_a_record_whose_latest_version_has_no_title(env, tmp_path: Path) -> None:
     """A version without `title` is legal JSON and must still be findable by its key."""
     writer, conn, _, data_root = env
-    commit_page(writer, [{"notifyNo": "SV005", "notifyVersion": "00", "title": "Có version"}])
+    commit_page(writer, [{"notifyNo": "SV005", "notifyVersion": "00", "bidName": "Có version"}])
     conn.execute("UPDATE source_record_versions SET normalized_json='{\"notifyNo\":\"SV005\"}'")
     serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")
     snapshot = sqlite3.connect(tmp_path / "serving.sqlite")
@@ -118,10 +118,10 @@ def test_fts_indexes_a_record_whose_latest_version_has_no_title(env, tmp_path: P
 def test_rebuild_replaces_the_snapshot_and_meta_records_both_builds(env, tmp_path: Path) -> None:
     writer, _, _, data_root = env
     target = tmp_path / "serving.sqlite"
-    commit_page(writer, [{"notifyNo": "SV006", "notifyVersion": "00", "title": "một"}])
+    commit_page(writer, [{"notifyNo": "SV006", "notifyVersion": "00", "bidName": "một"}])
     assert serving.build_serving_db(data_root / "warehouse.sqlite", target).published
     first = serving.serving_state(target)
-    commit_page(writer, [{"notifyNo": "SV007", "notifyVersion": "00", "title": "hai"}], page_no=1)
+    commit_page(writer, [{"notifyNo": "SV007", "notifyVersion": "00", "bidName": "hai"}], page_no=1)
     assert serving.build_serving_db(data_root / "warehouse.sqlite", target).published
     second = serving.serving_state(target)
     assert second["row_counts"]["source_records"] == 2
@@ -135,7 +135,7 @@ def test_failed_gate_leaves_the_previous_snapshot_serving(env, tmp_path: Path, m
     """§5.5: a rejected build must not touch what is already published."""
     writer, conn, _, data_root = env
     target = tmp_path / "serving.sqlite"
-    commit_page(writer, [{"notifyNo": "SV008", "notifyVersion": "00", "title": "good"}])
+    commit_page(writer, [{"notifyNo": "SV008", "notifyVersion": "00", "bidName": "good"}])
     assert serving.build_serving_db(data_root / "warehouse.sqlite", target).published
     good_counts = serving.serving_state(target)["row_counts"]
 
@@ -143,7 +143,7 @@ def test_failed_gate_leaves_the_previous_snapshot_serving(env, tmp_path: Path, m
         raise serving.SnapshotRejected("injected gate failure")
 
     monkeypatch.setattr(serving, "_build_search_index", reject)
-    commit_page(writer, [{"notifyNo": "SV009", "notifyVersion": "00", "title": "bad"}], page_no=1)
+    commit_page(writer, [{"notifyNo": "SV009", "notifyVersion": "00", "bidName": "bad"}], page_no=1)
     result = serving.build_serving_db(data_root / "warehouse.sqlite", target)
     assert not result.published and result.stale
     assert "injected gate failure" in result.reason
@@ -163,7 +163,7 @@ def test_row_count_drift_is_rejected(env, tmp_path: Path, monkeypatch) -> None:
     to be proven to run.
     """
     writer, _, _, data_root = env
-    commit_page(writer, [{"notifyNo": "SV010", "notifyVersion": "00", "title": "one"}])
+    commit_page(writer, [{"notifyNo": "SV010", "notifyVersion": "00", "bidName": "one"}])
     real_count = serving._count
     calls = {"source_records": 0}
 
@@ -186,7 +186,7 @@ def test_row_count_drift_is_rejected(env, tmp_path: Path, monkeypatch) -> None:
 def test_build_never_blocks_the_writer(env, tmp_path: Path) -> None:
     """The GUI reads the snapshot so the single writer is never contended — that must be measurably true."""
     writer, conn, _, data_root = env
-    commit_page(writer, [{"notifyNo": "SV011", "notifyVersion": "00", "title": "open txn"}])
+    commit_page(writer, [{"notifyNo": "SV011", "notifyVersion": "00", "bidName": "open txn"}])
     conn.execute("BEGIN")
     conn.execute("INSERT INTO settings (key, value_json, updated_at_utc) VALUES ('in-flight','{}','2026-11-03T00:00:00Z')")
     result = serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")

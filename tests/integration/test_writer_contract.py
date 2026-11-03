@@ -69,7 +69,7 @@ def scalar(conn: sqlite3.Connection, sql: str, *args: object):
 def test_ten_identical_fetches_yield_one_record_one_version(env) -> None:
     """DEDUP-01 through the writer: records=1, versions=1, revisions=1, observations=10."""
     writer, conn, _ = env
-    page = page_of([{"notifyNo": "IB26777", "notifyVersion": "00", "title": "t"}])
+    page = page_of([{"notifyNo": "IB26777", "notifyVersion": "00", "bidName": "t"}])
     for i in range(10):
         commit(writer, page, attempt_no=i + 1)
     assert scalar(conn, "SELECT COUNT(*) FROM source_records") == 1
@@ -82,7 +82,7 @@ def test_abab_produces_three_content_versions(env) -> None:
     """DEDUP-02 / §13.3 decision 2: A→B→A is three versions; the trailing repeat adds none."""
     writer, conn, _ = env
     for i, title in enumerate(("A", "B", "A", "A")):
-        commit(writer, page_of([{"notifyNo": "IB26778", "notifyVersion": "00", "title": title}]), attempt_no=i + 1)
+        commit(writer, page_of([{"notifyNo": "IB26778", "notifyVersion": "00", "bidName": title}]), attempt_no=i + 1)
     assert scalar(conn, "SELECT COUNT(*) FROM source_record_versions") == 3
     assert scalar(conn, "SELECT COUNT(*) FROM raw_revisions") == 3
     assert scalar(conn, "SELECT current_content_version FROM source_records") == 3
@@ -95,8 +95,8 @@ def test_content_version_counter_equals_actual_version_count(env) -> None:
     two versions reported 4. The counter is a sequence, not an id.
     """
     writer, conn, _ = env
-    commit(writer, page_of([{"notifyNo": "IB26779", "notifyVersion": "00", "title": "one"}]))
-    commit(writer, page_of([{"notifyNo": "IB26779", "notifyVersion": "00", "title": "two"}]), attempt_no=2)
+    commit(writer, page_of([{"notifyNo": "IB26779", "notifyVersion": "00", "bidName": "one"}]))
+    commit(writer, page_of([{"notifyNo": "IB26779", "notifyVersion": "00", "bidName": "two"}]), attempt_no=2)
     row = conn.execute(
         "SELECT current_content_version, (SELECT COUNT(*) FROM source_record_versions v"
         " WHERE v.source_record_id=sr.id) AS actual FROM source_records sr"
@@ -107,7 +107,7 @@ def test_content_version_counter_equals_actual_version_count(env) -> None:
 def test_retry_creates_attempt_not_request(env) -> None:
     """B3 / DEDUP-13: two attempts, one request, both bodies kept as objects."""
     writer, conn, _ = env
-    page = page_of([{"notifyNo": "IB26780", "notifyVersion": "00", "title": "t"}])
+    page = page_of([{"notifyNo": "IB26780", "notifyVersion": "00", "bidName": "t"}])
     commit(writer, page, attempt_no=1)
     commit(writer, page, attempt_no=2)
     assert scalar(conn, "SELECT COUNT(*) FROM fetch_requests") == 1
@@ -124,7 +124,7 @@ def test_page_of_ten_where_only_one_changed(env) -> None:
     def build(revise_last: bool) -> dict:
         return page_of(
             [
-                {"notifyNo": f"IB2600{i}", "notifyVersion": "00", "title": "changed" if revise_last and i == 9 else f"t{i}"}
+                {"notifyNo": f"IB2600{i}", "notifyVersion": "00", "bidName": "changed" if revise_last and i == 9 else f"t{i}"}
                 for i in range(10)
             ]
         )
@@ -159,14 +159,14 @@ def test_raw_only_change_bumps_revision_not_version(env) -> None:
     writer, conn, _ = env
     # notifyVersion is part of identity but not of the normalized fields, so changing the
     # raw payload shape while fields stay equal exercises the raw-only branch.
-    commit(writer, page_of([{"notifyNo": "IB26781", "notifyVersion": "00", "title": "same"}]))
+    commit(writer, page_of([{"notifyNo": "IB26781", "notifyVersion": "00", "bidName": "same"}]))
     record_id = int(scalar(conn, "SELECT id FROM source_records"))
     before_sha = scalar(conn, "SELECT current_record_object_sha FROM source_records")
 
     # A second page carrying an extra field the normalizer ignores.
     commit(
         writer,
-        page_of([{"notifyNo": "IB26781", "notifyVersion": "00", "title": "same", "irrelevantField": "x"}]),
+        page_of([{"notifyNo": "IB26781", "notifyVersion": "00", "bidName": "same", "irrelevantField": "x"}]),
         attempt_no=2,
     )
     after_sha = scalar(conn, "SELECT current_record_object_sha FROM source_records")
@@ -184,7 +184,7 @@ def test_raw_only_change_bumps_revision_not_version(env) -> None:
 def test_redaction_policy_replay_does_not_inflate_business_counters(env) -> None:
     """Fix #3 through the writer: policy change is REPLAY, not a business revision."""
     writer, conn, _store = env
-    page = page_of([{"notifyNo": "IB26782", "notifyVersion": "00", "title": "t"}])
+    page = page_of([{"notifyNo": "IB26782", "notifyVersion": "00", "bidName": "t"}])
     commit(writer, page)
     record_id = int(scalar(conn, "SELECT id FROM source_records"))
     business_before = scalar(conn, "SELECT COUNT(*) FROM business_raw_revisions WHERE source_record_id=?", record_id)
@@ -211,19 +211,19 @@ def test_redaction_policy_replay_does_not_inflate_business_counters(env) -> None
 def test_missing_version_is_never_coerced_to_zero_zero(env) -> None:
     """The `or "00"` bug in the source adapter, asserted at the writer boundary."""
     writer, conn, _ = env
-    commit(writer, page_of([{"notifyNo": "IB26783", "title": "no version"}]))
+    commit(writer, page_of([{"notifyNo": "IB26783", "bidName": "no version"}]))
     row = conn.execute("SELECT version_state, version_raw FROM source_records").fetchone()
     assert row["version_state"] == "MISSING"
     assert row["version_raw"] is None
 
     # The same notifyNo published as version 00 is a DIFFERENT record, not an update.
-    commit(writer, page_of([{"notifyNo": "IB26783", "notifyVersion": "00", "title": "no version"}]), attempt_no=2)
+    commit(writer, page_of([{"notifyNo": "IB26783", "notifyVersion": "00", "bidName": "no version"}]), attempt_no=2)
     assert scalar(conn, "SELECT COUNT(*) FROM source_records") == 2
 
 
 def test_unparsable_version_is_recorded_not_dropped(env) -> None:
     writer, conn, _ = env
-    commit(writer, page_of([{"notifyNo": "IB26784", "notifyVersion": "0O", "title": "letter O"}]))
+    commit(writer, page_of([{"notifyNo": "IB26784", "notifyVersion": "0O", "bidName": "letter O"}]))
     row = conn.execute("SELECT version_state, version_raw FROM source_records").fetchone()
     assert (row["version_state"], row["version_raw"]) == ("UNPARSABLE", "0O")
 
@@ -239,7 +239,7 @@ def test_record_contract_rejects_missing_with_raw_value() -> None:
 
 def test_derivation_rows_come_from_real_extraction(env) -> None:
     writer, conn, _ = env
-    page = page_of([{"notifyNo": f"IB2678{i}", "notifyVersion": "00", "title": "t"} for i in range(3)])
+    page = page_of([{"notifyNo": f"IB2678{i}", "notifyVersion": "00", "bidName": "t"} for i in range(3)])
     commit(writer, page)
     rows = conn.execute(
         "SELECT d.record_object_sha, d.record_locator, r.sha256 AS response_sha"
@@ -259,7 +259,7 @@ def test_fabricated_payload_is_refused_by_the_writer(env) -> None:
     """A caller cannot hand commit_page a payload that does not match the extractor's hash."""
     writer, conn, _ = env
     binding = binding_for("TBMT")
-    page = page_of([{"notifyNo": "IB26790", "notifyVersion": "00", "title": "real"}])
+    page = page_of([{"notifyNo": "IB26790", "notifyVersion": "00", "bidName": "real"}])
     response_ref = writer.store_response(page)
     attempt = writer.ensure_attempt(
         run_id="run-1", family="TBMT", endpoint="smart/search",
@@ -273,7 +273,7 @@ def test_fabricated_payload_is_refused_by_the_writer(env) -> None:
         version_state=tampered.normalized.version_state, version_raw=tampered.normalized.version_raw,
         fields=tampered.normalized.fields,
     )
-    object.__setattr__(tampered, "payload", {"notifyNo": "IB26790", "title": "DIFFERENT"})
+    object.__setattr__(tampered, "payload", {"notifyNo": "IB26790", "bidName": "DIFFERENT"})
     object.__setattr__(tampered, "normalized", forged)
     with pytest.raises(IntegrityMismatchError):
         writer.commit_page(run_id="run-1", attempt_id=attempt, response_ref=response_ref, records=[tampered])
@@ -284,7 +284,7 @@ def test_fabricated_payload_is_refused_by_the_writer(env) -> None:
 
 def test_verify_extraction_catches_a_bad_locator() -> None:
     binding = binding_for("TBMT")
-    page = page_of([{"notifyNo": "IB26791", "notifyVersion": "00", "title": "t"}])
+    page = page_of([{"notifyNo": "IB26791", "notifyVersion": "00", "bidName": "t"}])
     report = extract_page(page, binding.spec)
     with pytest.raises(LocatorError):
         resolve_locator(page, "/page/content/9")
@@ -314,7 +314,7 @@ def test_malformed_response_is_quarantined_without_records(env) -> None:
 def test_record_without_identity_lands_in_unresolved(env) -> None:
     """O-4 branch 2: extractable payload, no natural key -> RECORD object + UNRESOLVED."""
     writer, conn, _ = env
-    commit(writer, page_of([{"notifyVersion": "00", "title": "no notifyNo at all"}]))
+    commit(writer, page_of([{"notifyVersion": "00", "bidName": "no notifyNo at all"}]))
     assert scalar(conn, "SELECT COUNT(*) FROM source_records") == 0
     assert scalar(conn, "SELECT COUNT(*) FROM unresolved_records") == 1
     assert scalar(conn, "SELECT status FROM observations") == "UNRESOLVED"
@@ -328,7 +328,7 @@ def test_transaction_rolls_back_entirely_when_one_record_fails(env) -> None:
     """§5.2: a page is one transaction. Half a page is never visible."""
     writer, conn, _ = env
     binding = binding_for("TBMT")
-    page = page_of([{"notifyNo": "IB26800", "notifyVersion": "00", "title": "ok"}])
+    page = page_of([{"notifyNo": "IB26800", "notifyVersion": "00", "bidName": "ok"}])
     response_ref = writer.store_response(page)
     attempt = writer.ensure_attempt(
         run_id="run-1", family="TBMT", endpoint="smart/search",
@@ -357,7 +357,7 @@ def test_transaction_rolls_back_entirely_when_one_record_fails(env) -> None:
 
 def test_recovery_is_clean_after_normal_writing(env) -> None:
     writer, conn, store = env
-    commit(writer, page_of([{"notifyNo": f"IB2681{i}", "notifyVersion": "00", "title": "t"} for i in range(3)]))
+    commit(writer, page_of([{"notifyNo": f"IB2681{i}", "notifyVersion": "00", "bidName": "t"} for i in range(3)]))
     report = store.recover(conn)
     assert report.clean, report
     assert store.collect_orphan_files(conn, dry_run=True) == ()
@@ -371,8 +371,8 @@ def test_different_pages_of_one_window_are_different_requests(env) -> None:
     loss of every page after the first.
     """
     writer, conn, _ = env
-    page_a = page_of([{"notifyNo": "IB26820", "notifyVersion": "00", "title": "a"}])
-    page_b = page_of([{"notifyNo": "IB26821", "notifyVersion": "00", "title": "b"}])
+    page_a = page_of([{"notifyNo": "IB26820", "notifyVersion": "00", "bidName": "a"}])
+    page_b = page_of([{"notifyNo": "IB26821", "notifyVersion": "00", "bidName": "b"}])
     commit(writer, page_a, page_no=0)
     commit(writer, page_b, page_no=1)
 
