@@ -19,6 +19,7 @@ kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
 
 ERROR_ACCESS_DENIED = 5
+ERROR_ALREADY_EXISTS = 183
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 TOKEN_QUERY = 0x0008
 _TOKEN_USER_INFO = 1
@@ -89,3 +90,37 @@ def pid_alive(pid: int) -> bool:
         kernel32.CloseHandle(handle)
         return True
     return ctypes.get_last_error() == ERROR_ACCESS_DENIED
+
+
+_single_instance_handles: dict[str, int] = {}
+
+
+def acquire_single_instance(name: str) -> bool:
+    """Take a named mutex for this process lifetime; False when another process owns it.
+
+    The handle is kept in module state on purpose: closing it would release the mutex, and the
+    GUI must hold it until the process exits (Restart Manager / uninstall rely on the process
+    being closable, not on a stale lock file).
+    """
+    if name in _single_instance_handles:
+        return True
+    handle = kernel32.CreateMutexW(None, False, name)
+    if not handle:
+        return False
+    if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
+        kernel32.CloseHandle(handle)
+        return False
+    _single_instance_handles[name] = handle
+    return True
+
+
+def single_instance_name(data_root: str) -> str:
+    import hashlib
+    from pathlib import Path as _Path
+
+    folded = str(_Path(data_root).resolve()).casefold().encode("utf-8")
+    return r"Local\SanThauDataStudio-" + hashlib.sha256(folded).hexdigest()[:12]
+
+
+kernel32.CreateMutexW.argtypes = (ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR)
+kernel32.CreateMutexW.restype = wintypes.HANDLE

@@ -15,6 +15,8 @@ Window {
 
     property int pageIndex: 0
     property int detailRecordId: 0
+    Keys.onDownPressed: pageIndex = Math.min(pageIndex + 1, navItems.length - 1)
+    Keys.onUpPressed: pageIndex = Math.max(pageIndex - 1, 0)
     property var navItems: [
         "01 · Onboarding", "02 · Control Center", "03 · Sources", "04 · Collection Jobs",
         "05 · Coverage Matrix", "06 · Data Explorer", "07 · Record Detail",

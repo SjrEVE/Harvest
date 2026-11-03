@@ -68,13 +68,38 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent unchecked
 
 [UninstallDelete]
 ; Intentionally empty. Removing user data during uninstall is forbidden; the data root
 ; is created by the application under a user-chosen path and is left untouched.
 
 [Code]
+// Ask a running GUI to exit before files are replaced/deleted. Restart Manager did not close
+// this Qt app during silent runs, so the app polls this named event instead (see
+// platform_win/shutdown_signal.py). The wait gives Qt time to tear the window down.
+procedure SignalAppShutdown;
+var
+  Marker: String;
+begin
+  Marker := ExpandConstant('{localappdata}\SanThauDataStudio\shutdown.flag');
+  ForceDirectories(ExtractFileDir(Marker));
+  SaveStringToFile(Marker, '1', False);
+  Sleep(4000);
+  DeleteFile(Marker);
+end;
+
+procedure InitializeUninstall;
+begin
+  SignalAppShutdown;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssInstall then
+    SignalAppShutdown;
+end;
+
 // Guard against the one uninstall mistake that would violate §11: deleting collected data.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin

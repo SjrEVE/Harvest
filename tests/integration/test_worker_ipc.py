@@ -648,3 +648,35 @@ def _kill_tree(process: subprocess.Popen) -> None:
                    capture_output=True, check=False)
     with contextlib.suppress(subprocess.TimeoutExpired):
         process.wait(timeout=10)
+
+
+def test_two_data_roots_run_isolated_workers(tmp_path: Path) -> None:
+    """RC2: the pipe name is per data root, so two roots can serve at the same time."""
+    from santhau_studio.desktop.backend import StudioBackend
+    from santhau_studio.workers.ipc import worker_pipe_name
+
+    roots = [tmp_path / "root-a", tmp_path / "root-b"]
+    assert worker_pipe_name(data_root=roots[0]) != worker_pipe_name(data_root=roots[1])
+    repo_root = Path(__file__).resolve().parents[2]
+    processes = [
+        subprocess.Popen(
+            [sys.executable, "-m", "santhau_studio.workers.service", "--data-root", str(root)],
+            env=service_env(), cwd=str(repo_root),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        for root in roots
+    ]
+    backends = [StudioBackend(root) for root in roots]
+    try:
+        for backend in backends:
+            assert poll(lambda b=backend: b.worker_status()["running"] and b.worker_status()["pipe_ok"], timeout=40)
+        assert backends[0].worker_command("FORCE_TERMINATE", None)["ok"]
+        assert poll(lambda: not backends[0].worker_status()["running"], timeout=20)
+        assert backends[1].worker_status()["running"], "the second root must be unaffected"
+        assert backends[1].worker_command("FORCE_TERMINATE", None)["ok"]
+        for process in processes:
+            assert process.wait(timeout=30) == 0
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                _kill_tree(process)

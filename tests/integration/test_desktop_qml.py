@@ -64,3 +64,32 @@ def test_bridge_slots_return_json_for_every_screen(tmp_path: Path) -> None:
 
     for payload in payloads:
         json.loads(payload)
+
+
+def test_keyboard_navigation_moves_between_pages(tmp_path: Path) -> None:
+    _qt_app()
+    from PySide6.QtCore import Qt
+    from PySide6.QtQml import QQmlApplicationEngine
+    from PySide6.QtTest import QTest
+
+    from santhau_studio.desktop.backend import StudioBackend
+    from santhau_studio.desktop.bridge import BackendBridge
+
+    engine = QQmlApplicationEngine()
+    engine.rootContext().setContextProperty("backend", BackendBridge(StudioBackend(tmp_path / "data")))
+    engine.rootContext().setContextProperty("appTitle", "keyboard test")
+    qml = Path(__file__).resolve().parents[2] / "src" / "santhau_studio" / "desktop" / "qml" / "Main.qml"
+    engine.addImportPath(str(qml.parent))
+    engine.load(qml.as_uri())
+    root = engine.rootObjects()[0]
+    root.requestActivate()
+    QTest.qWait(150)
+    QTest.keyClick(root, Qt.Key_Down)
+    QTest.qWait(50)
+    assert int(root.property("pageIndex")) == 1
+    QTest.keyClick(root, Qt.Key_Down)
+    QTest.qWait(50)
+    assert int(root.property("pageIndex")) == 2
+    QTest.keyClick(root, Qt.Key_Up)
+    QTest.qWait(50)
+    assert int(root.property("pageIndex")) == 1

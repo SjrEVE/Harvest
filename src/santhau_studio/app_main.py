@@ -14,13 +14,23 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow
 
 from santhau_studio.desktop.backend import StudioBackend, default_data_root
 from santhau_studio.desktop.bridge import BackendBridge
+from santhau_studio.platform_win.process import acquire_single_instance, single_instance_name
+from santhau_studio.platform_win.restart_manager import (
+    deployed_files,
+    register_with_restart_manager,
+)
+from santhau_studio.platform_win.shutdown_signal import (
+    close_shutdown_event,
+    open_shutdown_event,
+    shutdown_requested,
+)
 
 APP_TITLE = "Săn Thầu Data Studio"
 
@@ -81,7 +91,23 @@ def main(argv: list[str] | None = None) -> int:
 
     app = QGuiApplication(argv)
     app.setApplicationName("SanThauDataStudio")
+    root_path = Path(data_root) if data_root else default_data_root()
+    if Path(sys.executable).name.lower().startswith("santhaudatastudio"):
+        # Makes Inno's CloseApplications able to shut this GUI down during uninstall/upgrade.
+        register_with_restart_manager(deployed_files(Path(sys.executable)))
+    if not acquire_single_instance(single_instance_name(str(root_path))):
+        # A second GUI on the same data root would confuse operators about which window owns
+        # the worker; the worker itself is protected by the data-root lock, the GUI by this.
+        _log_gui_failure(root_path, "another GUI instance already owns this data root")
+        return 0
     backend = BackendBridge(StudioBackend(data_root))
+    shutdown_handle = open_shutdown_event()
+    if shutdown_handle:
+        watcher = QTimer(app)
+        watcher.setInterval(250)
+        watcher.timeout.connect(lambda: app.quit() if shutdown_requested(shutdown_handle) else None)
+        watcher.start()
+        app.aboutToQuit.connect(lambda: close_shutdown_event(shutdown_handle))
     qml_path = qml_entry_point()
     if qml_path is None:
         print("missing QML entry point (looked next to the exe and in the source tree)", file=sys.stderr)
@@ -109,6 +135,17 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.flush()
         os._exit(code)
     return app.exec()
+
+
+def _log_gui_failure(data_root: Path, text: str) -> None:
+    try:
+        logs = Path(data_root) / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        with (logs / "gui.log").open("a", encoding="utf-8") as handle:
+            handle.write(f"[{stamp}] {text}\n")
+    except OSError:
+        pass
 
 
 def _take_data_root(argv: list[str]) -> tuple[Path | None, list[str]]:
