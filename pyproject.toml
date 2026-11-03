@@ -17,7 +17,7 @@ dependencies = [
 
 [project.scripts]
 santhau-studio = "santhau_studio.app_main:main"
-santhau-collector = "santhau_studio.worker_main:main"
+santhau-collector = "santhau_studio.workers.service:main"
 
 [build-system]
 requires = ["hatchling==1.33.0"]

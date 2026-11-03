@@ -144,7 +144,8 @@ def resolve(
 def boundary_rule(conn: sqlite3.Connection, *, source_key: str, family: str, endpoint: str, adapter_sha: str) -> dict | None:
     """The newest canary-verified boundary contract for this exact endpoint+adapter (§4.1 item 1)."""
     row = conn.execute(
-        "SELECT id, rule_key, rule_version, boundary_kind, precision, canary_verified, verified_at_utc"
+        "SELECT id, rule_key, rule_version, boundary_kind, precision, source_timezone, offset_minutes,"
+        " canary_verified, verified_at_utc"
         " FROM filter_boundary_rules"
         " WHERE source_key=? AND family=? AND endpoint=? AND adapter_sha=? AND canary_verified=1"
         " ORDER BY rule_version DESC, verified_at_utc DESC LIMIT 1",

@@ -42,3 +42,6 @@ Thumbs.db
 
 # Benchmark scratch: 100k+ synthetic object files, never a commit target.
 _evidence/*/bench-work/
+
+# Benchmark/evidence outputs (synthetic, regenerated per run)
+_evidence/

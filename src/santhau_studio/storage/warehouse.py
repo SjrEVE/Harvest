@@ -39,8 +39,11 @@ def connect(path: Path | str, *, create_schema: bool = False) -> sqlite3.Connect
     conn = sqlite3.connect(str(path), isolation_level=None)
     try:
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
+        # busy_timeout must be set before the mode pragma: switching/confirming WAL takes a
+        # brief lock, and a reader opening mid-commit would otherwise fail with SQLITE_BUSY
+        # because no busy handler exists yet.
         conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=FULL")  # §3.10/§5.2: set explicitly, not inherited
         conn.execute("PRAGMA foreign_keys=ON")  # meaningful only because FKs are declared for real
         if create_schema:
@@ -53,6 +56,21 @@ def connect(path: Path | str, *, create_schema: bool = False) -> sqlite3.Connect
         # rename, including the ones backup/restore needs.
         conn.close()
         raise
+    return conn
+
+
+def connect_read_only(path: Path | str, *, check_same_thread: bool = True) -> sqlite3.Connection:
+    """A reader's connection: no mode switches, no writes, no file creation.
+
+    `connect()` runs `PRAGMA journal_mode=WAL`, which takes a lock and can collide with the
+    writer's migration on a fresh database. A reader must never need that: WAL is already the
+    database's persisted mode, so `mode=ro` + `query_only` is all a UI/status reader should do.
+    """
+    reference = Path(path).resolve().as_uri() + "?mode=ro"
+    conn = sqlite3.connect(reference, uri=True, isolation_level=None, check_same_thread=check_same_thread)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA query_only=ON")
     return conn
 
 
