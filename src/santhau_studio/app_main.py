@@ -9,6 +9,7 @@ window and reports PASS/FAIL without leaving an app open.
 from __future__ import annotations
 
 import contextlib
+import os
 import sys
 import time
 from pathlib import Path
@@ -100,7 +101,13 @@ def main(argv: list[str] | None = None) -> int:
         if smoke_record:
             root.setProperty("detailRecordId", int(smoke_record))
         root.setProperty("pageIndex", int(smoke_page))
-        return _run_smoke(app, root, backend, Path(smoke_shot))
+        code = _run_smoke(app, root, backend, Path(smoke_shot))
+        # A smoke run must not leave a window process behind: Qt teardown after grabWindow can
+        # hang, and a lingering process locks the installed DLLs during uninstall. Exit hard,
+        # after the verdict is written.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(code)
     return app.exec()
 
 
