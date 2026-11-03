@@ -108,6 +108,18 @@ def verified_rule(writer, precision: str = "HOUR") -> BoundaryRule:
 _UNSET = object()
 
 
+def test_current_day_keeps_collected_rows_without_claiming_complete(writer):
+    portal = FakePortal({"DAY": [page_of(0, 3)]})
+    runner = make_runner(writer, portal)
+    runner.clock = lambda: DAY.from_utc + timedelta(hours=8)
+    outcome = runner.run_interval(DAY, "DAY", "run-1")
+    assert outcome.rows == 3
+    assert outcome.status == "PARTIAL"
+    assert "INTERVAL_NOT_CLOSED" in outcome.blockers
+    row = writer.conn.execute("SELECT status,proof_id FROM coverage_intervals WHERE id=?", (outcome.interval_id,)).fetchone()
+    assert row["status"] == "PARTIAL" and row["proof_id"] is None
+
+
 def make_runner(writer, portal: FakePortal, *, rule=_UNSET,
                 limits: RunLimits | None = None, stop=None) -> Runner:
     if rule is _UNSET:

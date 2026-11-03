@@ -6,7 +6,7 @@ from PySide6.QtCore import QObject, QRunnable, Signal
 READS = {
     'onboarding', 'control_center', 'sources', 'jobs', 'coverage', 'search',
     'record_detail', 'record_history', 'raw_object', 'deep_queue', 'integrity', 'settings',
-    'job_status', 'coverage_proof', 'start_worker', 'worker_command', 'enqueue_collection', 'enqueue_deep',
+    'job_status', 'coverage_proof', 'start_worker', 'worker_command', 'enqueue_collection', 'start_collection', 'enqueue_deep',
 }
 
 
@@ -31,7 +31,7 @@ class ReadTask(QRunnable):
             else:
                 method = getattr(self.backend, self.method)
             args = ()
-            if self.method in ('search', 'record_history', 'enqueue_collection', 'enqueue_deep'):
+            if self.method in ('search', 'record_history', 'enqueue_collection', 'start_collection', 'enqueue_deep'):
                 args = (self.payload,)
             elif self.method == 'worker_command':
                 args = (self.payload.get('command'), self.payload.get('job_id') or None)

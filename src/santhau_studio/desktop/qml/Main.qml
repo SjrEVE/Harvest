@@ -62,9 +62,17 @@ Window {
             if (key === "integrityRaw") { evidenceText.text=T.rawPreview(root.parse(text)); evidenceDialog.open() }
             if (key === "proof") { evidenceText.text = T.pretty(root.parse(text)); evidenceDialog.open() }
             if (key === "jobAction") { page4.enqueueResult = T.result(root.parse(text)); page4.reload() }
+            if (key === "collectionAction") {
+                page4.submitting = false
+                var result = root.parse(text)
+                page4.enqueueResult = result.worker_started ? "Đã tạo tác vụ; đang kết nối bộ thu thập. Theo dõi tiến độ bên dưới." : T.result(result)
+                page4.reload()
+            }
         }
         function onDataRootChanged() {
             root.detailRecordId = 0
+            page4.submitting = false
+            page4.enqueueResult = ""
             rootPath.text = backend.dataRootPath()
             page1.reload()
             page2.reload()
@@ -420,8 +428,10 @@ Window {
                 // ------------------------------------------------ UI-04 Collection Jobs
                 Item {
                     id: page4
+                    objectName: "collectionPage"
                     property var state: ({ queued: [], active: [], done: [] })
                     property string enqueueResult: ""
+                    property bool submitting: false
                     Component.onCompleted: reload()
                     onVisibleChanged: if (visible) reload()
                     function reload() { backend.requestRead("page4", "jobs", "{}") }
@@ -442,7 +452,16 @@ Window {
                             font.pixelSize: 12
                         }
 
+                        Label {
+                            Layout.fillWidth: true; wrapMode: Text.Wrap
+                            visible: !!page4.state.collection_blocked_reason
+                            text: page4.state.collection_blocked_reason || ""
+                            color: "#f0b68b"
+                        }
+                        Button { visible: !!page4.state.collection_blocked_reason; text: "Chọn thư mục dữ liệu ở Bắt đầu"; onClicked: root.pageIndex=0 }
+
                         GridLayout {
+                            Layout.fillWidth: true
                             columns: width < 1000 ? 2 : 3
                             columnSpacing: 8
                             rowSpacing: 8
@@ -453,41 +472,51 @@ Window {
                                 model: T.options(["BACKFILL", "INCREMENTAL", "RECONCILE"])
                                 Layout.fillWidth: true
                             }
-                            TextField {
+                            ComboBox {
                                 id: familyField
-                                placeholderText: "Loại hồ sơ (ví dụ: TBMT)"
-                                text: "TBMT"
+                                objectName: "collectionFamily"
+                                textRole: "label"; valueRole: "value"
+                                model: T.options(["TBMT", "KHLCNT", "KQLCNT", "DU_AN", "YCBG", "HOP_DONG"])
+                                Accessible.name: "Loại hồ sơ cần thu thập"
                                 Layout.fillWidth: true
-                                color: "#e6e9ec"
-                                background: Rectangle { color: "#20262d"; border.color: "#333c45"; radius: 4 }
                             }
-                            TextField {
+                            DateField {
                                 id: fromField
-                                placeholderText: "Từ: 2026-11-01T17:00:00Z"
+                                objectName: "collectionDateFrom"
+                                label: "Từ ngày"
+                                visible: kindBox.currentValue !== "INCREMENTAL"
                                 Layout.fillWidth: true
-                                color: "#e6e9ec"
-                                background: Rectangle { color: "#20262d"; border.color: "#333c45"; radius: 4 }
                             }
-                            TextField {
+                            DateField {
                                 id: toField
-                                placeholderText: "Đến: 2026-11-02T17:00:00Z"
+                                objectName: "collectionDateTo"
+                                label: "Đến hết ngày"
+                                visible: kindBox.currentValue !== "INCREMENTAL"
                                 Layout.fillWidth: true
-                                color: "#e6e9ec"
-                                background: Rectangle { color: "#20262d"; border.color: "#333c45"; radius: 4 }
                             }
                             Button {
-                                text: "Thêm tác vụ"
+                                objectName: "collectionStart"
+                                text: page4.submitting ? "Đang tạo tác vụ…" : "Bắt đầu thu thập"
+                                enabled: !page4.submitting && !page4.state.collection_blocked_reason
                                 onClicked: {
-                                    backend.requestRead("jobAction", "enqueue_collection", JSON.stringify({
+                                    var request = {
                                         job_kind: kindBox.currentValue,
-                                        family: familyField.text,
-                                        from: fromField.text,
-                                        to: toField.text,
+                                        family: familyField.currentValue,
                                         request_limits: {max_pages:pageBudget.value,max_requests:requestBudget.value,max_seconds:timeBudget.value,pacing_seconds:pacingBudget.value}
-                                    }))
-                                    page4.reload()
+                                    }
+                                    if (kindBox.currentValue === "INCREMENTAL") request.auto_range=true
+                                    else { request.date_from=fromField.text; request.date_to=toField.text }
+                                    page4.submitting = true
+                                    page4.enqueueResult = ""
+                                    backend.requestRead("collectionAction", "start_collection", JSON.stringify(request))
                                 }
                             }
+                        }
+                        Label {
+                            Layout.fillWidth: true; wrapMode: Text.Wrap; color: "#a9b4bf"
+                            text: kindBox.currentValue === "INCREMENTAL"
+                                ? "Tự cập nhật từ mốc đã thu thập đến hiện tại, kiểm tra lại các ngày gần nhất. Muốn lấy từ ngày X đến ngày Z, chọn Thu thập theo khoảng ngày."
+                                : "Thu thập cả ngày bắt đầu và ngày kết thúc, theo giờ Việt Nam. Ví dụ 01/11/2026 → 03/11/2026 là đủ 3 ngày."
                         }
                         GridLayout {
                             columns: 4; Layout.fillWidth: true
@@ -507,7 +536,7 @@ Window {
                                 var status = page4.state.active_status || {}; var runs = status.runs || []
                                 var latest = runs.length ? runs[runs.length-1] : {}; var p = status.progress || {}
                                 return (status.job_id || "Chưa có tác vụ") + " · " + T.label(latest.lifecycle) + " · " + T.label(latest.status)
-                                    + (p.family ? "\n" + T.family(p.family) + " · " + p.from + " → " + p.to + " · " + T.label(p.granularity) + "\nSố trang: " + p.pages + " · số dòng: " + p.rows + " · số yêu cầu: " + p.requests : "")
+                                    + (p.family ? "\n" + T.family(p.family) + " · " + T.collectionSpan(p.from,p.to,"") + " · " + T.label(p.granularity) + "\nSố trang: " + p.pages + " · số dòng: " + p.rows + " · số yêu cầu: " + p.requests : "")
                             }
                         }
                         Text { Layout.fillWidth: true; wrapMode: Text.WrapAnywhere; text: page4.enqueueResult; color: "#d1a47f"; font.pixelSize: 11 }
@@ -563,21 +592,20 @@ Window {
                             delegate: Rectangle {
                                 required property var modelData
                                 Layout.fillWidth: true
-                                height: 30
+                                height: 54
                                 color: "#1b2128"
                                 radius: 4
-                                Row {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.left: parent.left
-                                    anchors.leftMargin: 10
-                                    spacing: 20
-                                    Text { text: T.label(modelData.job_kind); color: "#e6e9ec"; font.pixelSize: 12; width: 110 }
-                                    Text { text: modelData.job_id; color: "#c8d0d8"; font.pixelSize: 12; width: 190 }
-                                    Text { text: (modelData.families || []).map(T.familyShort).join(", "); color: "#9aa4ae"; font.pixelSize: 12; width: 120 }
+                                Column {
+                                    anchors.fill: parent; anchors.margins: 8; spacing: 5
                                     Text {
-                                        text: modelData.scope ? (modelData.scope.from + " → " + modelData.scope.to) : ""
-                                        color: "#8b959f"
-                                        font.pixelSize: 11
+                                        width: parent.width; elide: Text.ElideRight
+                                        text: T.label(modelData.job_kind) + " · " + modelData.job_id
+                                        color: "#e6e9ec"; font.pixelSize: 12
+                                    }
+                                    Text {
+                                        width: parent.width; elide: Text.ElideRight
+                                        text: (modelData.families || []).map(T.familyShort).join(", ") + " · " + (modelData.scope ? T.collectionSpan(modelData.scope.from,modelData.scope.to,modelData.job_kind) : "")
+                                        color: "#9aa4ae"; font.pixelSize: 11
                                     }
                                 }
                             }

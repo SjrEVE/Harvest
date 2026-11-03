@@ -2,7 +2,7 @@
 
 // Presentation only. Stored values, command names and original source bytes stay unchanged.
 var words = {
-    BACKFILL:"Thu thập dữ liệu cũ", INCREMENTAL:"Cập nhật dữ liệu mới", RECONCILE:"Đối chiếu lại dữ liệu",
+    BACKFILL:"Thu thập theo khoảng ngày", INCREMENTAL:"Cập nhật tự động đến hiện tại", RECONCILE:"Đối chiếu lại dữ liệu",
     INDEX:"Lập chỉ mục", DETAIL:"Chi tiết hồ sơ", HSMT:"Hồ sơ mời thầu", REOFFER:"Lịch sử chào lại",
     KQLCNT_FULL:"Kết quả đầy đủ", BOQ:"Bảng khối lượng", OTHER:"Khác", VERIFY:"Kiểm tra", IMPORT:"Nhập dữ liệu",
     EXPORT:"Xuất dữ liệu", BACKUP:"Sao lưu", PAUSE:"Tạm dừng", RESUME:"Tiếp tục",
@@ -28,6 +28,7 @@ var words = {
     HALF_OPEN_UTC:"Gồm mốc đầu, không gồm mốc cuối", OPEN_UTC:"Không gồm hai mốc",
     EMPTY_PAGE:"Trang rỗng kết thúc kết quả", SHORT_PAGE:"Trang cuối ít kết quả hơn giới hạn",
     NO_PROOF:"Chưa có bằng chứng đầy đủ", TOTAL_UNTRUSTED:"Chưa xác minh tổng số kết quả", NO_TOTAL_OBSERVED:"Nguồn chưa cung cấp tổng số kết quả",
+    INTERVAL_NOT_CLOSED:"Khoảng thời gian chưa kết thúc; dữ liệu đã lấy vẫn được lưu nhưng chưa thể xác nhận đầy đủ.",
     NO_TERMINAL_EVIDENCE:"Chưa xác nhận đã đọc hết các trang", COMPLETE_WITHOUT_PROOF:"Trạng thái đầy đủ thiếu bằng chứng, cần kiểm tra",
     STOP_REQUESTED:"Đã nhận yêu cầu dừng", SPLIT_INCOMPLETE:"Một số khoảng thời gian chưa thu thập đủ",
     BOUNDARY_RULE_UNVERIFIED:"Chưa xác minh quy tắc lọc thời gian. Cần chủ hệ thống phê duyệt kiểm tra nguồn trước khi thu thập.",
@@ -123,6 +124,18 @@ function label(value) {
     return s;
 }
 function family(value) { return families[value] || value || "Chưa rõ loại hồ sơ"; }
+function collectionSpan(from, to, kind) {
+    if (kind === "INCREMENTAL") return "Tự cập nhật đến hiện tại";
+    var a = new Date(Date.parse(from) + 7*3600000);
+    var b = new Date(Date.parse(to) + 7*3600000);
+    if (isNaN(a.getTime()) || isNaN(b.getTime())) return "Chưa rõ khoảng thời gian";
+    function pad(n) { return n < 10 ? "0"+n : String(n); }
+    function day(d) { return pad(d.getUTCDate())+"/"+pad(d.getUTCMonth()+1)+"/"+d.getUTCFullYear(); }
+    function midnight(d) { return d.getUTCHours()===0 && d.getUTCMinutes()===0 && d.getUTCSeconds()===0 && d.getUTCMilliseconds()===0; }
+    if (midnight(a) && midnight(b)) return day(a) + " → hết " + day(new Date(b.getTime()-1)) + " (giờ Việt Nam)";
+    function stamp(d) { return day(d)+" "+pad(d.getUTCHours())+":"+pad(d.getUTCMinutes()); }
+    return stamp(a)+" → "+stamp(b)+" (giờ Việt Nam)";
+}
 function familyShort(value) {
     return ({TBMT:"Mời thầu",KHLCNT:"Kế hoạch",KQLCNT:"Kết quả",DU_AN:"Dự án",YCBG:"Báo giá",HOP_DONG:"Hợp đồng"})[value] || family(value);
 }

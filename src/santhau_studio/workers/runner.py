@@ -353,6 +353,9 @@ class Runner:
     def _record(self, outcome: IntervalOutcome, run_id: str) -> None:
         rule = self.boundary_rule(outcome.granularity)
         blockers: list[str] = list(outcome.blockers)
+        checked_at = self.clock()
+        if outcome.interval.to_utc > checked_at:
+            blockers.append("INTERVAL_NOT_CLOSED")
         if rule is None:
             blockers.append("BOUNDARY_RULE_UNVERIFIED")
         if not outcome.total_trusted:
@@ -382,7 +385,7 @@ class Runner:
                 page_size=self.limits.page_size,
                 max_pages_hit=outcome.max_pages_hit,
                 max_records_hit=outcome.max_records_hit,
-                verified_at_utc=_iso(self.clock()),
+                verified_at_utc=_iso(checked_at),
             )
             blockers = list(proof.complete_blockers())
         status = "COMPLETE" if not blockers else ("BLOCKED" if outcome.status == "BLOCKED" else "PARTIAL")

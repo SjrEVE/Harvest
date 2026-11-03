@@ -196,6 +196,7 @@ class StudioBackend:
     def jobs(self) -> dict[str, Any]:
         """UI-04: the queue as documents on disk, plus the worker's answer for the active job."""
         payload: dict[str, Any] = {"worker": self.worker_status(), "queued": [], "active": [], "done": []}
+        payload["collection_blocked_reason"] = self._collection_blocker()
         active_job = None
         for state in ("queued", "active", "done"):
             for path in sorted((self._jobs_dir() / state).glob("*.json")):
@@ -234,12 +235,17 @@ class StudioBackend:
 
     def enqueue_collection(self, payload: dict[str, Any]) -> dict[str, Any]:
         """UI-04: publish the immutable job request; the worker claims it by rename."""
+        from santhau_studio.desktop.collection_dates import DateRangeError, collection_scope
+
         try:
             kind = str(payload.get("job_kind", "BACKFILL"))
             if kind not in JOB_KINDS:
                 return {"ok": False, "error": f"unknown job_kind {kind}"}
-            family = str(payload["family"])
-            scope = {"from": str(payload["from"]), "to": str(payload["to"])}
+            family = str(payload["family"]).strip().upper()
+            scope = collection_scope(payload, kind)
+            blocker = self._collection_blocker()
+            if blocker:
+                return {"ok": False, "error_code": "SYNTHETIC_ROOT", "error": blocker}
             rule = self._verified_rule(str(payload.get("source_key") or "egp_home"), family)
             if rule is None:
                 # §4.2 fail-closed: without a canary-verified boundary rule the run would be a
@@ -264,9 +270,28 @@ class StudioBackend:
             )
             request.interval()
             path = enqueue_job(self.data_root, request)
+        except DateRangeError as exc:
+            return {"ok": False, "error_code": "DATE_RANGE_INVALID", "error": str(exc)}
         except (JobError, KeyError, ValueError) as exc:
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "job_id": request.job_id, "queued_as": path.name}
+
+    def _collection_blocker(self) -> str | None:
+        from santhau_studio.collectors.offline_acceptance import enabled
+        if enabled(self.data_root) and os.environ.get("SANTHAU_OFFLINE_ACCEPTANCE_ROOT") != str(self.data_root.resolve()):
+            return "Đang mở kho thử nghiệm của lần nghiệm thu. Để thu thập dữ liệu thật, vào Bắt đầu và chọn một thư mục dữ liệu riêng. Kho thử nghiệm chỉ chạy trong chế độ thử ngoại tuyến."
+        return None
+
+    def start_collection(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """One explicit UI action both queues the request and starts/attaches its worker."""
+        result = self.enqueue_collection(payload)
+        if not result.get("ok"):
+            return result
+        from santhau_studio.desktop.supervisor import WorkerSupervisor
+        worker = WorkerSupervisor(self.data_root).ensure_running()
+        if not worker.get("ok"):
+            return {**result, "ok": False, "error": "Tác vụ đã lưu trong hàng đợi nhưng chưa bật được bộ thu thập: " + str(worker.get("error") or "Hãy thử bật lại bộ thu thập.")}
+        return {**result, "worker_started": True}
 
     def _verified_rule(self, source_key: str, family: str) -> dict[str, Any] | None:
         from santhau_studio.collectors.source_registry import query_contract_matches

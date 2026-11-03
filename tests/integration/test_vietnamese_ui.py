@@ -12,9 +12,11 @@ def test_vietnamese_labels_keep_protocol_values_and_raw_bytes():
     loaded = js.evaluate(source.read_text(encoding="utf-8").replace(".pragma library", ""))
     assert not loaded.isError(), loaded.toString()
     assert js.evaluate('options(["INCREMENTAL"])[0].value').toString() == "INCREMENTAL"
-    assert js.evaluate('options(["INCREMENTAL"])[0].label').toString() == "Cập nhật dữ liệu mới"
+    assert js.evaluate('options(["INCREMENTAL"])[0].label').toString() == "Cập nhật tự động đến hiện tại"
     assert js.evaluate('label("UNKNOWN")').toString() == "Chưa xác định"
     assert js.evaluate('label(0)').toString() == "0"
+    assert js.evaluate('collectionSpan("2026-10-31T17:00:00Z", "2026-11-03T17:00:00Z", "BACKFILL")').toString() == "01/11/2026 → hết 03/11/2026 (giờ Việt Nam)"
+    assert js.evaluate('collectionSpan("", "", "INCREMENTAL")').toString() == "Tự cập nhật đến hiện tại"
     original = '{"title":"Original English from source","price":null}'
     import json
     raw = js.evaluate('rawPreview(' + json.dumps({"sha256":"abc", "verified":True, "text":original}) + ')').toString()
