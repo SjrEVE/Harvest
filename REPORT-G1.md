@@ -1,7 +1,7 @@
 # SĂN THẦU DATA STUDIO — BÁO CÁO TỔNG HỢP G1 (A → G)
 
 **Ngày:** 03/11/2026 · **Spec nền:** Master Spec Consolidated **v1.3**
-**Workspace:** `D:\Harvest\santhau-data-studio` · git local, **7 checkpoint commit, không push, không remote, không PR**
+**Workspace:** `D:\Harvest\santhau-data-studio` · git local, **9 checkpoint commit, không push, không remote, không PR**
 **Repo nguồn `Gia-Su-AI/DauThauAI`: read-only trong toàn bộ batch** — không sửa, không copy mã.
 File này là báo cáo hợp nhất; tên `G1-1-STORAGE-INGEST-REPORT.md` trong lệnh giao tương ứng mục A dưới đây.
 
@@ -31,7 +31,7 @@ VNEPS, không mang dữ liệu thật vào repo, không push/merge/deploy.
 ```
 pytest (toàn bộ)                  : 415 passed
 ruff check src tools tests        : All checks passed
-commit list                       : ed6f103 → 31ff787 → c4bb00d → b3b3fd8 → 5d99a8f → c24b109 → c3007f7
+commit list                       : ed6f103 → 31ff787 → c4bb00d → b3b3fd8 → 5d99a8f → c24b109 → c3007f7 → a45439d → (doc commit này)
 benchmark raw store (5k pages)    : 4 pass, verify_failures = 0  (xem §5.3)
 ```
 
