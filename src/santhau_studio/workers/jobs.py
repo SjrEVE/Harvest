@@ -40,7 +40,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from santhau_studio.collectors.source_registry import SOURCES
+from santhau_studio.collectors.canary import ACCESS_PUBLIC, access_policy
+from santhau_studio.collectors.source_registry import SOURCES, source_for
 from santhau_studio.domain.coverage import Interval
 from santhau_studio.platform_win.os_lock import DataRootBusy
 from santhau_studio.storage.rawstore import LAYOUT_SEGMENTS
@@ -413,6 +414,15 @@ class WorkerLoop:
         source = request.sources[0] if request.sources else None
         if not isinstance(source, dict) or "source_key" not in source or "family" not in source:
             return "BLOCKED", {"reason": "NO_SOURCE_IN_REQUEST"}
+        family = str(source["family"])
+        source_key = str(source["source_key"])
+        policy = access_policy(source_key)
+        if policy != ACCESS_PUBLIC:
+            # egp_v2 needs a browser session (B7); quarantined hosts are disabled. A job must
+            # never fall through to the public lane because the source key was not checked.
+            return "BLOCKED", {"reason": f"SOURCE_ACCESS_{policy}"}
+        if source_for(family).key != source_key:
+            return "BLOCKED", {"reason": "SOURCE_NOT_REGISTERED_FOR_FAMILY"}
         if kind in LANE_KINDS:
             assert self._writer is not None
             result = run_deep_batch(

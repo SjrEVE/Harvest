@@ -27,6 +27,7 @@ _FORMATS = {
     "SECOND": "%Y-%m-%d %H:%M:%S",
     "MILLISECOND": "%Y-%m-%d %H:%M:%S.%f",
 }
+_INSTANT_FORMAT = "%Y-%m-%d %H:%M:%S"
 _END_FORMATS = {
     "DAY": "%Y-%m-%d 23:59:59",
     "HOUR": "%Y-%m-%d %H:59:59",
@@ -88,9 +89,12 @@ def source_window_for(rule: BoundaryRule, interval: Interval) -> tuple[str, str]
         raise BoundaryError("an OPEN_UTC source cannot be proven terminal at a boundary")
     if rule.boundary_kind == "HALF_OPEN_UTC":
         # The source honours the same convention the schema uses: no adjustment either end.
+        # The per-precision formats above assume day-aligned local values (they hard-code
+        # `00:00:00`), which would silently move a 17:00Z boundary to midnight; a half-open
+        # source needs the exact instant, so the second-precision form is used instead.
         return (
-            _format(interval.from_utc.astimezone(UTC), fmt, rule.precision),
-            _format(interval.to_utc.astimezone(UTC), fmt, rule.precision),
+            _format(interval.from_utc.astimezone(UTC), _INSTANT_FORMAT, "SECOND"),
+            _format(interval.to_utc.astimezone(UTC), _INSTANT_FORMAT, "SECOND"),
         )
     zone = UTC if rule.boundary_kind == "CLOSED_UTC" else rule.zone
     from_local = interval.from_utc.astimezone(zone)
