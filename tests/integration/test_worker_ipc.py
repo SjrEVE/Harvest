@@ -505,6 +505,21 @@ def test_undispatchable_job_kind_is_blocked(harness, root) -> None:
 
 # ------------------------------------------------------------------ crash recovery
 
+def test_resume_then_crash_ignores_historical_pause(root) -> None:
+    writer = WarehouseWriter.open(root, create_schema=True)
+    writer.register_run('old-pause', 'resume-crash', 'BACKFILL')
+    writer.conn.execute("UPDATE runs SET lifecycle='PAUSED' WHERE run_id='old-pause'")
+    writer.register_run('new-running', 'resume-crash', 'BACKFILL')
+    writer.conn.commit()
+    active = root / 'jobs' / 'active'
+    active.mkdir(parents=True,exist_ok=True)
+    (active / 'request.json').write_text('{"job_id":"resume-crash"}')
+    result = recover_interrupted_runs(writer.conn,root)
+    assert result['requeued_jobs'] == 1
+    assert (root / 'jobs' / 'queued' / 'request.json').exists()
+    writer.close()
+
+
 def test_recover_interrupted_runs_marks_orphans_and_requeues(root) -> None:
     writer = WarehouseWriter.open(root, create_schema=True, role="seed")
     writer.register_run("run-dead", "job-dead", "BACKFILL")

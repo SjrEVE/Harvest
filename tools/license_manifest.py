@@ -16,6 +16,7 @@ per-module Qt license files must be sourced from the Qt release itself.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib.metadata as metadata
 import json
 import re
@@ -144,11 +145,32 @@ def deployment_basenames(dist_dir: Path) -> set[str]:
     return {path.name.lower() for path in dist_dir.rglob("*") if path.is_file()}
 
 
+def runtime_dependencies() -> set[str]:
+    """Conservatively include pure-Python runtime dependencies compiled inside Nuitka."""
+    import tomllib
+
+    from packaging.requirements import Requirement
+    project = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
+    pending = list(project["project"]["dependencies"])
+    found = set()
+    while pending:
+        request = Requirement(pending.pop())
+        if request.marker and not request.marker.evaluate({"extra":""}):
+            continue
+        name = request.name.lower().replace("-","_")
+        if name in found:
+            continue
+        found.add(name)
+        with contextlib.suppress(metadata.PackageNotFoundError):
+            pending.extend(metadata.requires(request.name) or [])
+    return found
+
+
 def is_shipped(name: str, record_names: set[str], deployed: set[str]) -> bool:
     """A package ships if anything it installed is present in the deployment."""
     if name.lower().replace("-", "_") == "santhau_data_studio":
         return True  # our own code is compiled into the executable, not copied as files
-    return bool(record_names & deployed)
+    return name.lower().replace("-", "_") in runtime_dependencies() or bool(record_names & deployed)
 
 
 def native_inventory(dist_dir: Path) -> list[dict[str, str]]:
@@ -329,7 +351,7 @@ def build_notices(distributions: list[dict[str, Any]], natives: list[dict[str, s
         "===================",
         "",
         "This file lists third-party material present in Săn Thầu Data Studio.",
-        "Full license texts are collected at G4 (release), not here: see the",
+        "Available license texts are bundled under LICENSES. See the",
         "verification-status section of LICENSE-MANIFEST.md for what is and is",
         "not yet evidenced.",
         "",

@@ -41,7 +41,8 @@ def shutdown_requested(marker: str | None) -> bool:
         return False
     try:
         # A crashed installer must not prevent launching forever.
-        return 0 <= time.time() - Path(marker).stat().st_mtime < 300
+        # NTFS timestamps can be milliseconds ahead of time.time after a fresh write.
+        return -5 <= time.time() - Path(marker).stat().st_mtime < 300
     except OSError:
         return False
 

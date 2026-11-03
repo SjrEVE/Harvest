@@ -34,6 +34,8 @@ def search(conn: sqlite3.Connection, path: Path, payload: dict) -> dict:
         return {"hits": [], "error_code": "INVALID_SORT", "error": "Kiểu sắp xếp không hợp lệ."}
     direction = "ASC" if payload.get("direction") == "asc" else "DESC"
     expression = SORTS[sort]
+    if (sort in ('price','award_price') or any(payload.get(k) not in (None,'') for k in ('price_min','price_max'))) and not payload.get('currency'):
+        return {'hits':[], 'error_code':'CURRENCY_REQUIRED', 'error':'Chọn tiền tệ trước khi lọc hoặc sắp xếp theo giá.'}
     limit = _bound(payload.get("limit", 50), 50, 1, 200)
     offset = _bound(payload.get("offset", 0), 0, 0, 100_000)
     fingerprint = hashlib.sha256(json.dumps({k: v for k, v in payload.items() if k not in ("cursor", "offset")},

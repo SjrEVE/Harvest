@@ -1,5 +1,7 @@
 """Read-only evidence details; never upgrades a legacy or reachability claim."""
 import json
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from santhau_studio.collectors.canary import canary_state
 from santhau_studio.collectors.source_registry import FAMILY_ORDER, SOURCE_EGP_HOME
@@ -19,6 +21,24 @@ def source_evidence(conn):
 def legacy_claims(conn, limit=50):
     return [json.loads(row[0]) for row in conn.execute(
         "SELECT value_json FROM settings WHERE key LIKE 'legacy:coverage:%' ORDER BY key LIMIT ?", (limit,))]
+
+
+def coverage_heatmap(conn):
+    from santhau_studio.domain.coverage import vn_calendar_day
+    from santhau_studio.storage.coverage import resolve
+    latest = conn.execute('SELECT MAX(interval_to_utc) FROM coverage_intervals').fetchone()[0]
+    if not latest:
+        return []
+    last = (datetime.fromisoformat(latest.replace('Z','+00:00')) - timedelta(seconds=1)).astimezone(ZoneInfo('Asia/Ho_Chi_Minh')).date()
+    cells = []
+    for family in FAMILY_ORDER:
+        for offset in range(6,-1,-1):
+            day = last - timedelta(days=offset)
+            interval = vn_calendar_day(day)
+            resolved = resolve(conn,SOURCE_EGP_HOME,family,interval.from_utc,interval.to_utc)
+            cells.append({'family':family,'day':day.isoformat(),'status':resolved.status,
+                          'granularity':resolved.granularity,'proof_ids':resolved.proof_ids,'reasons':resolved.reasons})
+    return cells
 
 
 def proof(conn, proof_id):

@@ -2,18 +2,38 @@ THIRD_PARTY_NOTICES
 ===================
 
 This file lists third-party material present in Săn Thầu Data Studio.
-Full license texts are collected at G4 (release), not here: see the
+Available license texts are bundled under LICENSES. See the
 verification-status section of LICENSE-MANIFEST.md for what is and is
 not yet evidenced.
 
 Python packages shipped at runtime
 ---------------------------------
+  * anyio 4.16.0 — MIT
+      license files in wheel: D:\Harvest\santhau-data-studio\.venv\Lib\site-packages\anyio-4.16.0.dist-info\licenses\LICENSE
+  * certifi 2026.10.23 — MPL-2.0
+      license files in wheel: D:\Harvest\santhau-data-studio\.venv\Lib\site-packages\certifi-2026.10.23.dist-info\licenses\LICENSE
+  * h11 0.16.0 — MIT
+      license files in wheel: D:\Harvest\santhau-data-studio\.venv\Lib\site-packages\h11-0.16.0.dist-info\licenses\LICENSE.txt
+  * httpcore 1.0.9 — BSD-3-Clause
+      license files in wheel: D:\Harvest\santhau-data-studio\.venv\Lib\site-packages\httpcore-1.0.9.dist-info\licenses\LICENSE.md
+  * httpx 0.28.1 — BSD-3-Clause
+      license files in wheel: D:\Harvest\santhau-data-studio\.venv\Lib\site-packages\httpx-0.28.1.dist-info\licenses\LICENSE.md
+  * idna 3.20 — BSD-3-Clause
+      license files in wheel: D:\Harvest\santhau-data-studio\.venv\Lib\site-packages\idna-3.20.dist-info\licenses\LICENSE.md
   * PySide6_Essentials 6.12.0 — LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
       license files in wheel: D:\Harvest\santhau-data-studio\.venv\Lib\site-packages\pyside6_essentials-6.12.0.dist-info\licenses\LicenseRef-Qt-Commercial.txt
+  * PyYAML 6.0.3 — MIT
+      license files in wheel: D:\Harvest\santhau-data-studio\.venv\Lib\site-packages\pyyaml-6.0.3.dist-info\licenses\LICENSE
   * santhau-data-studio 0.0.1 — unknown
-      license files in wheel: none shipped in wheel
+      license files in wheel: D:\Harvest\santhau-data-studio\.venv\Lib\site-packages\santhau_data_studio-0.0.1.dist-info\licenses\LICENSE-MANIFEST.md, D:\Harvest\santhau-data-studio\.venv\Lib\site-packages\santhau_data_studio-0.0.1.dist-info\licenses\license-manifest.json
   * shiboken6 6.12.0 — LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
       license files in wheel: D:\Harvest\santhau-data-studio\.venv\Lib\site-packages\shiboken6-6.12.0.dist-info\licenses\LicenseRef-Qt-Commercial.txt
+  * tenacity 9.2.1 — Apache-2.0
+      license files in wheel: D:\Harvest\santhau-data-studio\.venv\Lib\site-packages\tenacity-9.2.1.dist-info\licenses\LICENSE
+  * typing_extensions 4.16.0 — PSF-2.0
+      license files in wheel: D:\Harvest\santhau-data-studio\.venv\Lib\site-packages\typing_extensions-4.16.0.dist-info\licenses\LICENSE
+  * tzdata 2026.6 — Apache-2.0
+      license files in wheel: D:\Harvest\santhau-data-studio\.venv\Lib\site-packages\tzdata-2026.6.dist-info\licenses\LICENSE, D:\Harvest\santhau-data-studio\.venv\Lib\site-packages\tzdata-2026.6.dist-info\licenses\licenses\LICENSE_APACHE
 
 Build / test tooling (not shipped to users)
 -------------------------------------------
@@ -26,7 +46,6 @@ Build / test tooling (not shipped to users)
   * pytest 9.2.0 — MIT
   * pytest-qt 4.5.0 — MIT
   * ruff 0.17.3 — MIT
-  * typing_extensions 4.16.0 — PSF-2.0
   * zstandard 0.25.0 — BSD-3-Clause
 
 Native libraries in the packaged build
@@ -34,14 +53,14 @@ Native libraries in the packaged build
   * CPython (Python Software Foundation) [PSF-2.0] — 2 file(s)
       python3.dll
       python312.dll
-  * CPython standard library extension [PSF-2.0] — 7 file(s)
+  * CPython standard library extension [PSF-2.0] — 18 file(s)
       _bz2.pyd
+      _ctypes.pyd
       _decimal.pyd
+      _elementtree.pyd
       _hashlib.pyd
       _lzma.pyd
-      _wmi.pyd
-      select.pyd
-      ... 1 more
+      ... 12 more
   * Mesa llvmpipe software OpenGL (inside Qt build) [MIT] — 1 file(s)
       opengl32sw.dll
   * Microsoft Visual C++ runtime [MIT-Like (VS license terms)] — 5 file(s)
@@ -50,8 +69,9 @@ Native libraries in the packaged build
       msvcp140_2.dll
       vcruntime140.dll
       vcruntime140_1.dll
-  * OpenSSL (bundled by CPython/Qt) [Apache-2.0 AND OpenSSL-Original] — 1 file(s)
+  * OpenSSL (bundled by CPython/Qt) [Apache-2.0 AND OpenSSL-Original] — 2 file(s)
       libcrypto-3-x64.dll
+      libssl-3-x64.dll
   * PySide6 Qt binding module (The Qt Company) [LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only] — 8 file(s)
       PySide6\QtCore.pyd
       PySide6\QtGui.pyd
@@ -94,3 +114,9 @@ Native libraries in the packaged build
       ... 19 more
   * Shiboken generator runtime (The Qt Company) [LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only] — 1 file(s)
       shiboken6.abi3.dll
+  * unclassified — inspect before release [unclassified — inspect before release] — 5 file(s)
+      _asyncio.pyd
+      libffi-8.dll
+      sqlite3.dll
+      zstandard\_cffi.pyd
+      zstandard\backend_c.pyd

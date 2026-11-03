@@ -18,7 +18,7 @@ from pathlib import Path
 
 from santhau_studio.desktop.backend import StudioBackend
 
-DETACHED_PROCESS = 0x00000008
+CREATE_NO_WINDOW = 0x08000000
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 
 
@@ -46,6 +46,9 @@ class WorkerSupervisor:
         self.backend = StudioBackend(data_root)
 
     def ensure_running(self) -> dict:
+        from santhau_studio.collectors.offline_acceptance import enabled
+        if enabled(self.backend.data_root) and os.environ.get('SANTHAU_OFFLINE_ACCEPTANCE_ROOT') != str(self.backend.data_root.resolve()):
+            return {'ok':False,'error':'SYNTHETIC_ROOT: mở bằng profile offline rõ ràng; không được chạy live trên kho thử nghiệm.'}
         status = self.backend.worker_status()
         if status["running"]:
             return {"ok": True, "spawned": False, "attached": True, "worker": status}
@@ -55,8 +58,9 @@ class WorkerSupervisor:
         try:
             process = subprocess.Popen(
                 [*command, "--data-root", str(self.backend.data_root)],
-                creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+                creationflags=CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
                 close_fds=True,
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 env=_launch_env(),
                 cwd=str(self.backend.data_root.parent if self.backend.data_root.parent.exists() else Path.cwd()),
             )

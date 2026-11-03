@@ -45,7 +45,7 @@ from santhau_studio.workers.jobs import JOB_KINDS, JobError, JobRequest, enqueue
 
 DISK_SCAN_LIMIT = 50_000
 SEARCH_LIMIT_MAX = 200
-APP_VERSION = "0.0.1"
+APP_VERSION = "0.0.1-RC3"
 _PROBE_LOCK = threading.Lock()
 
 _TITLE_KEYS = ("title", "bidName", "planName", "projectName", "contractName", "name")
@@ -215,8 +215,9 @@ class StudioBackend:
                 payload[state].append(entry)
                 if state == "active":
                     active_job = entry
-        if active_job and payload["worker"].get("pipe_ok"):
-            payload["active_status"] = self.job_status(str(active_job["job_id"]))
+        selected_job = active_job or (payload["done"][-1] if payload["done"] else None)
+        if selected_job and payload["worker"].get("pipe_ok"):
+            payload["active_status"] = self.job_status(str(selected_job["job_id"]))
         return payload
 
     def job_status(self, job_id: str) -> dict[str, Any]:
@@ -399,7 +400,8 @@ class StudioBackend:
                     dict(row)
                     for row in conn.execute(
                         "SELECT ci.id, ci.family, ci.interval_from_utc, ci.interval_to_utc, ci.granularity,"
-                        "       ci.status, ci.proof_id,"
+                        "       ci.status, ci.proof_id, (SELECT value_json FROM settings t"
+                        " WHERE t.key='coverage:evidence:' || ci.id) AS interval_evidence,"
                         "       cp.distinct_ids, cp.total_first, cp.total_last, cp.request_count,"
                         "       cp.granularity AS proof_granularity, cp.verified_at_utc"
                         " FROM coverage_intervals ci LEFT JOIN coverage_proofs cp ON cp.id = ci.proof_id"
@@ -441,11 +443,13 @@ class StudioBackend:
             elif entry["status"] == "COMPLETE":
                 entry["reason"] = None
             else:
-                entry["reason"] = "NO_PROOF" if entry["proof_id"] is None else "VERDICT"
+                evidence = json.loads(entry.get("interval_evidence") or "{}")
+                entry["reason"] = "; ".join(evidence.get("blockers") or []) or ("NO_PROOF" if entry["proof_id"] is None else "VERDICT")
         with closing(self._serving()) as conn:
-            from santhau_studio.desktop.diagnostics import legacy_claims
+            from santhau_studio.desktop.diagnostics import coverage_heatmap, legacy_claims
             legacy = legacy_claims(conn)
-        return {"present": True, "intervals": rows, "summary": summary, "watermarks": watermarks, "legacy": legacy}
+            heatmap = coverage_heatmap(conn)
+        return {"present": True, "intervals": rows, "summary": summary, "watermarks": watermarks, "legacy": legacy, "heatmap": heatmap}
 
     # ------------------------------------------------------------------ UI-06 explorer
 

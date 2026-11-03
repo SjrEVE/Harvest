@@ -86,6 +86,7 @@ class WindowGrabber(QObject):
 
 
 def main(argv: list[str] | None = None) -> int:
+    started = float(os.environ.get("SANTHAU_LAUNCH_MONOTONIC", time.perf_counter()))
     force_utf8_stdout()
     argv = list(sys.argv if argv is None else argv)
     data_root, argv = _take_data_root(argv)
@@ -119,6 +120,8 @@ def main(argv: list[str] | None = None) -> int:
         _log_gui_failure(root_path, "another GUI instance already owns this data root")
         return 0
     backend = BackendBridge(StudioBackend(data_root))
+    from santhau_studio.collectors.offline_acceptance import enabled as synthetic_root
+    synthetic_label = offline or synthetic_root(root_path)
     if shutdown_handle:
         watcher = QTimer(app)
         watcher.setInterval(250)
@@ -136,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
 
     engine = QQmlApplicationEngine(app)
     engine.rootContext().setContextProperty("backend", backend)
-    engine.rootContext().setContextProperty("appTitle", APP_TITLE + (" — SYNTHETIC OFFLINE" if offline else ""))
+    engine.rootContext().setContextProperty("appTitle", APP_TITLE + (" — SYNTHETIC OFFLINE" if synthetic_label else ""))
     engine.addImportPath(str(qml_path.parent))
     engine.load(qml_path.as_uri())
     if not engine.rootObjects():
@@ -144,11 +147,23 @@ def main(argv: list[str] | None = None) -> int:
         return 3
 
     root = engine.rootObjects()[0]
+    screen = app.primaryScreen()
+    if screen is not None:
+        available = screen.availableGeometry()
+        root.setProperty("width", min(root.width(), available.width()))
+        root.setProperty("height", min(root.height(), max(620, available.height()-45)))
+    metrics = None
+    if os.environ.get("SANTHAU_UI_METRICS_PATH"):
+        from santhau_studio.desktop.performance import PerformanceProbe
+        metrics = PerformanceProbe(root, os.environ["SANTHAU_UI_METRICS_PATH"], started)
+        app.aboutToQuit.connect(metrics.flush)
     if smoke_shot is not None:
         if smoke_record:
             root.setProperty("detailRecordId", int(smoke_record))
         root.setProperty("pageIndex", int(smoke_page))
         code = _run_smoke(app, root, backend, Path(smoke_shot))
+        if metrics:
+            metrics.flush()
         # A smoke run must not leave a window process behind: Qt teardown after grabWindow can
         # hang, and a lingering process locks the installed DLLs during uninstall. Exit hard,
         # after the verdict is written.

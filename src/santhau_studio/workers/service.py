@@ -67,7 +67,9 @@ def _default_builder(writer, request):
     It performs no request until the runner asks for a page, and the runner only asks once a
     canary-verified boundary rule exists — so an unverified source cannot be hit by accident.
     """
-    del writer
+    evidence = writer.conn.execute("SELECT value_json FROM settings WHERE key='evidence_class'").fetchone()
+    if evidence and json.loads(evidence[0]).get('class') == 'RC3_SYNTHETIC_OFFLINE':
+        return None  # restored synthetic data must never use synthetic rules against the live source
     source = request.sources[0] if request.sources else None
     if not isinstance(source, dict) or "family" not in source:
         return None

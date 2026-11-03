@@ -47,3 +47,16 @@ paged DTOs consumed by asynchronous bridge; runtime/canary status feeds UI; rele
 - Import overlap test now covers importing newer archive before older history without moving current backwards: 9 importer tests pass. Manual identity link/merge/split/undo is audited with actual Windows SID and preserves source rows.
 - UI filters/history/import/budgets/proof/source ladder/legacy claims/logs/license controls implemented; actual UI acceptance, large maintenance, deep canary tooling and release engineering remain open.
 - Interim full suite before last fixes: 534 pass, 2 fail (failure-attempt missing response=None, fixed), 1 scheduler skip. Do not cite interim as release PASS.
+## Native acceptance findings / release work
+
+- Core suite: 538 PASS / 1 scheduler skip (core-tests.xml), before latest recovery and observability fixes.
+- UI at _evidence/rc3/ui/data is explicitly synthetic. Native onboarding saved Data Root and started collector.
+- BACKFILL job-99e05ed6d94e on a UTC-midnight span correctly produced 1 COMPLETE + 2 PARTIAL boundary intervals (36 rows).
+- Native PAUSE on job-57bad8afbf28 succeeded at a page boundary; evidence 02-paused.jpg. RESUME created run-3c88f2d076da46a78a434a7a7a531275.
+- Targeted crash of that resumed synthetic worker exposed recovery incorrectly honoring an old PAUSED run. Fix now checks latest run, retains paused job IDs across restarts, and supports stopping a paused job. New regression RED then GREEN; 22 worker/runtime tests PASS. Native recovery retest pending.
+- Large maintenance derivative (same preserved RC2 1M corpus, one actual shared synthetic raw object) backup 4.75s, restore 38.71s, integrity 27.24s, export 34.48s; restored/exported rows 1,000,000, FK errors 0. This is NOT a 1M-distinct-raw corpus.
+- Final rebuild measurement under concurrent test/UI work: 240.00s, all 1M rows published. Extended queries/startup/stall/RAM metrics pending.
+- Bandit source scan: 0 HIGH, 16 MEDIUM (15 parameterized/allowlisted dynamic SQL and one trusted scheduler XML helper); adjudication pending. Locked-runtime pip-audit: no known vulnerabilities found.
+- Official Qt v6.12.0 license texts and runtime wheel license texts copied into LICENSES. LGPL/commercial and bundled-module legal clearance still OWNER BLOCKED; docs/RC3-SIGNING.md prepared, no certificate/signing performed.
+- Prepackage suite had 537 PASS, 1 FAIL, 1 skip: shutdown marker freshness rejected a tiny future NTFS timestamp. Fixed with 5s bounded tolerance; isolated regression passed. Final whole-suite run still required.
+- Last committed core: f74d402. Working tree contains the latest acceptance fixes, licenses and release prep; commit before package capture.

@@ -252,8 +252,8 @@ def recover_interrupted_runs(conn: sqlite3.Connection, data_root: Path) -> dict[
         except (json.JSONDecodeError, KeyError, OSError):
             _move(Path(data_root) / "jobs", path, _REJECTED_DIR)
             continue
-        rows = conn.execute("SELECT lifecycle FROM runs WHERE job_id=?", (job_id,)).fetchall()
-        if not rows or all(row["lifecycle"] in ("FINISHED", "TERMINATED") for row in rows):
+        latest = conn.execute("SELECT lifecycle FROM runs WHERE job_id=? ORDER BY started_at_utc DESC,rowid DESC LIMIT 1", (job_id,)).fetchone()
+        if latest is None or latest['lifecycle'] in ('FINISHED','TERMINATED'):
             _move(Path(data_root) / "jobs", path, _QUEUE_DIR)
             requeued += 1
     return {"interrupted_runs": int(interrupted), "requeued_jobs": requeued}
@@ -341,6 +341,7 @@ class WorkerLoop:
         self._writer: WarehouseWriter | None = None
         self._current: JobRequest | None = None
         self._paused_job: str | None = None
+        self._paused_jobs: set[str] = set()
         self.progress = {}
 
     # -- called from the IPC thread
@@ -351,13 +352,14 @@ class WorkerLoop:
         page boundary of a run that is already in flight — it would sit in the queue until the
         run finished, which is exactly what §2.3's "kết thúc page hiện hành" forbids.
         """
-        if command in ("PAUSE", "STOP_GRACEFUL") and job_id and (not self._current or self._current.job_id != job_id):
+        paused_target = job_id in self._paused_jobs or job_id == self._paused_job
+        if command in ("PAUSE", "STOP_GRACEFUL") and job_id and (not self._current or self._current.job_id != job_id) and not (command == 'STOP_GRACEFUL' and paused_target):
             raise JobError("JOB_TARGET_NOT_RUNNING")
-        if command == "RESUME" and job_id != self._paused_job:
+        if command == "RESUME" and not paused_target:
             raise JobError("JOB_TARGET_NOT_PAUSED")
         if command == "PAUSE":
             self.flag.request_pause()
-        elif command == "STOP_GRACEFUL":
+        elif command == "STOP_GRACEFUL" and not paused_target:
             self.flag.request_stop()
         elif command == "FORCE_TERMINATE":
             self.flag.request_shutdown()
@@ -378,6 +380,9 @@ class WorkerLoop:
             return
         try:
             recover_interrupted_runs(self._writer.conn, self.data_root)
+            self._paused_jobs = {row[0] for row in self._writer.conn.execute(
+                "SELECT r.job_id FROM runs r WHERE r.lifecycle='PAUSED' AND r.rowid="
+                " (SELECT r2.rowid FROM runs r2 WHERE r2.job_id=r.job_id ORDER BY started_at_utc DESC,rowid DESC LIMIT 1)")}
             for source in SOURCES.values():
                 state = "NEEDS_USER_SESSION" if source.requires_user_session else (
                     "UNVERIFIED" if source.enabled_by_default else "DISABLED"
@@ -471,6 +476,7 @@ class WorkerLoop:
             conn.execute("UPDATE runs SET lifecycle='PAUSED' WHERE run_id=?", (run_id,))
             conn.commit()
             self._paused_job = request.job_id
+            self._paused_jobs.add(request.job_id)
         else:
             writer.finish_run(run_id, task_status)
             finish_job(self.data_root, request.job_id)
@@ -581,9 +587,18 @@ class WorkerLoop:
             (job_id, seq, command.command, command.issued_at, command.sid, _now()),
         )
         writer.conn.commit()
-        if command.command == "RESUME" and command.job_id and self._paused_job == command.job_id:
+        paused_target = command.job_id in self._paused_jobs or self._paused_job == command.job_id
+        if command.command == "RESUME" and command.job_id and paused_target:
             requeue_active_job(self.data_root, command.job_id)
             self._paused_job = None
+            self._paused_jobs.discard(command.job_id)
+        elif command.command == 'STOP_GRACEFUL' and command.job_id and paused_target:
+            writer.conn.execute("UPDATE runs SET lifecycle='TERMINATED',status='INTERRUPTED',finished_at_utc=? WHERE job_id=? AND lifecycle='PAUSED'", (_now(),command.job_id))
+            writer.conn.commit()
+            finish_job(self.data_root,command.job_id)
+            self._paused_jobs.discard(command.job_id)
+            if self._paused_job == command.job_id:
+                self._paused_job = None
 
 
 class WorkerController:

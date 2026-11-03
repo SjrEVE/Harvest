@@ -33,7 +33,7 @@ def inspect_legacy(source: Path) -> dict:
         conn = sqlite3.connect(warehouse.resolve().as_uri() + "?mode=ro", uri=True)
         try:
             tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            if not {"schema_version", "records", "record_versions", "observations"} <= tables:
+            if not {"schema_version", "records", "record_versions"} <= tables:
                 raise ValueError("not a supported legacy harvester warehouse")
             version = int(conn.execute("SELECT version FROM schema_version").fetchone()[0])
             if not 1 <= version <= 5:
@@ -114,8 +114,9 @@ class LegacyReader:
                 " ORDER BY v.source,v.source_record_id,v.version_no"
             ):
                 self._event("version", dict(row))
-            for row in conn.execute("SELECT * FROM observations ORDER BY fetched_at,id"):
-                self._event("observation", dict(row))
+            if "observations" in tables:
+                for row in conn.execute("SELECT * FROM observations ORDER BY fetched_at,id"):
+                    self._event("observation", dict(row))
         finally:
             conn.close()
 

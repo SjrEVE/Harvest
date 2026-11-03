@@ -1,0 +1,20 @@
+RC3 LICENSE REVIEW STATUS
+=========================
+Available license texts are bundled under LICENSES/runtime and LICENSES/qt.
+Qt texts are from the official qt/qtbase v6.12.0 tag; SHA256 and source URLs
+are recorded in LICENSES/qt/SOURCES.json. Runtime dependency licenses were
+copied from the installed locked wheels, including pure Python modules
+compiled into the executables, and CPython LICENSE.txt.
+
+OWNER DECISION REQUIRED BEFORE EXTERNAL DISTRIBUTION:
+1. Select and document the Qt/PySide6 commercial or applicable open-source
+   licensing route. This candidate does not claim a commercial entitlement.
+2. Review actual bundled Qt modules and third-party attributions. Some Qt
+   modules have GPL-only terms; presence of LGPL text does not cover every
+   module. The broad QML plugin bundle needs module-level legal review.
+3. For an open-source route, verify the corresponding-source, relinking and
+   installation-information obligations against the exact distributed build.
+4. Define the application's proprietary/open-source end-user terms.
+
+Primary reference: https://doc.qt.io/qt-6/licensing.html
+This document is a release gate record, not a legal clearance.

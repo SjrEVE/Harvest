@@ -494,9 +494,19 @@ Window {
                             Label { text: "Pacing (s)"; color:"#a9b4bf" }
                             SpinBox { id: pacingBudget; from:3; to:300; value:3; editable:true; Accessible.name:"Pacing giây" }
                         }
-                        Label { Layout.fillWidth:true; wrapMode:Text.WrapAnywhere; color:"#9dbdae"; text: JSON.stringify(page4.state.active_status || {}) }
+                        Label {
+                            Layout.fillWidth:true; Layout.preferredHeight:68; wrapMode:Text.WrapAnywhere
+                            maximumLineCount:4; elide:Text.ElideRight; color:"#9dbdae"
+                            text: {
+                                var status = page4.state.active_status || {}; var runs = status.runs || []
+                                var latest = runs.length ? runs[runs.length-1] : {}; var p = status.progress || {}
+                                return (status.job_id || "Chưa có job") + " · " + (latest.lifecycle || "") + " · " + (latest.status || "")
+                                    + (p.family ? "\n" + p.family + " · " + p.from + " → " + p.to + " · " + p.granularity + "\nPages " + p.pages + " · rows " + p.rows + " · requests " + p.requests : "")
+                            }
+                        }
                         Text { Layout.fillWidth: true; wrapMode: Text.WrapAnywhere; text: page4.enqueueResult; color: "#d1a47f"; font.pixelSize: 11 }
 
+                        ComboBox { id:jobTarget; Layout.fillWidth:true; model:(page4.state.active || []).map(j=>j.job_id); Accessible.name:"Job điều khiển" }
                         RowLayout {
                             spacing: 8
                             Button {
@@ -510,21 +520,21 @@ Window {
                                 text: "PAUSE"
                                 onClicked: {
                                     var active = page4.state.active || []
-                                    if (active.length) backend.requestRead("jobAction", "worker_command", JSON.stringify({command:"PAUSE",job_id:active[0].job_id}))
+                                    if (active.length) backend.requestRead("jobAction", "worker_command", JSON.stringify({command:"PAUSE",job_id:jobTarget.currentText || active[0].job_id}))
                                 }
                             }
                             Button {
                                 text: "RESUME"
                                 onClicked: {
                                     var active = page4.state.active || []
-                                    if (active.length) backend.requestRead("jobAction", "worker_command", JSON.stringify({command:"RESUME",job_id:active[0].job_id}))
+                                    if (active.length) backend.requestRead("jobAction", "worker_command", JSON.stringify({command:"RESUME",job_id:jobTarget.currentText || active[0].job_id}))
                                 }
                             }
                             Button {
                                 text: "STOP_GRACEFUL"
                                 onClicked: {
                                     var active = page4.state.active || []
-                                    if (active.length) backend.requestRead("jobAction", "worker_command", JSON.stringify({command:"STOP_GRACEFUL",job_id:active[0].job_id}))
+                                    if (active.length) backend.requestRead("jobAction", "worker_command", JSON.stringify({command:"STOP_GRACEFUL",job_id:jobTarget.currentText || active[0].job_id}))
                                 }
                             }
                             Button {
@@ -585,6 +595,21 @@ Window {
                         width: parent.width
                         spacing: 8
 
+                        Label { text:"Coverage theo ngày Việt Nam · resolver 7 ngày gần nhất"; color:"#a9b4bf" }
+                        GridLayout {
+                            columns:7; Layout.fillWidth:true; rowSpacing:4; columnSpacing:4
+                            Repeater {
+                                model:page5.state.heatmap || []
+                                delegate:Button {
+                                    required property var modelData
+                                    Layout.fillWidth:true; Layout.preferredHeight:64; Layout.minimumWidth:70
+                                    text:modelData.family + "\n" + modelData.day.slice(5) + "\n" + modelData.status
+                                    font.pixelSize:10
+                                    background:Rectangle { radius:3; color:parent.modelData.status === "COMPLETE" ? "#205039" : (parent.modelData.status === "BLOCKED" ? "#5a3030" : "#30383e") }
+                                    onClicked:{ evidenceText.text=JSON.stringify(modelData,null,2); evidenceDialog.open() }
+                                }
+                            }
+                        }
                         Repeater {
                             model: page5.state.summary || []
                             delegate: Rectangle {

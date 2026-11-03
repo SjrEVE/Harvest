@@ -391,6 +391,12 @@ class Runner:
             source_key=self.source_key, family=self.family,
             interval=outcome.interval, granularity=outcome.granularity,
         )
+        self.conn.execute("INSERT INTO settings(key,value_json,updated_at_utc) VALUES(?,?,?)",
+            (f"coverage:evidence:{outcome.interval_id}",
+             _json({"interval_id":outcome.interval_id,"family":self.family,"from":_iso(outcome.interval.from_utc),
+                    "to":_iso(outcome.interval.to_utc),"granularity":outcome.granularity,"blockers":blockers,
+                    "pages":outcome.pages,"rows":outcome.rows,"requests":outcome.requests}), _iso(self.clock())))
+        self.conn.commit()
         outcome.blockers = tuple(blockers)
         if outcome.status != "INTERRUPTED":
             outcome.status = status
