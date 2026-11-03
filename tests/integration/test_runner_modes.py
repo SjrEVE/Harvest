@@ -476,3 +476,11 @@ def test_drift_gap_then_resolution_reports_needs_reconcile(writer) -> None:
     make_runner(writer, grown).reconcile("run-2", DAY)
     resolution = coverage.resolve(writer.conn, SOURCE_EGP_HOME, "TBMT", DAY.from_utc, DAY.to_utc)
     assert resolution.status == "NEEDS_RECONCILE" and not resolution.can_skip
+
+def test_first_incremental_midday_collects_a_complete_vietnamese_day(writer):
+    writer.conn.execute("UPDATE filter_boundary_rules SET precision='DAY'")
+    writer.conn.commit()
+    portal = FakePortal({'DAY':[page_of(0,5)]})
+    outcomes = make_runner(writer,portal,rule=verified_rule(writer,precision='DAY')).incremental('run-1',now=NEXT_DAY.from_utc+timedelta(hours=8,minutes=15))
+    assert any(row.status == 'COMPLETE' and row.interval == DAY for row in outcomes)
+    assert coverage.watermark_for(writer.conn,SOURCE_EGP_HOME,'TBMT') == NEXT_DAY.from_utc

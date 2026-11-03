@@ -84,13 +84,28 @@ def search(conn: sqlite3.Connection, path: Path, payload: dict) -> dict:
     if text and not tokens:
         return {"hits":[], "note":"EMPTY_QUERY", "next_cursor":None}
     match = " AND ".join(token + "*" for token in tokens)
+    if match and payload.get('family'):
+        family_term = fold_vietnamese(str(payload['family'])).replace('"','""')
+        match = f'family:"{family_term}" AND ({match})'
     source = "record_fields r"
     order_expression = expression
     if match:
-        source = "search_index CROSS JOIN record_fields r ON r.record_id=search_index.rowid"
         if sort == "record_id":
+            source = "search_index CROSS JOIN record_fields r ON r.record_id=search_index.rowid"
             order_expression = "search_index.rowid"
-        clauses.append("search_index MATCH ?")
+            clauses.append("search_index MATCH ?")
+        else:
+            sample = conn.execute('SELECT rowid FROM search_index WHERE search_index MATCH ? LIMIT 501',(match,)).fetchall()
+            if len(sample) <= 500:
+                source = "search_index CROSS JOIN record_fields r ON r.record_id=search_index.rowid"
+                clauses.append("search_index MATCH ?")
+            else:
+                indexes = {'natural_key':'natural_key','title':'title_sort','published_date':'published_date',
+                           'updated':'last_seen_at_utc','price':'bid_price','award_price':'award_price'}
+                source = 'record_fields r INDEXED BY ix_rf_' + indexes[sort]
+                if sort == 'published_date':
+                    order_expression = 'r.published_date'
+                clauses.append('r.record_id IN (SELECT rowid FROM search_index WHERE search_index MATCH ?)')
         params.append(match)
     if payload.get("cursor"):
         try:

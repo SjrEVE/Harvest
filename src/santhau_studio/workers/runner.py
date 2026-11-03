@@ -427,7 +427,12 @@ class Runner:
         PARTIAL simply holds the watermark where it is.
         """
         watermark = coverage.watermark_for(self.conn, self.source_key, self.family)
-        start = watermark - timedelta(days=INCREMENTAL_OVERLAP_DAYS) if watermark else now - timedelta(days=1)
+        from zoneinfo import ZoneInfo
+
+        # A first run at 08:15 must include yesterday's whole VN day. A rolling 24h
+        # window consists only of two partial days and cannot use a DAY-verified rule.
+        start = (watermark - timedelta(days=INCREMENTAL_OVERLAP_DAYS) if watermark else
+                 vn_calendar_day(now.astimezone(ZoneInfo(VN_TZ_NAME)).date() - timedelta(days=1)).from_utc)
         if start >= now:
             start = now - timedelta(hours=1)
         outcomes = self.backfill(run_id, Interval(start, now), order=ORDER_OLDEST_FIRST, skip_proven=False)
