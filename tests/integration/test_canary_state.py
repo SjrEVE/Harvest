@@ -231,7 +231,7 @@ def test_canary_cli_refuses_without_approval(tmp_path: Path) -> None:
         assert "REFUSED" in result.stderr
 
 
-def test_canary_plan_lists_every_family(tmp_path: Path) -> None:
+def test_canary_plan_lists_every_family() -> None:
     result = subprocess.run(
         [sys.executable, str(REPO / "tools" / "canary.py"), "plan", "--day", "2026-11-01"],
         capture_output=True, text=True, timeout=60,

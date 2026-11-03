@@ -33,7 +33,8 @@ PER_PAGE = 5
 
 def records(page_no: int) -> list[dict]:
     return [
-        {"notifyNo": f"P{page_no}-{i}", "notifyVersion": "00", "bidName": f"Gói thầu mẫu {i}"}
+        {"notifyNo": f"P{page_no}-{i}", "notifyVersion": "00", "bidName": f"Gói thầu mẫu {i}",
+         "procuringEntityName": "Sở Xây dựng"}
         for i in range(PER_PAGE)
     ]
 
@@ -346,6 +347,59 @@ def test_worker_command_without_a_worker_fails_closed(seeded) -> None:
     backend = StudioBackend(seeded["root"])
     assert backend.worker_command("PAUSE", None)["ok"] is False
     assert backend.job_status("job-absent")["ok"] is False
+
+
+def test_snapshot_carries_indexes_and_materialised_family_stats(seeded) -> None:
+    import sqlite3
+
+    conn = sqlite3.connect(seeded["root"] / "serving.sqlite")
+    try:
+        indexes = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'"
+            " AND tbl_name='source_record_versions'"
+        ).fetchall()
+        assert indexes, "serving snapshot must copy warehouse indexes"
+        stats = dict(conn.execute(
+            "SELECT family, records FROM serving_family_stats"
+        ).fetchall())
+        live = dict(conn.execute(
+            "SELECT family, COUNT(*) FROM source_records GROUP BY family"
+        ).fetchall())
+        assert stats == live
+    finally:
+        conn.close()
+
+
+def test_control_center_uses_materialised_stats_with_live_fallback(seeded) -> None:
+    import sqlite3
+
+    from santhau_studio.desktop.backend import StudioBackend
+
+    backend = StudioBackend(seeded["root"])
+    snapshot = backend.control_center()
+    assert snapshot["counts_source"] == "SERVING_SNAPSHOT"
+
+    conn = sqlite3.connect(seeded["root"] / "serving.sqlite")
+    try:
+        conn.execute("DROP TABLE serving_family_stats")
+        conn.commit()
+    finally:
+        conn.close()
+    fallback = backend.control_center()
+    assert fallback["counts_source"] == "LIVE_GROUP_BY"
+    assert {entry["family"]: entry["records"] for entry in fallback["families"]} == {
+        entry["family"]: entry["records"] for entry in snapshot["families"]
+    }
+
+
+def test_search_falls_back_to_body_when_display_columns_miss(seeded) -> None:
+    from santhau_studio.desktop.backend import StudioBackend
+
+    backend = StudioBackend(seeded["root"])
+    # "Sở Xây dựng" lives in the normalized body (procuringEntityName), not in title/keys.
+    hits = backend.search({"text": "Sở Xây dựng", "limit": 10})["hits"]
+    assert hits, "body fallback must find body-only terms"
+    assert all(hit["family"] == "TBMT" for hit in hits)
 
 
 def test_every_screen_payload_is_json_serialisable(seeded) -> None:

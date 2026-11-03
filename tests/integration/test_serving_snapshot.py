@@ -214,3 +214,22 @@ def test_empty_warehouse_publishes_a_valid_snapshot(tmp_path: Path) -> None:
     assert snapshot.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     assert snapshot.execute("SELECT COUNT(*) FROM search_index").fetchone()[0] == 0
     snapshot.close()
+
+
+def test_crash_mid_build_leaves_the_previous_snapshot_and_no_temp(env, tmp_path: Path, monkeypatch) -> None:
+    """A publish that dies while building must not touch the serving file or leave debris."""
+    writer, _conn, _store, data_root = env
+    commit_page(writer, [{"notifyNo": "IB-1", "notifyVersion": "00", "bidName": "Gói 1"}])
+    writer.conn.commit()
+    target = tmp_path / "serving.sqlite"
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", target).published
+    good_bytes = target.read_bytes()
+
+    def explode(_dest) -> None:
+        raise sqlite3.Error("simulated crash while materialising stats")
+
+    monkeypatch.setattr(serving, "_materialise_family_stats", explode)
+    result = serving.build_serving_db(data_root / "warehouse.sqlite", target)
+    assert result.published is False
+    assert target.read_bytes() == good_bytes, "old snapshot must keep serving"
+    assert not target.with_suffix(target.suffix + ".tmp").exists(), "no half-built temp file"

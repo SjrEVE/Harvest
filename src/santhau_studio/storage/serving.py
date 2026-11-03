@@ -36,7 +36,7 @@ FTS_TOKENIZER = "unicode61 remove_diacritics 2"  # secret-scan:allow FTS5 tokeni
 FTS_DDL = f"""
 CREATE VIRTUAL TABLE search_index USING fts5(
     record_id UNINDEXED,
-    family UNINDEXED,
+    family,
     natural_key,
     title,
     investor_name,
@@ -81,6 +81,7 @@ def build_serving_db(warehouse: Path, target: Path) -> PublishResult:
         dest.execute("PRAGMA journal_mode=WAL")
         _copy_schema_and_rows(source, dest)
         _build_search_index(dest)
+        _materialise_family_stats(dest)
         dest.execute(
             "CREATE TABLE IF NOT EXISTS serving_meta ("
             " id INTEGER PRIMARY KEY, snapshot_built_at_utc TEXT NOT NULL,"
@@ -151,6 +152,49 @@ def _copy_schema_and_rows(source: sqlite3.Connection, dest: sqlite3.Connection) 
             f"INSERT OR IGNORE INTO '{table}' ({','.join(columns)}) VALUES ({placeholders})",
             [tuple(r) for r in rows],
         )
+    # Indexes go last: they reference tables that only exist after the loop above.
+    for name, sql in source.execute(
+        "SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL AND type='index'"
+        " AND name NOT LIKE 'sqlite_%' ORDER BY name"
+    ):
+        if sql is None:
+            continue
+        try:
+            dest.execute(sql)
+        except sqlite3.Error as exc:
+            raise SnapshotRejected(f"could not recreate index {name}: {exc}") from exc
+
+
+def _materialise_family_stats(dest: sqlite3.Connection) -> None:
+    """Family counters computed once per publish; the dashboard becomes a table read.
+
+    The snapshot is rebuilt wholesale on every publish, so this is the invalidation mechanism:
+    a number in this table is exactly as fresh as the snapshot that carries it.
+    """
+    dest.execute(
+        "CREATE TABLE IF NOT EXISTS serving_family_stats ("
+        " family TEXT PRIMARY KEY, records INTEGER NOT NULL, versions INTEGER NOT NULL,"
+        " raw_revisions INTEGER NOT NULL, observations INTEGER NOT NULL,"
+        " last_verified_at_utc TEXT)"
+    )
+    dest.execute("DELETE FROM serving_family_stats")
+    dest.execute(
+        "INSERT INTO serving_family_stats (family, records, versions, raw_revisions, observations,"
+        " last_verified_at_utc)"
+        " SELECT families.family,"
+        "  (SELECT COUNT(*) FROM source_records r WHERE r.family = families.family),"
+        "  (SELECT COUNT(*) FROM source_record_versions v JOIN source_records sr ON sr.id = v.source_record_id"
+        "     WHERE sr.family = families.family),"
+        "  (SELECT COUNT(*) FROM raw_revisions rr JOIN source_records sr ON sr.id = rr.source_record_id"
+        "     WHERE sr.family = families.family),"
+        "  (SELECT COUNT(*) FROM observations o WHERE o.family = families.family),"
+        "  (SELECT MAX(cp.verified_at_utc) FROM coverage_proofs cp WHERE cp.family = families.family)"
+        " FROM ("
+        "   SELECT family FROM source_records"
+        "   UNION SELECT family FROM coverage_proofs"
+        "   UNION SELECT family FROM observations"
+        " ) AS families ORDER BY families.family"
+    )
 
 
 def _build_search_index(dest: sqlite3.Connection) -> None:

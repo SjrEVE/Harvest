@@ -286,6 +286,118 @@ def test_compact_crash_after_retire_still_serves_every_object(root: Path) -> Non
         reopened.close()
 
 
+# ------------------------------------------------------------------ migration
+
+def test_migration_preserves_hashes_and_can_roll_back(root: Path) -> None:
+    legacy = WarehouseWriter.open(root, create_schema=True)  # object layout by default
+    payloads_ = [f"migrate {i}".encode() for i in range(6)]
+    try:
+        for payload in payloads_:
+            legacy.register_object(legacy.store.put(payload))
+        legacy.conn.commit()
+    finally:
+        legacy.close()
+
+    migrated_writer = WarehouseWriter.open(root, raw_layout=LAYOUT_SEGMENTS)
+    try:
+        result = migrated_writer.store.migrate_to_segments(migrated_writer.conn)
+        assert result == {"rows": 6, "migrated": 6, "verified": 6, "failures": 0, "legacy_removed": 0}
+        shas = [row[0] for row in migrated_writer.conn.execute("SELECT sha256 FROM raw_objects")]
+        assert all(migrated_writer.store.read(sha) in payloads_ for sha in shas)
+        rels = [row[0] for row in migrated_writer.conn.execute("SELECT storage_rel_path FROM raw_objects")]
+        assert all(rel.startswith("raw/segments/") for rel in rels)
+        count, bad = migrated_writer.store.segments.verify_all()
+        assert count == 6 and bad == ()
+    finally:
+        migrated_writer.close()
+
+    # Rollback = delete the segment directory; legacy files were never removed.
+    import shutil as _shutil
+
+    _shutil.rmtree(root / "raw" / "segments", ignore_errors=True)
+    legacy_reader = WarehouseWriter.open(root, raw_layout="objects")
+    try:
+        shas = [row[0] for row in legacy_reader.conn.execute("SELECT sha256 FROM raw_objects")]
+        assert all(legacy_reader.store.read(sha) in payloads_ for sha in shas)
+    finally:
+        legacy_reader.close()
+
+    # Forward again, this time dropping the legacy files after verification.
+    final_writer = WarehouseWriter.open(root, raw_layout=LAYOUT_SEGMENTS)
+    try:
+        result = final_writer.store.migrate_to_segments(final_writer.conn, remove_legacy=True)
+        assert result["legacy_removed"] == 1 and result["failures"] == 0
+        shas = [row[0] for row in final_writer.conn.execute("SELECT sha256 FROM raw_objects")]
+        assert all(final_writer.store.read(sha) in payloads_ for sha in shas)
+        assert not list((root / "raw" / "objects").rglob("*.bin.gz"))
+    finally:
+        final_writer.close()
+
+
+def test_migration_crash_resumes_without_data_loss(root: Path) -> None:
+    legacy = WarehouseWriter.open(root, create_schema=True)
+    payloads_ = [f"resume {i}".encode() for i in range(4)]
+    try:
+        for payload in payloads_:
+            legacy.register_object(legacy.store.put(payload))
+        legacy.conn.commit()
+    finally:
+        legacy.close()
+
+    crashing = WarehouseWriter.open(root, raw_layout=LAYOUT_SEGMENTS)
+    crashing.store._segments._fault = fail_at("after_index")
+    try:
+        with pytest.raises(Boom):
+            crashing.store.migrate_to_segments(crashing.conn)
+    finally:
+        crashing.close()
+
+    resumed = WarehouseWriter.open(root, raw_layout=LAYOUT_SEGMENTS)
+    try:
+        result = resumed.store.migrate_to_segments(resumed.conn)
+        assert result["failures"] == 0 and result["rows"] == 4
+        shas = [row[0] for row in resumed.conn.execute("SELECT sha256 FROM raw_objects")]
+        assert all(resumed.store.read(sha) in payloads_ for sha in shas)
+    finally:
+        resumed.close()
+
+
+def test_quarantine_of_corrupt_frame_keeps_raw_bytes(root: Path) -> None:
+    writer = WarehouseWriter.open(root, create_schema=True, raw_layout=LAYOUT_SEGMENTS)
+    try:
+        ref = writer.store.put(b"corrupt me")
+        writer.register_object(ref)
+        writer.conn.commit()
+        segment = root / "raw" / "segments" / "seg-00000001.bin.gz"
+        data = bytearray(segment.read_bytes())
+        data[HEADER.size + 2] ^= 0xFF
+        segment.write_bytes(bytes(data))
+        target = writer.store.quarantine_page(ref.sha256)
+        frame = root / "quarantine" / f"{ref.sha256}.frame.bin"
+        assert frame.exists() and frame.stat().st_size > HEADER.size
+        assert target.name.endswith(".bin.gz") and not target.exists()
+        assert segment.read_bytes() == bytes(data), "segment bytes are evidence; never edited"
+    finally:
+        writer.close()
+
+
+def test_crash_during_rotate_leaves_previous_objects_readable(root: Path) -> None:
+    store = RawObjectStore(root, layout=LAYOUT_SEGMENTS, segment_bytes=300, fault=fail_at("after_rotate_close"))
+    first = store.put(b"before rotate")
+    with pytest.raises(Boom):
+        for i in range(10):
+            store.put(f"rotate-{i}".encode())
+    store.close()
+    reopened = RawObjectStore(root, layout=LAYOUT_SEGMENTS, segment_bytes=300)
+    try:
+        assert reopened.read(first.sha256) == b"before rotate"
+        for i in range(10):
+            ref = reopened.put(f"rotate-{i}".encode())
+            assert reopened.read(ref.sha256) == f"rotate-{i}".encode()
+    finally:
+        reopened.close()
+
+
 # ------------------------------------------------------------------ backup / restore
 
 def test_backup_and_restore_roundtrip_over_segments(root: Path, tmp_path: Path) -> None:
@@ -324,3 +436,21 @@ def test_segment_store_known_shas_matches_index(root: Path) -> None:
             assert conn.execute("SELECT COUNT(*) FROM raw_objects").fetchone()[0] == 0
         finally:
             conn.close()
+
+
+def test_reopen_never_garbage_collects_unverified_objects(root: Path) -> None:
+    """GC is an explicit operator action; restarting the store must not delete evidence."""
+    store = RawObjectStore(root, layout=LAYOUT_SEGMENTS)
+    orphan = store.put(b"no row references me")
+    store.close()
+    reopened = RawObjectStore(root, layout=LAYOUT_SEGMENTS)
+    try:
+        assert reopened.segments.has(orphan.sha256)
+        conn = connect(root / "warehouse.sqlite", create_schema=True)
+        try:
+            assert reopened.segment_orphans(conn) == (orphan.sha256,)
+            assert reopened.read(orphan.sha256) == b"no row references me"
+        finally:
+            conn.close()
+    finally:
+        reopened.close()

@@ -256,6 +256,44 @@ class RawObjectStore:
             unreadable=tuple(sha for sha, _ in unreadable),
         )
 
+    def migrate_to_segments(self, conn: sqlite3.Connection, *, remove_legacy: bool = False) -> dict[str, int]:
+        """Move every referenced object's bytes into segments; verify bytes and cardinality.
+
+        Legacy files stay in place by default, which is the rollback: deleting `raw/segments`
+        and reopening the store in object layout restores the previous read source with no row
+        edit. Rows get a segment locator only after the bytes verify.
+        """
+        rows = conn.execute("SELECT sha256 FROM raw_objects ORDER BY sha256").fetchall()
+        migrated = 0
+        failures: list[str] = []
+        for row in rows:
+            sha = row["sha256"]
+            try:
+                payload = self.read(sha)  # dual-read: legacy today, segment after the move
+            except ObjectCorruptError as exc:
+                failures.append(f"{sha}: {exc}")
+                continue
+            if hashlib.sha256(payload).hexdigest() != sha:
+                failures.append(f"{sha}: hash mismatch before migration")
+                continue
+            assert self.segments is not None
+            new_sha, _location, _existed = self.segments.put(payload)
+            if new_sha != sha:
+                failures.append(f"{sha}: segment stored {new_sha}")
+                continue
+            rel = self.segments.rel_path(sha) or ""
+            conn.execute("UPDATE raw_objects SET storage_rel_path=?, codec='gzip' WHERE sha256=?", (rel, sha))
+            migrated += 1
+        conn.commit()
+        assert self.segments is not None
+        verified, bad = self.segments.verify_all()
+        failures.extend(f"{sha}: segment verify failed" for sha in bad)
+        if remove_legacy and not failures:
+            for row in rows:
+                self.path_for(row["sha256"]).unlink(missing_ok=True)
+        return {"rows": len(rows), "migrated": migrated, "verified": verified,
+                "failures": len(failures), "legacy_removed": int(remove_legacy and not failures)}
+
     def collect_orphan_files(self, conn: sqlite3.Connection, *, dry_run: bool = True) -> tuple[str, ...]:
         """Delete legacy object files that no row references (§5.2: after the verifying job).
 
@@ -290,12 +328,16 @@ class RawObjectStore:
 
         In segment layout the bytes are immutable inside a segment: the object is exported to
         the quarantine directory and the segment is left untouched (its index row remains, so
-        the evidence trail is not edited by an integrity response).
+        the evidence trail is not edited by an integrity response). A corrupt frame is exported
+        as raw bytes (`.frame.bin`) because decompressing it is exactly what failed.
         """
         target = self.quarantine_dir / f"{response_sha}.bin.gz"
         segments = self.segments
         if segments is not None and segments.has(response_sha):
-            segments.export(response_sha, target)
+            try:
+                segments.export(response_sha, target)
+            except SegmentCorruptError:
+                segments.export_frame(response_sha, self.quarantine_dir / f"{response_sha}.frame.bin")
             return target
         source = self.path_for(response_sha)
         if source.exists():

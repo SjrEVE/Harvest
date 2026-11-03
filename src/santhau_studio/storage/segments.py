@@ -181,6 +181,7 @@ class SegmentStore:
             return self._handle
         if self._handle is not None:
             self._close_active(closed=True)
+            self._fault_once("after_rotate_close")
         if self._seq is None:
             self._adopt_last_segment(limit)
         if self._handle is not None:
@@ -421,6 +422,21 @@ class SegmentStore:
         return {"kept": live, "dropped": dropped}
 
     # ------------------------------------------------------------------ quarantine
+
+    def export_frame(self, sha: str, destination: Path) -> bool:
+        """Copy the raw frame bytes (header + blob) for a corrupt object; forensics, not serving."""
+        location = self._location(sha)
+        if location is None:
+            return False
+        path = self.directory / SEGMENT_NAME.format(seq=location.segment)
+        with path.open("rb") as handle:
+            handle.seek(location.offset)
+            frame = handle.read(HEADER.size + location.blob_len)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(frame)
+        with destination.open("rb+") as handle:
+            os.fsync(handle.fileno())
+        return True
 
     def export(self, sha: str, destination: Path) -> None:
         """Write one object as a standalone gzip file (quarantine/backup export)."""

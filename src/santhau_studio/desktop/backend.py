@@ -288,7 +288,12 @@ class StudioBackend:
             return payload
         with closing(conn):
             try:
-                counts = _family_counts(conn)
+                counts = _materialised_family_counts(conn)
+                if counts is None:
+                    counts = _family_counts(conn)
+                    payload["counts_source"] = "LIVE_GROUP_BY"
+                else:
+                    payload["counts_source"] = "SERVING_SNAPSHOT"
             except sqlite3.Error as exc:
                 payload["error"] = f"serving unreadable: {exc}"
                 return payload
@@ -428,27 +433,41 @@ class StudioBackend:
             return {"query": text, "hits": [], "note": "NO_SNAPSHOT"}
         with closing(conn):
             try:
-                hits = [
-                    dict(row)
-                    for row in conn.execute(
-                        "SELECT s.record_id, COALESCE(sr.family, s.family) AS family, s.natural_key,"
-                        f"       {_TITLE_SQL} AS title_display,"
-                        "        COALESCE(json_extract(v.normalized_json, '$.investorName'), '') AS investor_display,"
-                        "        sr.version_state, sr.version_raw, sr.last_seen_at_utc"
-                        " FROM search_index s"
-                        " LEFT JOIN source_records sr ON sr.id = s.record_id"
-                        " LEFT JOIN source_record_versions v ON v.id = ("
-                        "   SELECT id FROM source_record_versions WHERE source_record_id = s.record_id"
-                        "   ORDER BY content_version_seq DESC LIMIT 1)"
-                        " WHERE search_index MATCH ?1 AND (?2 IS NULL OR s.family = ?2)"
-                        " ORDER BY rank LIMIT ?3 OFFSET ?4",
-                        (fts, fold_vietnamese(family) if family else None, limit, offset),
-                    )
-                ]
+                family_token = fold_vietnamese(family) if family else None
+                scoped = _scoped_query(fts)
+                # The family column is UNINDEXED; filtering it in SQL scans every match, so it
+                # becomes part of the MATCH expression and rides the postings instead.
+                match = f"family : {family_token} AND ({scoped})" if family_token else scoped
+                hits = self._search_page(conn, match, None, limit, offset)
+                if offset == 0 and len(hits) < min(limit, 10):
+                    seen = {hit["record_id"] for hit in hits}
+                    body_match = (f"family : {family_token} AND ({fts})" if family_token else fts)
+                    extra = self._search_page(conn, body_match, None, limit - len(hits), 0)
+                    hits.extend(hit for hit in extra if hit["record_id"] not in seen)
             except sqlite3.Error as exc:
                 return {"query": text, "hits": [], "error": f"{type(exc).__name__}: {exc}"}
         return {"query": text, "hits": hits, "offset": offset, "limit": limit,
                 "note": None if hits else "NO_MATCH"}
+
+    @staticmethod
+    def _search_page(conn, match: str, folded_family: str | None, limit: int, offset: int) -> list[dict]:
+        return [
+            dict(row)
+            for row in conn.execute(
+                "SELECT s.record_id, COALESCE(sr.family, s.family) AS family, s.natural_key,"
+                f"       {_TITLE_SQL} AS title_display,"
+                "        COALESCE(json_extract(v.normalized_json, '$.investorName'), '') AS investor_display,"
+                "        sr.version_state, sr.version_raw, sr.last_seen_at_utc"
+                " FROM search_index s"
+                " LEFT JOIN source_records sr ON sr.id = s.record_id"
+                " LEFT JOIN source_record_versions v ON v.id = ("
+                "   SELECT id FROM source_record_versions WHERE source_record_id = s.record_id"
+                "   ORDER BY content_version_seq DESC LIMIT 1)"
+                " WHERE search_index MATCH ?1 AND (?2 IS NULL OR s.family = ?2)"
+                " ORDER BY rank LIMIT ?3 OFFSET ?4",
+                (match, folded_family, limit, offset),
+            )
+        ]
 
     # ------------------------------------------------------------------ UI-07 record detail
 
@@ -730,3 +749,29 @@ def _fts_query(text: str) -> str:
     """Folded prefix-AND query; FTS5 syntax never receives raw user text."""
     tokens = re.findall(r"[0-9a-z]+", fold_vietnamese(text).lower())
     return " AND ".join(f"{token}*" for token in tokens)
+
+
+def _scoped_query(query: str) -> str:
+    """Limit matching to the display columns: the body posting list dominates at 1M rows."""
+    return f"{{title natural_key investor_name}} : ({query})"
+
+
+def _materialised_family_counts(conn: sqlite3.Connection) -> dict[str, dict[str, Any]] | None:
+    """Stats computed at publish time; None when serving a snapshot predating the table."""
+    try:
+        rows = conn.execute(
+            "SELECT family, records, versions, raw_revisions, observations, last_verified_at_utc"
+            " FROM serving_family_stats ORDER BY family"
+        ).fetchall()
+    except sqlite3.Error:
+        return None
+    if not rows:
+        return None
+    return {
+        row["family"]: {
+            "records": row["records"], "versions": row["versions"],
+            "raw_revisions": row["raw_revisions"], "observations": row["observations"],
+            "last_verified_at_utc": row["last_verified_at_utc"],
+        }
+        for row in rows
+    }
