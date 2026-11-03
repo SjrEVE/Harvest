@@ -65,11 +65,15 @@ local, không push).
 
 ## 3. A — Raw storage
 
-- Root-cause errno 22 của lần chạy benchmark 100k trước: harness cũ giữ toàn bộ 100k trang trong
-  RAM và không khoá workdir; lần chạy 5k/2k sạch cho thấy lỗi đọc gzip là sự cố môi trường của lần
-  chạy duy nhất đó (không tái lập được; log `_evidence/g1/bench-raw-100k.log`). Harness nay khoá
-  workdir (`bench.lock`), sinh trang streaming (RAM bounded) và báo path/stat khi đọc lỗi.
-- Production store (`RawObjectStore`) không dùng đường đọc của harness; nó có crash matrix riêng.
+- `OSError [Errno 22]` của lần chạy 100k trước: **không tái lập được** trên cùng code đường đọc
+  (5k chạy sạch, 0 verify failure; production store 22k object 0 verify failure). Toàn bộ đường đọc
+  của harness là `gzip.open(path).read()` trên file vừa ghi — production store không dùng đường này.
+  Kết luận có bằng chứng: sự cố thuộc **harness/môi trường của lần chạy đó**, không phải logic
+  raw store production (17 crash-window test + 462 test toàn bộ đều xanh). Harness đã được gia cố để
+  lần sau không mơ hồ: khoá workdir (`bench.lock`), sinh trang streaming (RAM bounded), báo
+  path+size khi một object không đọc được.
+- Production store (`RawObjectStore`) đọc ghi qua staging/segment với fsync; crash matrix riêng
+  (`test_segment_store.py`, `test_fault_injection.py`).
 - Số đo production (2.000 trang × 10 = 22.000 object, 0 verify failure):
 
 | Layout | Write | Read | ms/object | Allocated/logical |
