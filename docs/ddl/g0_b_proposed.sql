@@ -167,6 +167,10 @@ CREATE TABLE source_records (
   current_content_hash      TEXT NOT NULL CHECK (current_content_hash GLOB 'ch1:*'),
   current_record_object_sha TEXT NOT NULL REFERENCES raw_objects(sha256),
   integrity_status          TEXT NOT NULL CHECK (integrity_status IN ('OK','SUSPECT','CORRUPT')),
+  -- [G1-ADDITIVE] Policy đã áp dụng cho current_record_object_sha. Không có cột này thì
+  -- không phân biệt được "nguồn đổi bytes" (RAW_ONLY_CHANGE) với "chính ta đổi cách redact"
+  -- (REPLAY) — hai thứ có hệ quả nghiệp vụ hoàn toàn khác nhau.
+  redaction_policy_version  INTEGER NOT NULL DEFAULT 1 CHECK (redaction_policy_version >= 1),
   UNIQUE (source_key, family, identity_key),
   CHECK (
     (version_state = 'MISSING' AND version_raw IS NULL)
@@ -181,6 +185,11 @@ CREATE TABLE source_record_versions (
   source_record_id       INTEGER NOT NULL REFERENCES source_records(id),
   content_version_seq    INTEGER NOT NULL CHECK (content_version_seq >= 1),
   content_hash           TEXT NOT NULL CHECK (content_hash GLOB 'ch1:*'),
+  -- [G1-ADDITIVE] Nội dung chuẩn hoá mà content_hash vừa là digest của nó.
+  -- Không có cột này thì warehouse chỉ giữ được hash: UI-06 không index được title/tên
+  -- chủ đầu tư để tìm kiếm, và UI-07 không hiển thị được "version này khác version kia ở đâu"
+  -- — hai chức năng bắt buộc của spec. Lưu cùng chỗ còn cho phép kiểm chứng lại content_hash.
+  normalized_json        TEXT NOT NULL CHECK (normalized_json GLOB '{*'),
   introducing_record_sha TEXT NOT NULL REFERENCES raw_objects(sha256),
   introducing_response_sha TEXT REFERENCES raw_objects(sha256),
   fetched_at_utc         TEXT NOT NULL CHECK (fetched_at_utc GLOB '[0-9][0-9][0-9][0-9]-*Z'),

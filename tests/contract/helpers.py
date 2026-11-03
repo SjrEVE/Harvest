@@ -192,7 +192,8 @@ def add_record(
     """
     payload = record_payload or {"notifyNo": notify_no, "title": "synthetic"}
     rec_sha = add_object(conn, payload)
-    chash = content_hash(normalized if normalized is not None else payload)
+    effective = normalized if normalized is not None else payload
+    chash = content_hash(effective)
     ikey = identity_key(family, notify_no, version_state, version_raw)
 
     derive(conn, response_sha, rec_sha, locator)
@@ -236,9 +237,9 @@ def add_record(
     record_id = int(cur.lastrowid)
     cur = conn.execute(
         "INSERT INTO source_record_versions "
-        "(source_record_id, content_version_seq, content_hash, introducing_record_sha, introducing_response_sha, fetched_at_utc, change_kind, normalize_schema) "
-        "VALUES (?,?,?,?,?,?,?,?)",
-        (record_id, 1, chash, rec_sha, response_sha, iso(offset), "NEW", 1),
+        "(source_record_id, content_version_seq, content_hash, normalized_json, introducing_record_sha, introducing_response_sha, fetched_at_utc, change_kind, normalize_schema) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (record_id, 1, chash, json.dumps(effective), rec_sha, response_sha, iso(offset), "NEW", 1),
     )
     version_id = int(cur.lastrowid)
     conn.execute(
@@ -391,9 +392,9 @@ def ingest_record(
         next_seq = int(existing["current_content_version"]) + 1
         cur = conn.execute(
             "INSERT INTO source_record_versions (source_record_id, content_version_seq, content_hash,"
-            " introducing_record_sha, introducing_response_sha, fetched_at_utc, change_kind, normalize_schema)"
-            " VALUES (?,?,?,?,?,?,?,1)",
-            (record_id, next_seq, chash, rec_sha, response_sha, iso(observed_at), "UPDATED"),
+            " normalized_json, introducing_record_sha, introducing_response_sha, fetched_at_utc, change_kind, normalize_schema)"
+            " VALUES (?,?,?,?,?,?,?,?,1)",
+            (record_id, next_seq, chash, json.dumps(normalized), rec_sha, response_sha, iso(observed_at), "UPDATED"),
         )
         version_id = int(cur.lastrowid)
 

@@ -8,6 +8,11 @@ dependencies = [
     # Windows ships no system tz database; ZoneInfo("Asia/Ho_Chi_Minh") fails without this.
     # The source harvester pinned the same package for the same reason (§3.9 clock contract).
     "tzdata==2026.6; sys_platform == 'win32'",
+    # Collector transport. Pinned exact: §9 A6 forbids installing from an open range, and the
+    # source repo's lock already carried these three.
+    "httpx==0.28.1",
+    "tenacity==9.2.1",
+    "PyYAML==6.0.3",
 ]
 
 [project.scripts]
@@ -39,9 +44,11 @@ src = ["src", "tools", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "ARG", "PTH", "RUF"]
-ignore = ["E501"]
+# RestoreBlocked / SnapshotRejected / DataRootBusy name refusals that worked as designed,
+# not faults; an Error suffix would tell the operator the wrong thing.
+ignore = ["E501", "N818"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", "tools", "tests/contract", "."]
+pythonpath = ["src", "tools", "tests/contract", "tests/integration", "."]
 addopts = "-q"
