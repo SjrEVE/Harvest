@@ -171,6 +171,10 @@ class WarehouseWriter:
             (ref.sha256, ref.byte_len, ref.codec, ref.storage_rel_path, "OK", self.store.redaction_policy_version, _now()),
         )
 
+    def register_object(self, ref: ObjectRef) -> None:
+        """Public seam for module writers that persist objects inside their own transaction."""
+        self._register_object(ref)
+
     # ------------------------------------------------------------------ the page commit
 
     def commit_page(
