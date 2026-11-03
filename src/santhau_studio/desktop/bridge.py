@@ -11,12 +11,14 @@ import json
 from PySide6.QtCore import QObject, Slot
 
 from santhau_studio.desktop.backend import StudioBackend
+from santhau_studio.desktop.supervisor import WorkerSupervisor
 
 
 class BackendBridge(QObject):
     def __init__(self, backend: StudioBackend, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.backend = backend
+        self.supervisor = WorkerSupervisor(backend.data_root)
 
     @staticmethod
     def _dump(value: object) -> str:
@@ -57,6 +59,10 @@ class BackendBridge(QObject):
     @Slot(result=str)
     def jobs(self) -> str:
         return self._dump(self.backend.jobs())
+
+    @Slot(result=str)
+    def startWorker(self) -> str:
+        return self._dump(self.supervisor.ensure_running())
 
     @Slot(str, str, result=str)
     def workerCommand(self, command: str, job_id: str) -> str:

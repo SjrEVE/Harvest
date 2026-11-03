@@ -29,7 +29,24 @@ from santhau_studio.platform_win.os_lock import DataRootLock
 from santhau_studio.storage.migrations import migrate
 from santhau_studio.storage.rawstore import ObjectRef, RawObjectStore
 
-SCHEMA_PATH = Path(__file__).resolve().parents[3] / "docs" / "ddl" / "g0_b_proposed.sql"
+
+def find_schema(start: Path) -> Path | None:
+    """Locate the frozen DDL by walking up from a module directory.
+
+    The package sits under `<repo>/src` in a source tree but directly under the deployment
+    folder in a packaged build, so the depth differs by one; a fixed `parents[n]` silently
+    points at the wrong directory after packaging.
+    """
+    for parent in (start, *start.parents):
+        candidate = parent / "docs" / "ddl" / "g0_b_proposed.sql"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+SCHEMA_PATH = find_schema(Path(__file__).resolve().parent) or (
+    Path(__file__).resolve().parents[3] / "docs" / "ddl" / "g0_b_proposed.sql"
+)
 
 NORMALIZE_SCHEMA = 1
 WAL_CHECKPOINT_BYTES = 64 * 1024 * 1024  # §3.10 pragmas: checkpoint by size, starting point 64 MB
@@ -114,7 +131,10 @@ class WarehouseWriter:
         enforced by construction: a second worker on the same root cannot get a writer at all.
         """
         data_root = Path(data_root)
-        lock = DataRootLock(data_root, role=role).acquire()
+        # A liveness probe (the GUI's lock check) holds this lock for microseconds; a worker
+        # starting in exactly that window must retry rather than die with DataRootBusy. A real
+        # second writer still gets refused — after ~1s instead of instantly.
+        lock = DataRootLock(data_root, role=role).acquire(retries=5, retry_delay_seconds=0.2)
         try:
             store = RawObjectStore(data_root, redaction_policy_version=redaction_policy_version)
             conn = connect(data_root / "warehouse.sqlite", create_schema=create_schema)

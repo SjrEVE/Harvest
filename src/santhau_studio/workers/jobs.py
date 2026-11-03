@@ -28,6 +28,7 @@ import json
 import queue
 import re
 import sqlite3
+import sys
 import threading
 import traceback
 import uuid
@@ -340,10 +341,11 @@ class WorkerLoop:
                     stop.wait(self._poll)
                     continue
                 self._execute(request)
-        except Exception as exc:
+        except Exception:
             self.exit_code = 1
-            self.last_error = f"{type(exc).__name__}: {exc}"
-            traceback.print_exc()
+            self.last_error = traceback.format_exc()
+            if sys.stderr is not None:
+                traceback.print_exc()
         finally:
             if self._writer is not None:
                 self._writer.close()

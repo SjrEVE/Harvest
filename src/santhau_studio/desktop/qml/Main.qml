@@ -384,6 +384,13 @@ Window {
                         RowLayout {
                             spacing: 8
                             Button {
+                                text: "Khởi động worker"
+                                onClicked: {
+                                    page4.enqueueResult = backend.startWorker()
+                                    page4.reload()
+                                }
+                            }
+                            Button {
                                 text: "PAUSE"
                                 onClicked: {
                                     var active = page4.state.active || []
@@ -403,6 +410,10 @@ Window {
                                     var active = page4.state.active || []
                                     if (active.length) page4.enqueueResult = backend.workerCommand("STOP_GRACEFUL", active[0].job_id)
                                 }
+                            }
+                            Button {
+                                text: "FORCE_TERMINATE"
+                                onClicked: page4.enqueueResult = backend.workerCommand("FORCE_TERMINATE", "")
                             }
                             Button { text: "Tải lại"; onClicked: page4.reload() }
                         }

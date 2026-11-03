@@ -16,6 +16,7 @@ import argparse
 import importlib.util
 import sys
 import threading
+import time
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -44,6 +45,17 @@ def _load_builder(path: Path):
     return builder
 
 
+def _log_failure(data_root: Path, text: str) -> None:
+    """A GUI-subsystem build has no console: startup failures must land somewhere findable."""
+    try:
+        logs = Path(data_root) / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        with (logs / "worker.log").open("a", encoding="utf-8") as handle:
+            handle.write(f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] {text}\n")
+    except OSError:
+        pass
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="santhau-collector")
     parser.add_argument("--data-root", required=True, type=Path)
@@ -53,12 +65,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     sid = current_process_sid()
     if sid is None:
+        _log_failure(args.data_root, "cannot read the process token; refusing to serve (§2.4 fail-closed)")
         print("cannot read the process token; refusing to serve (§2.4 fail-closed)", file=sys.stderr)
         return EXIT_STARTUP_FAILED
     builder = None
     if args.page_source_file is not None:
         builder = _load_builder(args.page_source_file)
         if builder is None:
+            _log_failure(args.data_root, f"page source module unusable: {args.page_source_file}")
             return EXIT_BAD_PAGE_SOURCE
 
     loop = WorkerLoop(args.data_root, page_source_builder=builder, poll_seconds=args.poll_seconds)
@@ -66,6 +80,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         server = PipeServer(worker_pipe_name(), allowed_sid=sid, handler=controller)
     except PipeNameConflictError:
+        _log_failure(args.data_root, f"pipe {worker_pipe_name()} is already owned by another process")
         print(f"pipe {worker_pipe_name()} is already owned by another process", file=sys.stderr)
         return EXIT_PIPE_CONFLICT
 
@@ -79,6 +94,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     server.wake()
     pipe_thread.join(timeout=5)
     controller.close()
+    if loop.exit_code != 0:
+        _log_failure(args.data_root, f"worker loop exit {loop.exit_code}\n{loop.last_error or ''}")
     return loop.exit_code
 
 

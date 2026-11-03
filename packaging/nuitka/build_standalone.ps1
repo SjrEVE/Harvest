@@ -3,7 +3,7 @@
 #
 # Builds two executables into build/nuitka/<name>.dist:
 #   SanThauDataStudio.exe  Qt Quick/QML viewer
-#   SanThauCollector.exe   headless fake worker (no Qt)
+#   SanThauCollector.exe   headless worker: job loop + SID-authenticated control pipe (no Qt)
 #
 # Usage: powershell -ExecutionPolicy Bypass -File packaging/nuitka/build_standalone.ps1
 
@@ -20,7 +20,7 @@ New-Item -ItemType Directory -Force -Path $Out | Out-Null
 # Clear previous outputs before building. Doing it afterwards races with any process
 # still holding the folder (a shell whose cwd is inside it, or a running exe), which
 # leaves a half-deleted dist behind.
-foreach ($stale in @('app_main.dist', 'worker_main.dist', 'SanThauDataStudio.dist', 'SanThauCollector.dist')) {
+foreach ($stale in @('app_main.dist', 'service.dist', 'worker_main.dist', 'SanThauDataStudio.dist', 'SanThauCollector.dist')) {
     $path = Join-Path $Out $stale
     if (Test-Path $path) { Remove-Item -Recurse -Force $path }
 }
@@ -53,17 +53,18 @@ Write-Host '--- building SanThauCollector.exe (headless worker) ---'
     --windows-product-name='San Thau Data Studio Collector' `
     --windows-file-version=0.0.1 `
     --windows-product-version=0.0.1 `
+    --include-data-files=docs/ddl/g0_b_proposed.sql=docs/ddl/g0_b_proposed.sql `
     --output-dir=$Out `
     --output-filename=SanThauCollector.exe `
     --remove-output `
-    src/santhau_studio/worker_main.py
+    src/santhau_studio/workers/service.py
 if ($LASTEXITCODE -ne 0) { throw "nuitka worker build failed: $LASTEXITCODE" }
 
 # Nuitka names each dist folder after the entry module; rename to product names so
 # the Inno input matches the §2.2 topology.
 $Renames = @(
     @{ From = 'app_main.dist';    To = 'SanThauDataStudio.dist' },
-    @{ From = 'worker_main.dist'; To = 'SanThauCollector.dist' }
+    @{ From = 'service.dist';     To = 'SanThauCollector.dist' }
 )
 foreach ($rename in $Renames) {
     $source = Join-Path $Out $rename.From
