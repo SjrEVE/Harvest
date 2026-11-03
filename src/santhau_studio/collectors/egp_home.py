@@ -18,7 +18,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 
-from santhau_studio.collectors.http_client import FetchLane
+from santhau_studio.collectors.http_client import Attempt, FetchLane
 from santhau_studio.collectors.source_registry import (
     FAMILY_ORDER,
     SearchShape,
@@ -57,6 +57,13 @@ class SearchWindow:
 
 @dataclass(frozen=True)
 class Page:
+    """One fetched page plus the attempt log behind it.
+
+    `attempt_log` matters because §3.3 requires every try to be recorded: a retry is a new
+    attempt on the same logical request, and the proof's attempt_error_count has to be derivable
+    from rows rather than re-typed by the caller.
+    """
+
     payload: Any
     page_no: int
     rows: int
@@ -64,7 +71,15 @@ class Page:
     total_hint: int | None
     total_hint_trusted: bool
     http_status: int | None
-    attempts: int
+    attempt_log: tuple[Attempt, ...] = ()
+
+    @property
+    def attempts(self) -> int:
+        return len(self.attempt_log)
+
+    @property
+    def failed_attempts(self) -> int:
+        return sum(1 for attempt in self.attempt_log if attempt.outcome != "OK")
 
 
 def build_search_body(
@@ -177,7 +192,7 @@ class EgpHomeLane:
             total_hint=total,
             total_hint_trusted=total is not None and total < ES_MAX_RESULT_WINDOW,
             http_status=outcome.http_status,
-            attempts=outcome.attempt_count,
+            attempt_log=tuple(outcome.attempts),
         )
 
     def iter_pages(self, *, start_page: int = 0) -> Iterator[Page]:
@@ -195,7 +210,6 @@ class EgpHomeLane:
                     total_hint=None,
                     total_hint_trusted=False,
                     http_status=None,
-                    attempts=0,
                 )
                 return
             page = self.fetch_page(page_no)
