@@ -44,7 +44,7 @@ def test_qml_shell_instantiates_with_backend(tmp_path: Path) -> None:
     engine.load(qml.as_uri())
     assert engine.rootObjects(), "QML failed to load"
     root = engine.rootObjects()[0]
-    assert int(root.property("pageIndex")) == 0
+    assert int(root.property("pageIndex")) == 3
     assert int(root.property("detailRecordId")) == 0
 
 
@@ -82,6 +82,7 @@ def test_keyboard_navigation_moves_between_pages(tmp_path: Path) -> None:
     engine.addImportPath(str(qml.parent))
     engine.load(qml.as_uri())
     root = engine.rootObjects()[0]
+    root.setProperty("pageIndex", 0)
     root.requestActivate()
     QTest.qWait(150)
     QTest.keyClick(root, Qt.Key_Down)

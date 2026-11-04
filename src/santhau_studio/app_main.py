@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QFont, QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow
 
@@ -109,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     register_runtime()
 
     app = QGuiApplication(argv)
+    app.setFont(QFont("Segoe UI", 10))
     app.setApplicationName("SanThauDataStudio")
     root_path = Path(data_root) if data_root else default_data_root()
     if Path(sys.executable).name.lower().startswith("santhaudatastudio"):

@@ -15,19 +15,19 @@ Control {
     }
     contentItem: ColumnLayout {
         spacing: 4
-        Label { text: control.label; color: "#a9b4bf" }
+        Label { text: control.label; color: "#526477" }
         RowLayout {
             spacing: 4
-            TextField {
+            StudioTextField {
                 id: input
                 objectName: control.objectName + ".text"
                 Layout.fillWidth: true
                 placeholderText: "ngày/tháng/năm"
                 Accessible.name: control.label
-                color: "#e6e9ec"
-                background: Rectangle { color: "#20262d"; border.color: "#45515d"; radius: 4 }
+                color: "#172b3a"
+                background: Rectangle { color: "#ffffff"; border.color: "#cbd5df"; radius: 4 }
             }
-            Button {
+            StudioButton {
                 objectName: control.objectName + ".calendar"
                 text: "Chọn lịch"
                 Accessible.name: "Chọn " + control.label.toLowerCase() + " trên lịch"
@@ -48,17 +48,17 @@ Control {
             if (!isNaN(day.getTime())) { grid.year=day.getFullYear(); grid.month=day.getMonth() }
         }
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        palette.text: "#edf2f7"
-        background: Rectangle { color: "#20262d"; border.color: "#617283"; radius: 6 }
+        palette.text: "#172b3a"
+        background: Rectangle { color: "#ffffff"; border.color: "#cbd5df"; radius: 6 }
         ColumnLayout {
             anchors.fill: parent
             RowLayout {
-                Button {
+                StudioButton {
                     text: "‹"; Accessible.name: "Tháng trước"
                     onClicked: { if (grid.month === 0) { grid.year--; grid.month=11 } else grid.month-- }
                 }
                 Label { Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter; text: "Tháng " + (grid.month+1) + " / " + grid.year }
-                Button {
+                StudioButton {
                     text: "›"; Accessible.name: "Tháng sau"
                     onClicked: { if (grid.month === 11) { grid.year++; grid.month=0 } else grid.month++ }
                 }
@@ -73,9 +73,9 @@ Control {
                 onClicked: function(day) { control.choose(day) }
             }
             RowLayout {
-                Button { text: "Hôm nay"; onClicked: control.choose(new Date()) }
+                StudioButton { text: "Hôm nay"; onClicked: control.choose(new Date()) }
                 Item { Layout.fillWidth: true }
-                Button { text: "Đóng"; onClicked: calendar.close() }
+                StudioButton { text: "Đóng"; onClicked: calendar.close() }
             }
         }
     }

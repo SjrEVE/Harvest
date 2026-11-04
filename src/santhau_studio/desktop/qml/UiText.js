@@ -2,6 +2,7 @@
 
 // Presentation only. Stored values, command names and original source bytes stay unchanged.
 var words = {
+    TESTED_OFFLINE:"Đã kiểm tra bằng dữ liệu giả lập",
     ALL:"Tất cả 6 loại hồ sơ",
     BACKFILL:"Thu thập theo khoảng ngày", INCREMENTAL:"Cập nhật tự động đến hiện tại", RECONCILE:"Đối chiếu lại dữ liệu",
     INDEX:"Lập chỉ mục", DETAIL:"Chi tiết hồ sơ", HSMT:"Hồ sơ mời thầu", REOFFER:"Lịch sử chào lại",
@@ -125,6 +126,12 @@ function label(value) {
     return s;
 }
 function family(value) { return families[value] || value || "Chưa rõ loại hồ sơ"; }
+function timestampVN(value) {
+    var d=new Date(Date.parse(value)+7*3600000);
+    if(isNaN(d.getTime())) return "Chưa có";
+    function pad(n){return n<10?"0"+n:String(n)}
+    return pad(d.getUTCDate())+"/"+pad(d.getUTCMonth()+1)+"/"+d.getUTCFullYear()+" "+pad(d.getUTCHours())+":"+pad(d.getUTCMinutes());
+}
 function vietnamDay(offset) {
     var d = new Date(Date.now() + 7*3600000 + offset*86400000);
     function pad(n) { return n < 10 ? "0"+n : String(n); }

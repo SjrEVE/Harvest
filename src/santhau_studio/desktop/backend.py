@@ -97,6 +97,25 @@ class StudioBackend:
 
     # ------------------------------------------------------------------ UI-01 onboarding
 
+    def workspace_identity(self):
+        from datetime import timedelta
+
+        from santhau_studio.collectors.offline_acceptance import enabled
+        from santhau_studio.desktop.collection_dates import VN
+        synthetic = enabled(self.data_root) or (self.data_root / "offline-acceptance.json").exists()
+        conn = self._serving()
+        if conn is not None:
+            with closing(conn):
+                row = conn.execute("SELECT value_json FROM settings WHERE key='evidence_class'").fetchone()
+                synthetic = synthetic or bool(row and "RC3_SYNTHETIC_OFFLINE" in row[0])
+        return {"synthetic":synthetic,"data_root":str(self.data_root.resolve()),
+                "label":"KHÔNG PHẢI DỮ LIỆU THẬT — KHO THỬ NGOẠI TUYẾN" if synthetic else "Kho dữ liệu làm việc",
+                "default_from":"01/01/2022","default_to":(datetime.now(VN).date()-timedelta(days=1)).strftime("%d/%m/%Y")}
+
+    def coverage_range(self, payload):
+        from santhau_studio.desktop.coverage_range import coverage_range
+        return coverage_range(self, payload)
+
     def onboarding(self) -> dict[str, Any]:
         root = self.data_root
         payload: dict[str, Any] = {
@@ -217,6 +236,16 @@ class StudioBackend:
                 if state == "active":
                     active_job = entry
         selected_job = active_job or (payload["done"][-1] if payload["done"] else None)
+        conn = self._serving()
+        if conn is not None:
+            with closing(conn):
+                latest = {}
+                for row in conn.execute("SELECT job_id,lifecycle,status FROM runs ORDER BY started_at_utc DESC LIMIT 200"):
+                    latest.setdefault(row["job_id"], dict(row))
+                for state in ("queued", "active", "done"):
+                    for entry in payload[state]:
+                        entry.update(latest.get(entry.get("job_id"), {}))
+                        entry["queue_state"] = state
         if selected_job and payload["worker"].get("pipe_ok"):
             payload["active_status"] = self.job_status(str(selected_job["job_id"]))
         return payload
@@ -301,7 +330,7 @@ class StudioBackend:
 
     def _collection_blocker(self) -> str | None:
         from santhau_studio.collectors.offline_acceptance import enabled
-        if enabled(self.data_root) and os.environ.get("SANTHAU_OFFLINE_ACCEPTANCE_ROOT") != str(self.data_root.resolve()):
+        if self.workspace_identity()["synthetic"] and not (enabled(self.data_root) and os.environ.get("SANTHAU_OFFLINE_ACCEPTANCE_ROOT") == str(self.data_root.resolve())):
             return "Đang mở kho thử nghiệm của lần nghiệm thu. Để thu thập dữ liệu thật, vào Bắt đầu và chọn một thư mục dữ liệu riêng. Kho thử nghiệm chỉ chạy trong chế độ thử ngoại tuyến."
         return None
 
@@ -593,7 +622,7 @@ class StudioBackend:
                 record = conn.execute(
                     "SELECT id, source_key, family, natural_key, version_state, version_raw, identity_key,"
                     "       first_seen_at_utc, last_seen_at_utc, current_content_version, current_content_hash,"
-                    "       integrity_status FROM source_records WHERE id=?",
+                    "       integrity_status, current_record_object_sha FROM source_records WHERE id=?",
                     (record_id,),
                 ).fetchone()
                 if record is None:
@@ -697,6 +726,8 @@ class StudioBackend:
                 detail["legacy_unverified"] = record["source_key"].startswith("legacy:")
             except sqlite3.Error as exc:
                 return {"present": True, "error": f"{type(exc).__name__}: {exc}"}
+        from santhau_studio.desktop.data_quality import source_fields
+        detail["source_fields"] = source_fields(self.data_root, detail["record"]["current_record_object_sha"])
         return detail
 
     def enqueue_deep(self, payload):
@@ -785,7 +816,8 @@ class StudioBackend:
             "rows": rows,
             "summary": summary,
             "lanes": [
-                {"lane": lane, "state": state, "live_reason": LIVE_BLOCK_REASON if state == "BLOCKED" else None}
+                {"lane": lane, "state": state if self.workspace_identity()["synthetic"] else "BLOCKED",
+                 "live_reason": LIVE_BLOCK_REASON}
                 for lane, state in sorted(LANE_READINESS.items())
             ],
         }
