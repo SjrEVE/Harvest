@@ -46,7 +46,6 @@ from santhau_studio.collectors.source_registry import SOURCES, source_for
 from santhau_studio.domain.coverage import Interval
 from santhau_studio.platform_win.os_lock import DataRootBusy
 from santhau_studio.storage.rawstore import LAYOUT_SEGMENTS
-from santhau_studio.storage.serving import build_serving_db, mark_stale
 from santhau_studio.storage.warehouse import WarehouseWriter, connect_read_only
 from santhau_studio.workers.deep_run import LANE_KINDS, DeepFetcher, SpecProvider, run_deep_batch
 from santhau_studio.workers.runner import IntervalOutcome, PageSource, RunLimits, Runner
@@ -324,6 +323,8 @@ class WorkerLoop:
         deep_fetcher: DeepFetcher | None = None,
         deep_specs: SpecProvider | None = None,
         scheduled: bool = False,
+        publish_serving: bool = True,
+        resume_on_shutdown: bool = False,
     ) -> None:
         self.data_root = Path(data_root)
         self.flag = CommandFlag()
@@ -337,6 +338,8 @@ class WorkerLoop:
         self._deep_fetcher = deep_fetcher
         self._deep_specs = deep_specs
         self._scheduled = scheduled
+        self._publish_serving = publish_serving
+        self._resume_on_shutdown = resume_on_shutdown
         self._commands: queue.Queue[Command] = queue.Queue()
         self._writer: WarehouseWriter | None = None
         self._current: JobRequest | None = None
@@ -447,6 +450,9 @@ class WorkerLoop:
                 enqueue_job(self.data_root, request)
 
     def _publish_snapshot(self) -> None:
+        if not self._publish_serving:
+            return
+        from santhau_studio.storage.serving import build_serving_db
         try:
             result = build_serving_db(self.data_root / "warehouse.sqlite", self.data_root / "serving.sqlite")
             if not result.published:
@@ -455,6 +461,8 @@ class WorkerLoop:
             self.last_error = f"Snapshot publish failed: {exc}"
 
     def _snapshot_needs_refresh(self) -> bool:
+        if not self._publish_serving:
+            return False
         path = self.data_root / "serving.sqlite"
         if not path.exists() or (self.data_root / "serving.stale.json").exists():
             return True
@@ -464,13 +472,18 @@ class WorkerLoop:
         except sqlite3.Error:
             return True
 
+    def _mark_snapshot_stale(self) -> None:
+        if self._publish_serving:
+            from santhau_studio.storage.serving import mark_stale
+            mark_stale(self.data_root / "serving.sqlite", "Collection in progress; showing the previous snapshot")
+
     def _execute(self, request: JobRequest) -> None:
         writer = self._writer
         if writer is None:  # pragma: no cover - run() owns the writer
             return
         self.flag.reset_run_flags()
         self._current = request
-        mark_stale(self.data_root / "serving.sqlite", "Collection in progress; showing the previous snapshot")
+        self._mark_snapshot_stale()
         run_id = f"run-{uuid.uuid4().hex}"
         conn = writer.conn
         writer.register_run(run_id, request.job_id, request.job_kind, requested_by=request.requested_by)
@@ -481,7 +494,10 @@ class WorkerLoop:
         if self.flag.stop_requested:
             task_status, detail = "INTERRUPTED", {**detail, "stopped": True}
             writer.finish_run(run_id, "INTERRUPTED")
-            finish_job(self.data_root, request.job_id)
+            if self._resume_on_shutdown and self.flag.shutdown_requested:
+                requeue_active_job(self.data_root, request.job_id)
+            else:
+                finish_job(self.data_root, request.job_id)
         elif self.flag.interrupt_requested:
             task_status, detail = "INTERRUPTED", {**detail, "paused": True}
             conn.execute("UPDATE runs SET lifecycle='PAUSED' WHERE run_id=?", (run_id,))

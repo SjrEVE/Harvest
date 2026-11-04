@@ -1,5 +1,7 @@
 # Săn Thầu — Kho dữ liệu (RC3)
 
+Bản Linux chỉ thu thập, không giao diện hoặc thống kê: [hướng dẫn Linux](docs/linux-collector.md).
+
 Ứng dụng Windows để thu thập, kiểm chứng và tra cứu hồ sơ đấu thầu. Giao diện dùng
 PySide6/QML; bộ thu thập chạy riêng. SQLite và dữ liệu gốc được lưu trong thư mục
 dữ liệu do người dùng chọn, độc lập với thư mục cài chương trình.

@@ -22,7 +22,7 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
-from santhau_studio.collectors.lane_source import egp_page_source
+from santhau_studio.collectors.live_builder import live_builder
 from santhau_studio.platform_win.process import current_process_sid, register_runtime
 from santhau_studio.platform_win.shutdown_signal import open_shutdown_event, shutdown_requested
 from santhau_studio.workers.ipc import PipeNameConflictError, PipeServer, worker_pipe_name
@@ -67,21 +67,7 @@ def _default_builder(writer, request):
     It performs no request until the runner asks for a page, and the runner only asks once a
     canary-verified boundary rule exists — so an unverified source cannot be hit by accident.
     """
-    evidence = writer.conn.execute("SELECT value_json FROM settings WHERE key='evidence_class'").fetchone()
-    if evidence and json.loads(evidence[0]).get('class') == 'RC3_SYNTHETIC_OFFLINE':
-        return None  # restored synthetic data must never use synthetic rules against the live source
-    source = request.sources[0] if request.sources else None
-    if not isinstance(source, dict) or "family" not in source:
-        return None
-    from santhau_studio.collectors.budget import RequestBudget
-    from santhau_studio.collectors.http_client import FetchLane
-    from santhau_studio.collectors.source_registry import SOURCES
-    limits = request.request_limits
-    budget = RequestBudget(limits.get("max_requests", 30000), limits.get("max_seconds", 3600))
-    key = source["source_key"]
-    return egp_page_source(family=str(source["family"]), pacing_seconds=limits.get("pacing_seconds", 3),
-        lane_factory=lambda: FetchLane(url=f"https://{SOURCES[key].host}{SOURCES[key].endpoint}",
-                                      source_key=key, budget=budget))
+    return live_builder(writer, request)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

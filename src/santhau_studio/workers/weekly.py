@@ -7,7 +7,6 @@ from datetime import timedelta
 from santhau_studio.collectors.source_registry import FAMILY_ORDER
 from santhau_studio.domain.coverage import Interval
 from santhau_studio.storage import coverage
-from santhau_studio.storage.serving import mark_stale
 
 CAPABILITY = "weekly-six-v1"
 
@@ -53,7 +52,7 @@ def dispatch(loop, request, parent_run):
                     child_id = f"{request.job_id}.w{index:03d}.{family}.{attempt}"
                     writer.register_run(child_run, child_id, "BACKFILL", requested_by=request.requested_by)
                     try:
-                        mark_stale(loop.data_root / "serving.sqlite", "Collection in progress; showing the previous snapshot")
+                        loop._mark_snapshot_stale()
                         status, detail = loop._dispatch(child, child_run)
                     except Exception as exc:
                         status, detail = "FAILED", {"error": f"{type(exc).__name__}: {exc}"[:200]}

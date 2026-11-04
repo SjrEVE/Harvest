@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -12,7 +13,8 @@ from santhau_studio.platform_win.os_lock import DataRootLock
 
 class HostRequestGate:
     def __init__(self, host: str, interval: float) -> None:
-        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+        base = (Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+                if sys.platform == 'win32' else Path(os.environ.get('XDG_STATE_HOME') or Path.home() / '.local/state'))
         root = base / "SanThauDataStudio" / "network" / hashlib.sha256(host.lower().encode()).hexdigest()[:24]
         self.lock = DataRootLock(root, role="host-request")
         self.state = root / "next-request.txt"

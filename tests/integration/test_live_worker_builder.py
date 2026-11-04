@@ -6,11 +6,11 @@ from types import SimpleNamespace
 import httpx
 
 from santhau_studio.collectors import http_client
+from santhau_studio.collectors.live_builder import live_builder as _default_builder
 from santhau_studio.collectors.source_registry import SOURCES
 from santhau_studio.domain.coverage import vn_calendar_day
 from santhau_studio.storage.warehouse import WarehouseWriter
 from santhau_studio.workers.runner import SearchWindow
-from santhau_studio.workers.service import _default_builder
 
 
 def test_default_worker_uses_absolute_allowlisted_endpoint(tmp_path, monkeypatch):

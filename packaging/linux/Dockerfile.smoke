@@ -1,0 +1,5 @@
+ARG BASE=ubuntu:22.04
+FROM ${BASE}
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libstdc++6 libgcc-s1 zlib1g && rm -rf /var/lib/apt/lists/*
+COPY packaging/linux/smoke.sh /smoke.sh
+ENTRYPOINT ["/bin/sh", "/smoke.sh"]

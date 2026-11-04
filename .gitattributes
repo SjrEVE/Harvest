@@ -17,3 +17,6 @@ pre-commit text eol=lf
 *.exe binary
 *.dll binary
 *.pyd binary
+
+*.service text eol=lf
+*.yml text eol=lf
