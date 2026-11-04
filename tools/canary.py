@@ -86,7 +86,7 @@ def run_probe(args: argparse.Namespace) -> int:
         from santhau_studio.collectors.http_client import FetchLane
         budget = RequestBudget(args.max_requests, args.max_seconds)
         result = probe_family(writer, family=args.family, adapter_sha=adapter_sha,
-            lane_factory=lambda _: FetchLane(url=SOURCES[SOURCE_EGP_HOME].endpoint, source_key=SOURCE_EGP_HOME, budget=budget))
+            lane_factory=lambda _: FetchLane(url=f"https://{SOURCES[SOURCE_EGP_HOME].host}{SOURCES[SOURCE_EGP_HOME].endpoint}", source_key=SOURCE_EGP_HOME, budget=budget))
     finally:
         writer.close()
     print(f"probe {args.family}: {result} (approved by {owner})")
@@ -137,7 +137,7 @@ def _live_page_source(family: str, args):
     from santhau_studio.collectors.lane_source import egp_page_source
     budget = RequestBudget(args.max_requests, args.max_seconds)
     return egp_page_source(family=family, lane_factory=lambda: FetchLane(
-        url=SOURCES[SOURCE_EGP_HOME].endpoint, source_key=SOURCE_EGP_HOME, budget=budget))
+        url=f"https://{SOURCES[SOURCE_EGP_HOME].host}{SOURCES[SOURCE_EGP_HOME].endpoint}", source_key=SOURCE_EGP_HOME, budget=budget))
 
 
 def main(argv: list[str] | None = None) -> int:

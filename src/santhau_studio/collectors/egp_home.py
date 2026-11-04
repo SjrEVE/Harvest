@@ -100,7 +100,12 @@ def build_search_body(
         filters.append({"fieldName": "caseKHKQ", "searchType": "in", "fieldValues": ["1"]})
     if window and window.active:
         filters.append(
-            {"fieldName": shape.date_field, "searchType": "range", "from": window.from_local, "to": window.to_local}
+            # BoundaryRule has already chosen the source clock. Only serialize its
+            # separator here: the live endpoint rejects a space with HTTP 400.
+            # Converting these local calendar values to UTC again shifts the date window.
+            {"fieldName": shape.date_field, "searchType": "range",
+             "from": window.from_local.replace(" ", "T", 1),
+             "to": window.to_local.replace(" ", "T", 1)}
         )
     return [
         {
