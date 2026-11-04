@@ -143,9 +143,10 @@ def test_weekly_refuses_old_running_worker_without_interrupting_it(studio, monke
     assert not list((studio.data_root / "jobs/queued").glob("*.json"))
 
 
-def test_weekly_refuses_a_worker_that_still_collects_oldest_first(studio, monkeypatch):
+@pytest.mark.parametrize("capability", ["weekly-six-v1", "weekly-six-newest-v2"])
+def test_weekly_refuses_a_worker_with_outdated_weekly_handling(studio, monkeypatch, capability):
     monkeypatch.setattr(studio, "worker_status", lambda: {
-        "running": True, "pipe_ok": True, "capabilities": ["weekly-six-v1"]})
+        "running": True, "pipe_ok": True, "capabilities": [capability]})
     result = queue(studio)
     assert not result["ok"] and result["error_code"] == "WORKER_UPGRADE_REQUIRED"
     assert not list((studio.data_root / "jobs/queued").glob("*.json"))

@@ -92,7 +92,7 @@ Item {
                         StudioSpinBox { id:pacing;from:3;to:300;value:3;editable:true;Accessible.name:"Khoảng cách giữa hai yêu cầu, tính bằng giây" }
                     }
                     Label { Layout.fillWidth:true;wrapMode:Text.Wrap;color:"#526477";text:mode.currentValue==="BACKFILL" && family.currentValue==="ALL" && cadence.currentValue==="WEEK"
-                        ? "Ưu tiên tuần mới nhất trong khoảng đã chọn, rồi lùi dần về trước. Giữ các mốc 7 ngày từ ngày bắt đầu; tuần cuối có thể ngắn hơn. Đủ cả 6 loại mới lùi tuần; ngày đã có bằng chứng đầy đủ được bỏ qua. Mỗi lượt tối đa "+Math.round(seconds.value/60)+" phút / "+requests.value+" yêu cầu: nếu đã hoàn thành thêm ngày, tự lấy tiếp phần thiếu trong cùng tuần. Bị chặn hoặc không tiến triển thì dừng và báo rõ."
+                        ? "Ưu tiên tuần mới nhất rồi lùi dần, đủ 6 loại trong mỗi tuần. Nếu chọn hôm nay, lấy dữ liệu hiện có của cả 6 loại rồi tiếp tục ngày cũ; hôm nay chỉ chốt đầy đủ sau khi hết ngày. Ngày đã có bằng chứng đầy đủ được bỏ qua. Mỗi lượt tối đa "+Math.round(seconds.value/60)+" phút / "+requests.value+" yêu cầu: nếu đã hoàn thành thêm ngày, tự lấy tiếp phần thiếu. Lỗi mạng hoặc bị chặn sẽ dừng và báo rõ."
                         : "Mỗi loại tối đa "+Math.round(seconds.value/60)+" phút / "+requests.value+" yêu cầu mỗi lượt. Chạm giới hạn sẽ ghi Chưa đầy đủ; chạy lại cùng khoảng ngày để lấy tiếp phần thiếu." }
                     Label { objectName:"collectionResult"; visible:!!page.enqueueResult; Layout.fillWidth:true;wrapMode:Text.Wrap;text:page.enqueueResult;color:"#965a08" }
                     Label { visible:!!page.state.collection_blocked_reason; Layout.fillWidth:true;wrapMode:Text.Wrap;text:page.state.collection_blocked_reason||"";color:"#b42336" }
@@ -105,7 +105,7 @@ Item {
             }
             Label {
                 Layout.fillWidth:true;wrapMode:Text.Wrap;color:"#087f75"
-                text:{var s=page.state.active_status||{};var runs=s.runs||[];var last=runs.length?runs[runs.length-1]:{};var p=s.progress||{};return s.job_id ? T.label(last.lifecycle)+" · "+T.label(last.status)+(p.week_index ? " · Tuần "+p.week_index+"/"+p.week_count+" · "+T.collectionSpan(p.week_from,p.week_to,"BACKFILL")+" · Loại "+p.family_index+"/6" : "")+(p.family ? " · "+T.family(p.family)+" · "+p.rows+" dòng · "+p.pages+" trang" : "") : "Chưa có tác vụ đang chạy."}
+                text:{var s=page.state.active_status||{};var runs=s.runs||[];var last=runs.length?runs[runs.length-1]:{};var p=s.progress||{};return s.job_id ? T.label(last.lifecycle)+" · "+T.label(last.status)+(p.week_index ? " · Tuần "+p.week_index+"/"+p.week_count+" · "+T.collectionSpan(p.week_from,p.week_to,"BACKFILL")+" · Loại "+p.family_index+"/6" : "")+(p.current_day_snapshot ? " · Hôm nay: dữ liệu hiện có, chưa chốt đủ ngày" : "")+(p.family ? " · "+T.family(p.family)+" · "+p.rows+" dòng · "+p.pages+" trang" : "") : "Chưa có tác vụ đang chạy."}
             }
             StudioComboBox {
                 id:target;objectName:"collectionTarget";Layout.fillWidth:true

@@ -3,13 +3,14 @@ import json
 import uuid
 from dataclasses import replace
 from datetime import timedelta
+from zoneinfo import ZoneInfo
 
 from santhau_studio.collectors.source_registry import FAMILY_ORDER
-from santhau_studio.domain.coverage import Interval
+from santhau_studio.domain.coverage import Interval, vn_calendar_day
 from santhau_studio.storage import coverage
 from santhau_studio.storage.serving import mark_stale
 
-CAPABILITY = "weekly-six-newest-v2"
+CAPABILITY = "weekly-six-open-day-v3"
 
 
 def weeks(span):
@@ -23,6 +24,18 @@ def weeks(span):
     yield from reversed(periods)
 
 
+def work_periods(periods, now):
+    """Read today's snapshot for all families before proving closed history."""
+    today = vn_calendar_day(now.astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).date())
+    for index, week in enumerate(periods, 1):
+        if now < week.to_utc <= today.to_utc:
+            yield index, week, Interval(max(week.from_utc, today.from_utc), week.to_utc), True, week.from_utc >= today.from_utc
+            if week.from_utc < today.from_utc:
+                yield index, week, Interval(week.from_utc, today.from_utc), False, True
+        else:
+            yield index, week, week, False, True
+
+
 def dispatch(loop, request, parent_run):
     sources = {s.get("family"): s for s in request.sources}
     if request.job_kind != "BACKFILL" or set(sources) != set(FAMILY_ORDER) or len(request.sources) != 6:
@@ -31,8 +44,10 @@ def dispatch(loop, request, parent_run):
     conn = writer.conn
     periods = list(weeks(request.interval()))
     completed = 0
+    pending = []
+    pending_weeks = set()
     try:
-        for index, span in enumerate(periods, 1):
+        for index, week, span, current_day, last_part in work_periods(periods, loop._clock()):
             for family in FAMILY_ORDER:
                 source = sources[family]
                 def resolve(source=source, family=family, span=span):
@@ -44,8 +59,9 @@ def dispatch(loop, request, parent_run):
                     if before.can_skip:
                         break
                     loop._weekly_progress = {"week_index": index, "week_count": len(periods),
-                        "week_from": span.from_utc.isoformat(), "week_to": span.to_utc.isoformat(),
-                        "family_index": FAMILY_ORDER.index(family) + 1, "attempt": attempt}
+                        "week_from": week.from_utc.isoformat(), "week_to": week.to_utc.isoformat(),
+                        "family_index": FAMILY_ORDER.index(family) + 1, "attempt": attempt,
+                        "current_day_snapshot": current_day}
                     loop.progress = {"job_id": request.job_id, "family": family, "rows": 0, "pages": 0,
                         **loop._weekly_progress}
                     child = replace(request, sources=(source,), scope={"from": span.from_utc.isoformat(), "to": span.to_utc.isoformat()})
@@ -53,6 +69,8 @@ def dispatch(loop, request, parent_run):
                     # Distinct runs preserve every retry's attempts/observations and leave the
                     # parent lifecycle as the sole user control target, including crash recovery.
                     child_id = f"{request.job_id}.w{index:03d}.{family}.{attempt}"
+                    if current_day:
+                        child_id += ".today"
                     writer.register_run(child_run, child_id, "BACKFILL", requested_by=request.requested_by)
                     try:
                         mark_stale(loop.data_root / "serving.sqlite", "Collection in progress; showing the previous snapshot")
@@ -71,6 +89,12 @@ def dispatch(loop, request, parent_run):
                         return "PARTIAL", {"weeks_completed": completed, "reason": "Đã dừng theo yêu cầu; tiến độ đã lưu."}
                     if after.can_skip:
                         break
+                    if current_day and status == "PARTIAL" and detail.get("open_day_snapshot"):
+                        pending.append({"family":family, "from":span.from_utc.isoformat(),
+                            "to":span.to_utc.isoformat(), "rows":detail.get("rows",0),
+                            "blockers":detail.get("blockers",[])})
+                        pending_weeks.add(index)
+                        break
                     blockers = detail.get("blockers", [])
                     exhausted = any("BUDGET_EXHAUSTED" in b for b in blockers)
                     recoverable = all("BUDGET_EXHAUSTED" in b or b == "TOTAL_UNTRUSTED" for b in blockers)
@@ -85,7 +109,12 @@ def dispatch(loop, request, parent_run):
                             "last_attempt": detail}
                 else:
                     return "PARTIAL", {"weeks_completed": completed, "reason": "Đã chạm giới hạn tiếp tục an toàn của tuần; tiến độ đã lưu."}
-            completed += 1
+            if last_part and index not in pending_weeks:
+                completed += 1
+        if pending:
+            return "PARTIAL", {"weeks_completed":completed, "weeks_total":len(periods),
+                "pending_current_day":pending,
+                "reason":"Đã lấy dữ liệu hiện có của hôm nay cho cả 6 loại và xử lý các ngày cũ. Hôm nay chưa kết thúc nên chưa chốt đủ ngày; chạy cập nhật để lấy hồ sơ phát sinh thêm."}
         return "COMPLETED", {"weeks_completed": completed, "weeks_total": len(periods)}
     finally:
         loop._weekly_progress = {}

@@ -575,6 +575,14 @@ class WorkerLoop:
             counts[leaf.status] = counts.get(leaf.status, 0) + 1
         detail = {"intervals": len(leaves), "status_counts": counts, "rows": sum(o.rows for o in leaves),
                   "blockers": sorted({b for o in leaves for b in o.blockers})}
+        if any("INTERVAL_NOT_CLOSED" in leaf.blockers for leaf in leaves):
+            detail["open_day_snapshot"] = all(
+                leaf.status == "COMPLETE" or (
+                    leaf.status == "PARTIAL" and "INTERVAL_NOT_CLOSED" in leaf.blockers
+                    and all(b == "INTERVAL_NOT_CLOSED" or b.startswith("TOTAL_CHANGED ") for b in leaf.blockers)
+                    and bool(leaf.terminal_evidence) and leaf.total_trusted
+                    and not (leaf.malformed or leaf.unrecovered_requests or leaf.max_pages_hit or leaf.max_records_hit)
+                ) for leaf in leaves)
         return _judge(leaves), detail
 
     # -- commands
