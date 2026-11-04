@@ -73,8 +73,34 @@
     },
     "resume": "NOT_RUN"
   },
+  "installation": {
+    "performed_at": "2026-11-04 18:21 +0700",
+    "requested_by": "Boss",
+    "uninstalled": "ac20d595 / SanThauCollector.exe 23a7082f... / unins000.exe /VERYSILENT -> exit 0, registry orphan Temp\\SanThauRC6 da duoc don",
+    "installed": "1e65962 / installer sha256 db5757f2... / /VERYSILENT /SUPPRESSMSGBOXES /NORESTART -> exit 0, Inno log 'Installation process succeeded'",
+    "install_location": "C:\\Users\\media\\AppData\\Local\\Programs\\SanThauDataStudio",
+    "installed_hashes": {
+      "SanThauCollector.exe": "63728d9061da0e9e228da8e8ceef526bcd0861058b236c7d0084b6c406c7fb1b (= build/stage, KHOP)",
+      "SanThauDataStudio.exe": "25ff731366f127421f0c6a2c22f1a8ca4dccedec0504ce661413dea8634e05cd"
+    },
+    "backup": "D:/Harvest/_backup-before-reinstall-20261104 (655 MB / 256 file, MANIFEST.json)",
+    "data_root_after": {
+      "serving.sqlite": "367886336 B, sha256 MATCH vs backup",
+      "warehouse.sqlite": "225251328 B, sha256 MATCH vs backup",
+      "writer.lock": "CON NGUYEN",
+      "source_records": 70234, "integrity_check": "ok", "coverage_intervals": 734,
+      "paused_job": "job-cef1bf50a525 PAUSE van con"
+    },
+    "smoke": {
+      "command": "SanThauDataStudio.exe --data-root D:/Harvest/SanThauData --smoke <png>",
+      "verdict": "PASS", "exit_code": 0, "screenshot": "1380x900, 71616 B",
+      "worker_running": false, "queued_jobs": 0,
+      "note": "Khong bam bat dau thu thap; khong gui request nao ra E-GP"
+    },
+    "registry": "InstallLocation dung Programs\\SanThauDataStudio; DisplayVersion 0.0.1-RC3",
+    "leftover_processes": "khong con"
+  },
   "blocked": {
-    "install_over_running_app": "NOT_RUN - can dung app + backup Data Root; ban dang cai van la ac20d595",
     "resume_week_collection": "NOT_RUN - writer.lock con, job PAUSED, can lenh owner",
     "live_canary": "BLOCKED - owner approval + SANTHAU_CANARY_APPROVED (release-checklist.md §5)",
     "authenticode": "BLOCKED - chung chi owner (§2)",

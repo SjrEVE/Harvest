@@ -77,11 +77,12 @@ paged DTOs consumed by asynchronous bridge; runtime/canary status feeds UI; rele
 | Full suite | PASS | 636 passed / 1 skipped / 0 failed, `tests.xml` |
 | `ruff check src tests tools` | PASS | All checks passed |
 | Dữ liệu thật | READ-ONLY | 70.234 records, 734 intervals (145 COMPLETE / 589 PARTIAL), job `job-cef1bf50a525` PAUSED |
-| Thay bản đang cài (`ac20d595` → `1e65962`) | NOT_RUN | hash installer cũ `db6a4e10…` ≠ mới `db5757f2…`; cần dừng app + backup Data Root |
+| Thay bản đang cài (`ac20d595` → `1e65962`) | **PASS 18:21** | gỡ exit 0, cài exit 0; installed `SanThauCollector.exe` = `63728d90…` khớp stage; backup 655 MB; 2 sqlite MATCH hash; smoke PASS |
 | Resume cào tuần 29/10–03/11 | NOT_RUN | `writer.lock` pid 16192; TBMT 8 PARTIAL, KHLCNT 1 PARTIAL, KQLCNT/YCBG mỗi loại 1 COMPLETE |
 | Canary E-GP thật | BLOCKED | owner approval + `SANTHAU_CANARY_APPROVED` (`release-checklist.md` §5) |
 | Authenticode / Qt LGPL-commercial / VM sạch | BLOCKED / NOT_TESTED | `release-checklist.md` §2–§4 |
 
 Không tick mục nào thiếu bằng chứng. `build/RC3-final/` (bản cũ 10:28, `ac20d595`)
-giữ nguyên làm rollback evidence. Bản Windows đang cài vẫn là `ac20d595`:
-chưa thay, chưa resume, chưa tạo PR / merge / GitHub Release.
+giữ nguyên làm rollback evidence. **Đã thay bản lúc 18:21** (`ac20d595` → `1e65962`),
+dữ liệu thật đối chiếu MATCH hash, smoke PASS; vẫn **chưa resume** thu thập,
+chưa canary thật, chưa tạo PR / merge / GitHub Release.

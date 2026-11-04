@@ -47,6 +47,20 @@ Thay bản đang cài, resume thu thập, canary E-GP thật, Authenticode,
 quyết định LGPL/commercial Qt, VM Windows sạch. Xem `docs/release-checklist.md` §2–§5
 và `local-verification.json` → key `blocked`.
 
+## Cài đặt lên máy Boss (18:21 +0700)
+
+Boss gật bước thay bản. Đã `unins000.exe /VERYSILENT` (exit 0, dọn luôn registry
+orphan `Temp\SanThauRC6`), rồi cài installer `1e65962` `/VERYSILENT` (exit 0,
+Inno log `Installation process succeeded`, không cần restart).
+
+- `SanThauCollector.exe` trên máy = `63728d90…` **khớp** `build/stage` → đúng bản mới.
+- Backup `D:/Harvest/_backup-before-reinstall-20261104` (655 MB / 256 file).
+- **Dữ liệu không đổi**: cả 2 sqlite `MATCH` SHA256 với backup, `writer.lock` còn,
+  70.234 records, `integrity ok`, job `PAUSE` còn.
+- Chạy thử `--smoke`: **PASS**, screenshot 1380x900, `worker.running=false`,
+  `queued_jobs=0` → không cào E-GP. Không còn process SanThau sót lại.
+- Vẫn **NOT_RUN**: resume cào tuần 29/10–03/11; canary thật; ký số; Qt legal; VM sạch.
+
 ## Caveat khi đọc evidence
 
 - `release-manifest.json` ghi `captured_at_utc` 17:02 nhưng artifact build 17:12–17:14:
