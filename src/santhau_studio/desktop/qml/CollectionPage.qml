@@ -92,7 +92,7 @@ Item {
                         StudioSpinBox { id:pacing;from:3;to:300;value:3;editable:true;Accessible.name:"Khoảng cách giữa hai yêu cầu, tính bằng giây" }
                     }
                     Label { Layout.fillWidth:true;wrapMode:Text.Wrap;color:"#526477";text:mode.currentValue==="BACKFILL" && family.currentValue==="ALL" && cadence.currentValue==="WEEK"
-                        ? "Mỗi tuần gồm 7 ngày từ ngày bắt đầu, xử lý từ cũ đến mới. Đủ cả 6 loại mới chuyển tuần; ngày đã có bằng chứng đầy đủ được bỏ qua. Mỗi lượt tối đa "+Math.round(seconds.value/60)+" phút / "+requests.value+" yêu cầu: nếu đã hoàn thành thêm ngày, tự lấy tiếp phần thiếu trong cùng tuần. Bị chặn hoặc không tiến triển thì dừng và báo rõ."
+                        ? "Ưu tiên tuần mới nhất trong khoảng đã chọn, rồi lùi dần về trước. Giữ các mốc 7 ngày từ ngày bắt đầu; tuần cuối có thể ngắn hơn. Đủ cả 6 loại mới lùi tuần; ngày đã có bằng chứng đầy đủ được bỏ qua. Mỗi lượt tối đa "+Math.round(seconds.value/60)+" phút / "+requests.value+" yêu cầu: nếu đã hoàn thành thêm ngày, tự lấy tiếp phần thiếu trong cùng tuần. Bị chặn hoặc không tiến triển thì dừng và báo rõ."
                         : "Mỗi loại tối đa "+Math.round(seconds.value/60)+" phút / "+requests.value+" yêu cầu mỗi lượt. Chạm giới hạn sẽ ghi Chưa đầy đủ; chạy lại cùng khoảng ngày để lấy tiếp phần thiếu." }
                     Label { objectName:"collectionResult"; visible:!!page.enqueueResult; Layout.fillWidth:true;wrapMode:Text.Wrap;text:page.enqueueResult;color:"#965a08" }
                     Label { visible:!!page.state.collection_blocked_reason; Layout.fillWidth:true;wrapMode:Text.Wrap;text:page.state.collection_blocked_reason||"";color:"#b42336" }

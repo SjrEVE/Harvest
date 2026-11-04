@@ -41,7 +41,8 @@ santhau-collector run
 ```
 
 Ngày cuối được tính trọn ngày theo giờ Việt Nam. Mặc định thu thập đủ sáu loại theo
-từng đợt 7 ngày từ ngày bắt đầu; đủ tuần hiện tại mới chuyển tuần tiếp. Ngày đã có bằng
+từng đợt 7 ngày từ ngày bắt đầu, ưu tiên đợt mới nhất rồi lùi dần về trước; đủ sáu loại
+trong tuần hiện tại mới lùi tuần. Đợt cuối có thể ngắn hơn 7 ngày. Ngày đã có bằng
 chứng đầy đủ sẽ được bỏ qua. Phần đang dở được giữ nhưng có thể cần đọc lại để đối chiếu.
 
 Giới hạn mỗi lượt: 1.000 trang, 3.000 yêu cầu, 3.600 giây; giãn cách ít nhất 3 giây và

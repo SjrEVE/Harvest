@@ -8,16 +8,18 @@ from santhau_studio.collectors.source_registry import FAMILY_ORDER
 from santhau_studio.domain.coverage import Interval
 from santhau_studio.storage import coverage
 
-CAPABILITY = "weekly-six-v1"
+CAPABILITY = "weekly-six-newest-v2"
 
 
 def weeks(span):
-    """Seven consecutive VN days from the chosen start, oldest first, clipped at end."""
+    """Keep the chosen seven-day boundaries, visiting the newest week first."""
+    periods = []
     start = span.from_utc
     while start < span.to_utc:
         end = min(start + timedelta(days=7), span.to_utc)
-        yield Interval(start, end)
+        periods.append(Interval(start, end))
         start = end
+    yield from reversed(periods)
 
 
 def dispatch(loop, request, parent_run):

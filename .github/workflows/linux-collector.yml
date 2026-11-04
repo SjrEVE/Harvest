@@ -36,7 +36,7 @@ jobs:
           python -m pytest -q -o addopts='' --junitxml=build/linux/tests.xml \
             tests/contract tests/unit/test_boundary.py tests/unit/test_ddl_contract.py \
             tests/unit/test_linux_config.py tests/unit/test_sanitizer.py tests/unit/test_schema_path.py \
-            tests/unit/test_secret_gate.py tests/integration/test_boundary_contract.py \
+            tests/unit/test_secret_gate.py tests/unit/test_weekly_order.py tests/integration/test_boundary_contract.py \
             tests/integration/test_canary_state.py tests/integration/test_coverage_store.py \
             tests/integration/test_writer_contract.py tests/integration/test_segment_store.py \
             tests/integration/test_runner_modes.py tests/integration/test_public_tables.py \

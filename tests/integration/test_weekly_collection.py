@@ -72,15 +72,28 @@ def test_one_durable_job_week_order_and_rerun_skips_all_saved_days(studio):
     calls = []
     run(studio, fast_builder(calls))
     assert len(calls) == 48
-    assert {f for f, _ in calls[:42]} == set(FAMILY_ORDER)
-    assert all(span.from_utc < datetime(2026, 10, 7, 17, tzinfo=UTC) for _, span in calls[:42])
-    assert all(span.from_utc >= datetime(2026, 10, 7, 17, tzinfo=UTC) for _, span in calls[42:])
+    assert [f for f, _ in calls[:6]] == list(FAMILY_ORDER)
+    assert all(span.from_utc >= datetime(2026, 10, 7, 17, tzinfo=UTC) for _, span in calls[:6])
+    assert all(span.from_utc < datetime(2026, 10, 7, 17, tzinfo=UTC) for _, span in calls[6:])
+    assert calls[6][1].from_utc == datetime(2026, 10, 6, 17, tzinfo=UTC)
     before = counts(studio)
     assert before == (48, 48, 48)
     assert queue(studio)["ok"]
     calls.clear()
     run(studio, fast_builder(calls))
     assert calls == [] and counts(studio) == before
+
+
+def test_newest_first_reuses_days_already_collected_by_oldest_first_job(studio):
+    assert queue(studio, date_to="07/10/2026")["ok"]
+    run(studio, fast_builder([]))
+    assert counts(studio) == (42, 42, 42)
+    assert queue(studio)["ok"]
+    calls = []
+    run(studio, fast_builder(calls))
+    assert len(calls) == 6
+    assert all(span.from_utc == datetime(2026, 10, 7, 17, tzinfo=UTC) for _, span in calls)
+    assert counts(studio) == (48, 48, 48)
 
 
 def test_budget_continues_only_missing_days_before_next_week(studio):
@@ -104,7 +117,7 @@ def test_network_failure_and_no_progress_stop_without_next_week(studio):
     run(studio, fast_builder(calls, fail=fail))
     assert len(calls) <= 7
     assert len({f for f, _ in calls}) == 1
-    assert all(span.from_utc < datetime(2026, 10, 7, 17, tzinfo=UTC) for _, span in calls)
+    assert all(span.from_utc >= datetime(2026, 10, 7, 17, tzinfo=UTC) for _, span in calls)
     assert studio.job_status(result["job_id"]) is not None
     with closing(connect_read_only(studio.data_root / "warehouse.sqlite")) as conn:
         assert conn.execute("SELECT status FROM runs WHERE job_id=?", (result["job_id"],)).fetchone()[0] == "PARTIAL"
@@ -125,6 +138,14 @@ def test_weekly_rejects_missing_family_without_partial_queue(studio):
 
 def test_weekly_refuses_old_running_worker_without_interrupting_it(studio, monkeypatch):
     monkeypatch.setattr(studio, "worker_status", lambda: {"running": True, "pipe_ok": True})
+    result = queue(studio)
+    assert not result["ok"] and result["error_code"] == "WORKER_UPGRADE_REQUIRED"
+    assert not list((studio.data_root / "jobs/queued").glob("*.json"))
+
+
+def test_weekly_refuses_a_worker_that_still_collects_oldest_first(studio, monkeypatch):
+    monkeypatch.setattr(studio, "worker_status", lambda: {
+        "running": True, "pipe_ok": True, "capabilities": ["weekly-six-v1"]})
     result = queue(studio)
     assert not result["ok"] and result["error_code"] == "WORKER_UPGRADE_REQUIRED"
     assert not list((studio.data_root / "jobs/queued").glob("*.json"))
@@ -172,7 +193,7 @@ def test_weekly_controls_keep_records_and_do_not_advance_week(studio, command):
     assert loop.exit_code == 0, loop.last_error
     assert stopped.is_set() and 2 <= counts(studio)[0] <= 3
     before = counts(studio)
-    assert len({family for family, _ in calls}) == 1
+    assert all(span.from_utc >= datetime(2026, 10, 7, 17, tzinfo=UTC) for _, span in calls)
     # Resume a paused parent or crash-recovered parent through the existing queue.
     if command == "PAUSE":
         from santhau_studio.workers.jobs import requeue_active_job
