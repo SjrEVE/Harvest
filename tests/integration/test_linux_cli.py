@@ -68,9 +68,11 @@ def test_linux_process_pause_resume_sigterm_and_restart(tmp_path, monkeypatch):
             stderr=subprocess.PIPE,
         )
 
-    def wait(check):
-        until = time.monotonic() + 15
+    def wait(check, timeout=15):
+        until = time.monotonic() + timeout
         while time.monotonic() < until:
+            if process.poll() is not None:
+                raise AssertionError(f"Collector exited {process.returncode}: {process.stderr.read().decode(errors='replace')}")
             try:
                 value = check()
                 if value:
@@ -78,7 +80,7 @@ def test_linux_process_pause_resume_sigterm_and_restart(tmp_path, monkeypatch):
             except (OSError, ValueError):
                 pass
             time.sleep(0.02)
-        raise AssertionError("Timed out waiting for Linux collector state")
+        raise AssertionError(f"Timed out waiting for Linux collector state: {request(root, {'op': 'status'})}")
 
     process = launch()
     try:
@@ -95,7 +97,15 @@ def test_linux_process_pause_resume_sigterm_and_restart(tmp_path, monkeypatch):
         process.kill()
         process.wait(5)  # real SIGKILL; recovery must reuse committed proof
         process = launch()
-        wait(lambda: len(list((root / "jobs/done").glob("*.json"))) == 1)
+        # 14 days x 6 families x 4 pages include 8.4 seconds of intentional pacing,
+        # in addition to cold process startup, fsync and crash recovery on hosted runners.
+        wait(lambda: len(list((root / "jobs/done").glob("*.json"))) == 1, timeout=45)
+        import sqlite3
+        from contextlib import closing
+        with closing(sqlite3.connect(root / "warehouse.sqlite")) as conn:
+            assert conn.execute("SELECT status FROM runs WHERE job_id=? ORDER BY rowid DESC LIMIT 1", (job.job_id,)).fetchone()[0] == "COMPLETED"
+            assert conn.execute("SELECT COUNT(*) FROM source_records").fetchone()[0] == 672
+            assert conn.execute("SELECT COUNT(*) FROM coverage_proofs").fetchone()[0] == 84
         assert not list(root.glob("serving*"))
     finally:
         if process.poll() is None:
