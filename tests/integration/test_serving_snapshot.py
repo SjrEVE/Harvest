@@ -233,3 +233,22 @@ def test_crash_mid_build_leaves_the_previous_snapshot_and_no_temp(env, tmp_path:
     assert result.published is False
     assert target.read_bytes() == good_bytes, "old snapshot must keep serving"
     assert not target.with_suffix(target.suffix + ".tmp").exists(), "no half-built temp file"
+def test_publish_retries_transient_windows_reader_lock(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from santhau_studio.collectors.offline_acceptance import initialize
+    from santhau_studio.storage.serving import build_serving_db
+    initialize(tmp_path)
+    original = Path.replace
+    attempts = []
+    def temporarily_locked(path, target):
+        if path.name == "serving.sqlite.tmp":
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise PermissionError("Reader briefly holds the Windows snapshot")
+        return original(path, target)
+    monkeypatch.setattr(Path, "replace", temporarily_locked)
+    result = build_serving_db(tmp_path / "warehouse.sqlite", tmp_path / "serving.sqlite")
+    assert result.published, result.reason
+    assert len(attempts) == 3
+

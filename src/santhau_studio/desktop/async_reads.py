@@ -4,7 +4,7 @@ import json
 from PySide6.QtCore import QObject, QRunnable, Signal
 
 READS = {
-    'onboarding', 'control_center', 'sources', 'jobs', 'coverage', 'search',
+    'onboarding', 'control_center', 'sources', 'jobs', 'collection_overview', 'coverage', 'search',
     'record_detail', 'record_history', 'raw_object', 'deep_queue', 'integrity', 'settings',
     'job_status', 'coverage_proof', 'start_worker', 'worker_command', 'enqueue_collection', 'start_collection', 'enqueue_deep',
 }

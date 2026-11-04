@@ -42,6 +42,11 @@ Control {
         width: 320; height: 350
         padding: 12
         focus: true
+        onOpened: {
+            var day = Date.fromLocaleDateString(Qt.locale("vi_VN"), control.text.trim(), "dd/MM/yyyy")
+            if (isNaN(day.getTime())) day = Date.fromLocaleDateString(Qt.locale("vi_VN"), control.text.trim(), "yyyy-MM-dd")
+            if (!isNaN(day.getTime())) { grid.year=day.getFullYear(); grid.month=day.getMonth() }
+        }
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         palette.text: "#edf2f7"
         background: Rectangle { color: "#20262d"; border.color: "#617283"; radius: 6 }

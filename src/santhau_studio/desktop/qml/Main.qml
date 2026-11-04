@@ -62,10 +62,11 @@ Window {
             if (key === "integrityRaw") { evidenceText.text=T.rawPreview(root.parse(text)); evidenceDialog.open() }
             if (key === "proof") { evidenceText.text = T.pretty(root.parse(text)); evidenceDialog.open() }
             if (key === "jobAction") { page4.enqueueResult = T.result(root.parse(text)); page4.reload() }
+            if (key === "collectionOverview") page4.overview = root.parse(text)
             if (key === "collectionAction") {
                 page4.submitting = false
                 var result = root.parse(text)
-                page4.enqueueResult = result.worker_started ? "Đã tạo tác vụ; đang kết nối bộ thu thập. Theo dõi tiến độ bên dưới." : T.result(result)
+                page4.enqueueResult = T.collectionResult(result)
                 page4.reload()
             }
         }
@@ -432,9 +433,19 @@ Window {
                     property var state: ({ queued: [], active: [], done: [] })
                     property string enqueueResult: ""
                     property bool submitting: false
+                    property var overview: ({families:[]})
                     Component.onCompleted: reload()
                     onVisibleChanged: if (visible) reload()
-                    function reload() { backend.requestRead("page4", "jobs", "{}") }
+                    function reload() {
+                        backend.requestRead("page4", "jobs", "{}")
+                        backend.requestRead("collectionOverview", "collection_overview", "{}")
+                    }
+                    function preset(first, last) {
+                        kindBox.currentIndex=0
+                        fromField.text=first
+                        toField.text=last
+                        enqueueResult=""
+                    }
                     Timer { interval:1500; repeat:true; running:page4.visible; onTriggered:page4.reload() }
 
                     ScrollView {
@@ -476,7 +487,7 @@ Window {
                                 id: familyField
                                 objectName: "collectionFamily"
                                 textRole: "label"; valueRole: "value"
-                                model: T.options(["TBMT", "KHLCNT", "KQLCNT", "DU_AN", "YCBG", "HOP_DONG"])
+                                model: T.options(["ALL", "TBMT", "KHLCNT", "KQLCNT", "DU_AN", "YCBG", "HOP_DONG"])
                                 Accessible.name: "Loại hồ sơ cần thu thập"
                                 Layout.fillWidth: true
                             }
@@ -484,6 +495,7 @@ Window {
                                 id: fromField
                                 objectName: "collectionDateFrom"
                                 label: "Từ ngày"
+                                text: T.vietnamDay(-1)
                                 visible: kindBox.currentValue !== "INCREMENTAL"
                                 Layout.fillWidth: true
                             }
@@ -491,6 +503,7 @@ Window {
                                 id: toField
                                 objectName: "collectionDateTo"
                                 label: "Đến hết ngày"
+                                text: T.vietnamDay(-1)
                                 visible: kindBox.currentValue !== "INCREMENTAL"
                                 Layout.fillWidth: true
                             }
@@ -512,12 +525,43 @@ Window {
                                 }
                             }
                         }
+                        RowLayout {
+                            visible: kindBox.currentValue !== "INCREMENTAL"
+                            Button { objectName:"collectionYesterday"; text:"Hôm qua"; onClicked:page4.preset(T.vietnamDay(-1),T.vietnamDay(-1)) }
+                            Button { text:"7 ngày gần nhất"; onClicked:page4.preset(T.vietnamDay(-7),T.vietnamDay(-1)) }
+                            Button { objectName:"collectionSince2022"; text:"Từ năm 2022"; onClicked:page4.preset("01/01/2022",T.vietnamDay(-1)) }
+                        }
+                        Label {
+                            objectName:"collectionResult"
+                            Layout.fillWidth:true; wrapMode:Text.Wrap
+                            visible:!!page4.enqueueResult
+                            text:page4.enqueueResult; color:"#f0b68b"; font.pixelSize:13
+                        }
                         Label {
                             Layout.fillWidth: true; wrapMode: Text.Wrap; color: "#a9b4bf"
                             text: kindBox.currentValue === "INCREMENTAL"
                                 ? "Tự cập nhật từ mốc đã thu thập đến hiện tại, kiểm tra lại các ngày gần nhất. Muốn lấy từ ngày X đến ngày Z, chọn Thu thập theo khoảng ngày."
-                                : "Thu thập cả ngày bắt đầu và ngày kết thúc, theo giờ Việt Nam. Ví dụ 01/11/2026 → 03/11/2026 là đủ 3 ngày."
+                                : "Lấy từ " + fromField.text + " đến hết " + toField.text + " theo giờ Việt Nam. Các ngày đã đủ bằng chứng được bỏ qua khi chạy lại."
                         }
+                        Label {
+                            Layout.fillWidth:true; wrapMode:Text.Wrap; color:"#a9b4bf"
+                            text:"Giới hạn áp dụng cho từng loại hồ sơ. Chạm giới hạn sẽ dừng và ghi Chưa đầy đủ; bấm chạy lại cùng khoảng ngày để lấy tiếp phần còn thiếu."
+                        }
+                        Label { text:"Dữ liệu hôm qua · " + (page4.overview.yesterday || ""); color:"#e6e9ec" }
+                        GridLayout {
+                            Layout.fillWidth:true; columns:width < 800 ? 1 : 2
+                            Repeater {
+                                model:page4.overview.families || []
+                                delegate:Label {
+                                    required property var modelData
+                                    Layout.fillWidth:true; wrapMode:Text.Wrap
+                                    text:T.family(modelData.family) + ": " + T.label(modelData.yesterday_status)
+                                        + (modelData.readiness === "BLOCKED" ? " · Chưa xác minh nguồn" : "")
+                                    color:modelData.yesterday_status === "COMPLETE" ? "#7fd1a4" : "#d1a47f"
+                                }
+                            }
+                        }
+                        Label { visible:!!page4.overview.error; text:page4.overview.error || ""; color:"#e07a7a"; Layout.fillWidth:true; wrapMode:Text.Wrap }
                         GridLayout {
                             columns: 4; Layout.fillWidth: true
                             Label { text: "Giới hạn số trang"; color:"#a9b4bf" }
@@ -539,8 +583,6 @@ Window {
                                     + (p.family ? "\n" + T.family(p.family) + " · " + T.collectionSpan(p.from,p.to,"") + " · " + T.label(p.granularity) + "\nSố trang: " + p.pages + " · số dòng: " + p.rows + " · số yêu cầu: " + p.requests : "")
                             }
                         }
-                        Text { Layout.fillWidth: true; wrapMode: Text.WrapAnywhere; text: page4.enqueueResult; color: "#d1a47f"; font.pixelSize: 11 }
-
                         ComboBox { id:jobTarget; Layout.fillWidth:true; model:(page4.state.active || []).map(j=>j.job_id); Accessible.name:"Chọn tác vụ để điều khiển" }
                         RowLayout {
                             spacing: 8
@@ -582,7 +624,7 @@ Window {
                         Text {
                             text: "Hàng đợi: " + (page4.state.queued || []).length
                                   + " · đang chạy: " + (page4.state.active || []).length
-                                  + " · xong: " + (page4.state.done || []).length
+                                  + " · đã kết thúc: " + (page4.state.done || []).length
                             color: "#9aa4ae"
                             font.pixelSize: 12
                         }

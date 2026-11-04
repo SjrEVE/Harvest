@@ -235,6 +235,8 @@ class StudioBackend:
 
     def enqueue_collection(self, payload: dict[str, Any]) -> dict[str, Any]:
         """UI-04: publish the immutable job request; the worker claims it by rename."""
+        from santhau_studio.collectors.source_registry import FAMILY_ORDER
+        from santhau_studio.desktop.collection import unverified
         from santhau_studio.desktop.collection_dates import DateRangeError, collection_scope
 
         try:
@@ -242,39 +244,60 @@ class StudioBackend:
             if kind not in JOB_KINDS:
                 return {"ok": False, "error": f"unknown job_kind {kind}"}
             family = str(payload["family"]).strip().upper()
+            if family not in (*FAMILY_ORDER, "ALL"):
+                return {"ok": False, "error_code": "FAMILY_INVALID", "error": "Hãy chọn loại hồ sơ cần thu thập."}
             scope = collection_scope(payload, kind)
             blocker = self._collection_blocker()
             if blocker:
                 return {"ok": False, "error_code": "SYNTHETIC_ROOT", "error": blocker}
-            rule = self._verified_rule(str(payload.get("source_key") or "egp_home"), family)
-            if rule is None:
-                # §4.2 fail-closed: without a canary-verified boundary rule the run would be a
-                # refused job anyway; say so at submission instead of queueing a guaranteed block.
-                return {"ok": False, "error": "BOUNDARY_RULE_UNVERIFIED: chưa có rule canary-verified"}
-            request = JobRequest(
+            template = JobRequest(
                 job_id=f"job-{uuid.uuid4().hex[:12]}",
                 job_kind=kind,
                 requested_by=str(payload.get("requested_by") or "gui"),
-                sources=(
-                    {
-                        "source_key": rule["source_key"],
-                        "family": family,
-                        "endpoint": rule["endpoint"],
-                        "adapter_sha": rule["adapter_sha"],
-                    },
-                ),
+                sources=(),
                 scope=scope,
                 mode=str(payload.get("mode") or "interactive"),
                 request_limits=dict(payload.get("request_limits") or {}),
                 created_at=_now(),
             )
-            request.interval()
-            path = enqueue_job(self.data_root, request)
+            template.interval()
+            # Validate the entire input before publishing anything. The worker processes
+            # exactly one family per job; six sources in one document would drop five.
+            from dataclasses import replace
+            planned, blocked = [], []
+            for selected in FAMILY_ORDER if family == "ALL" else (family,):
+                rule = self._verified_rule(str(payload.get("source_key") or "egp_home"), selected)
+                if rule is None:
+                    blocked.append(unverified(selected))
+                    continue
+                planned.append(replace(template, job_id=f"{template.job_id}-{selected}",
+                    sources=({**rule, "family": selected},)))
+            if not planned:
+                return {"ok": False, **blocked[0], "blocked": blocked, "jobs": []}
+            jobs = []
+            for request in planned:
+                try:
+                    path = enqueue_job(self.data_root, request)
+                    jobs.append({"family": request.sources[0]["family"], "job_id": request.job_id, "queued_as": path.name})
+                except OSError:
+                    blocked.append({"family": request.sources[0]["family"], "status": "FAILED",
+                                    "error_code": "QUEUE_WRITE_FAILED",
+                                    "error": "Không ghi được tác vụ vào hàng đợi. Kiểm tra quyền ghi và dung lượng ổ đĩa."})
         except DateRangeError as exc:
             return {"ok": False, "error_code": "DATE_RANGE_INVALID", "error": str(exc)}
         except (JobError, KeyError, ValueError) as exc:
             return {"ok": False, "error": str(exc)}
-        return {"ok": True, "job_id": request.job_id, "queued_as": path.name}
+        if not jobs:
+            return {"ok": False, **blocked[0], "blocked": blocked, "jobs": []}
+        return {"ok": True, **jobs[0], "status": "PARTIAL" if blocked else "QUEUED",
+                "jobs": jobs, "blocked": blocked, "requested_families": 6 if family == "ALL" else 1}
+
+    def collection_overview(self) -> dict[str, Any]:
+        from santhau_studio.desktop.collection import overview
+        try:
+            return overview(self)
+        except sqlite3.Error as exc:
+            return {"families": [], "error": f"Không đọc được mức độ thu thập: {exc}"}
 
     def _collection_blocker(self) -> str | None:
         from santhau_studio.collectors.offline_acceptance import enabled
@@ -285,13 +308,24 @@ class StudioBackend:
     def start_collection(self, payload: dict[str, Any]) -> dict[str, Any]:
         """One explicit UI action both queues the request and starts/attaches its worker."""
         result = self.enqueue_collection(payload)
-        if not result.get("ok"):
-            return result
-        from santhau_studio.desktop.supervisor import WorkerSupervisor
-        worker = WorkerSupervisor(self.data_root).ensure_running()
-        if not worker.get("ok"):
-            return {**result, "ok": False, "error": "Tác vụ đã lưu trong hàng đợi nhưng chưa bật được bộ thu thập: " + str(worker.get("error") or "Hãy thử bật lại bộ thu thập.")}
-        return {**result, "worker_started": True}
+        if result.get("ok"):
+            from santhau_studio.desktop.supervisor import WorkerSupervisor
+            worker = WorkerSupervisor(self.data_root).ensure_running()
+            if not worker.get("ok"):
+                result = {**result, "ok": False, "error": "Tác vụ đã lưu trong hàng đợi nhưng chưa bật được bộ thu thập: " + str(worker.get("error") or "Hãy thử bật lại bộ thu thập.")}
+            else:
+                result = {**result, "worker_started": True}
+        # Keep the last submission outcome so a fleeting error can be diagnosed.
+        # Only form fields are retained, never credentials or a network response.
+        try:
+            log = self.data_root / "logs/collection-last-result.json"
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_text(json.dumps({"at": _now(), "input": {key: payload.get(key)
+                for key in ("family", "job_kind", "date_from", "date_to", "auto_range")},
+                "result": result}, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+        return result
 
     def _verified_rule(self, source_key: str, family: str) -> dict[str, Any] | None:
         from santhau_studio.collectors.source_registry import query_contract_matches

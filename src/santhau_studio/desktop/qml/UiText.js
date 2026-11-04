@@ -2,6 +2,7 @@
 
 // Presentation only. Stored values, command names and original source bytes stay unchanged.
 var words = {
+    ALL:"Tất cả 6 loại hồ sơ",
     BACKFILL:"Thu thập theo khoảng ngày", INCREMENTAL:"Cập nhật tự động đến hiện tại", RECONCILE:"Đối chiếu lại dữ liệu",
     INDEX:"Lập chỉ mục", DETAIL:"Chi tiết hồ sơ", HSMT:"Hồ sơ mời thầu", REOFFER:"Lịch sử chào lại",
     KQLCNT_FULL:"Kết quả đầy đủ", BOQ:"Bảng khối lượng", OTHER:"Khác", VERIFY:"Kiểm tra", IMPORT:"Nhập dữ liệu",
@@ -31,7 +32,7 @@ var words = {
     INTERVAL_NOT_CLOSED:"Khoảng thời gian chưa kết thúc; dữ liệu đã lấy vẫn được lưu nhưng chưa thể xác nhận đầy đủ.",
     NO_TERMINAL_EVIDENCE:"Chưa xác nhận đã đọc hết các trang", COMPLETE_WITHOUT_PROOF:"Trạng thái đầy đủ thiếu bằng chứng, cần kiểm tra",
     STOP_REQUESTED:"Đã nhận yêu cầu dừng", SPLIT_INCOMPLETE:"Một số khoảng thời gian chưa thu thập đủ",
-    BOUNDARY_RULE_UNVERIFIED:"Chưa xác minh quy tắc lọc thời gian. Cần chủ hệ thống phê duyệt kiểm tra nguồn trước khi thu thập.",
+    BOUNDARY_RULE_UNVERIFIED:"Loại hồ sơ này chưa được xác minh nguồn. Cần chủ hệ thống phê duyệt kiểm tra nguồn trước khi thu thập.",
     LIVE_DEEP_ENDPOINT_UNVERIFIED:"Chưa xác minh nguồn dữ liệu chi tiết. Cần chủ hệ thống phê duyệt trước khi thu thập thật.",
     DEEP_SPEC_UNVERIFIED:"Chưa xác minh cấu trúc dữ liệu chi tiết", SOURCE_VERSION_CHANGED:"Nguồn đã có phiên bản mới",
     NEEDS_RECONCILE:"Cần đối chiếu lại", COUNT_DRIFT:"Số lượng đã thay đổi", MISSING_IN_RESCAN:"Không thấy khi đối chiếu lại",
@@ -124,6 +125,22 @@ function label(value) {
     return s;
 }
 function family(value) { return families[value] || value || "Chưa rõ loại hồ sơ"; }
+function vietnamDay(offset) {
+    var d = new Date(Date.now() + 7*3600000 + offset*86400000);
+    function pad(n) { return n < 10 ? "0"+n : String(n); }
+    return pad(d.getUTCDate()) + "/" + pad(d.getUTCMonth()+1) + "/" + d.getUTCFullYear();
+}
+function collectionResult(value) {
+    var jobs = value.jobs || [], blocked = value.blocked || [];
+    var lines = [];
+    if (jobs.length) lines.push("Đã xếp hàng " + jobs.length + "/" + (value.requested_families || jobs.length)
+        + " loại: " + jobs.map(function(j) {return family(j.family)}).join(", ") + ".");
+    if (value.worker_started) lines.push("Bộ thu thập xử lý lần lượt. Theo dõi tiến độ bên dưới.");
+    if (value.error) lines.push(message(value.error));
+    else if (!jobs.length && !blocked.length) lines.push(result(value));
+    blocked.forEach(function(b) { if (b.error !== value.error) lines.push(b.error); });
+    return lines.join("\n");
+}
 function collectionSpan(from, to, kind) {
     if (kind === "INCREMENTAL") return "Tự cập nhật đến hiện tại";
     var a = new Date(Date.parse(from) + 7*3600000);

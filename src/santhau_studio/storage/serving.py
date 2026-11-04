@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -132,7 +133,17 @@ def build_serving_db(warehouse: Path, target: Path) -> PublishResult:
         dest.close()
         target.parent.mkdir(parents=True, exist_ok=True)
         try:
-            candidate.replace(target)  # old snapshot never half-overwritten
+            # Windows readers may briefly keep the previous file open. Retry only
+            # the atomic rename, not the expensive rebuild; permanent failures
+            # still preserve the old snapshot and report STALE below.
+            for attempt in range(6):
+                try:
+                    candidate.replace(target)
+                    break
+                except PermissionError:
+                    if attempt == 5:
+                        raise
+                    time.sleep(.05 * 2**attempt)
         except OSError as exc:
             candidate.unlink(missing_ok=True)
             mark_stale(target, str(exc))

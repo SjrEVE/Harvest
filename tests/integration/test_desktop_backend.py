@@ -337,7 +337,7 @@ def test_enqueue_refuses_a_family_without_a_verified_rule(seeded) -> None:
         "from": "2026-11-02T00:00:00Z", "to": "2026-11-03T00:00:00Z",
     })
     assert result["ok"] is False
-    assert "BOUNDARY_RULE_UNVERIFIED" in result["error"]
+    assert result["error_code"] == "BOUNDARY_RULE_UNVERIFIED"
     assert not list((seeded["root"] / "jobs" / "queued").glob("*.json"))
 
 
