@@ -11,6 +11,8 @@ Item {
     property string enqueueResult: ""
     property bool submitting: false
     property bool synthetic: false
+    property string selectedJobId: ""
+    function selectedJob() { return target.currentValue || ((state.active||[]).length ? state.active[0].job_id : "") }
     signal selectDataRootRequested()
     function reload() {
         backend.requestRead("page4","jobs","{}")
@@ -91,11 +93,20 @@ Item {
                 Layout.fillWidth:true;wrapMode:Text.Wrap;color:"#087f75"
                 text:{var s=page.state.active_status||{};var runs=s.runs||[];var last=runs.length?runs[runs.length-1]:{};var p=s.progress||{};return s.job_id ? T.label(last.lifecycle)+" · "+T.label(last.status)+(p.family ? " · "+T.family(p.family)+" · "+p.rows+" dòng · "+p.pages+" trang" : "") : "Chưa có tác vụ đang chạy."}
             }
+            StudioComboBox {
+                id:target;objectName:"collectionTarget";Layout.fillWidth:true
+                visible:(page.state.active||[]).length>0
+                textRole:"label";valueRole:"value"
+                model:(page.state.active||[]).map(function(j){return {label:(j.families||[]).map(T.familyShort).join(", ")+" · "+j.job_id,value:j.job_id}})
+                Accessible.name:"Chọn tác vụ để tạm dừng, tiếp tục hoặc dừng"
+                onActivated:page.selectedJobId=currentValue
+                onModelChanged:{var at=model.findIndex(function(j){return j.value===page.selectedJobId});if(at>=0)currentIndex=at}
+            }
             Flow {
                 Layout.fillWidth:true; spacing:8
-                StudioButton { text:"Tạm dừng"; enabled:(page.state.active||[]).length>0; onClicked:backend.requestRead("jobAction","worker_command",JSON.stringify({command:"PAUSE",job_id:page.state.active[0].job_id})) }
-                StudioButton { text:"Tiếp tục";enabled:(page.state.active||[]).length>0;onClicked:backend.requestRead("jobAction","worker_command",JSON.stringify({command:"RESUME",job_id:page.state.active[0].job_id})) }
-                StudioButton { text:"Dừng tác vụ";danger:true;enabled:(page.state.active||[]).length>0;onClicked:backend.requestRead("jobAction","worker_command",JSON.stringify({command:"STOP_GRACEFUL",job_id:page.state.active[0].job_id})) }
+                StudioButton { objectName:"collectionPause";text:"Tạm dừng"; enabled:(page.state.active||[]).length>0; onClicked:backend.requestRead("jobAction","worker_command",JSON.stringify({command:"PAUSE",job_id:page.selectedJob()})) }
+                StudioButton { objectName:"collectionResume";text:"Tiếp tục";enabled:(page.state.active||[]).length>0;onClicked:backend.requestRead("jobAction","worker_command",JSON.stringify({command:"RESUME",job_id:page.selectedJob()})) }
+                StudioButton { text:"Dừng tác vụ";danger:true;enabled:(page.state.active||[]).length>0;onClicked:backend.requestRead("jobAction","worker_command",JSON.stringify({command:"STOP_GRACEFUL",job_id:page.selectedJob()})) }
                 StudioButton { text:"Tắt bộ thu thập";onClicked:backend.requestRead("jobAction","worker_command",JSON.stringify({command:"FORCE_TERMINATE"})) }
                 StudioButton { text:"Bật bộ thu thập";onClicked:backend.requestRead("jobAction","start_worker","{}") }
                 StudioButton { text:"Tải lại";onClicked:page.reload() }
