@@ -226,3 +226,36 @@ def test_worker_upgrades_old_display_projection_without_any_source_request(studi
     assert not calls
     report = studio.coverage_range({"date_from": "01/10/2026", "date_to": "08/10/2026"})
     assert report["counts_available"]
+
+
+def test_snapshot_is_marked_stale_for_each_family_after_previous_publish(studio):
+    from santhau_studio.storage.serving import serving_state
+    assert queue(studio, date_to="01/10/2026")["ok"]
+    stale_states = []
+    normal = fast_builder([])
+    def checked(writer, request):
+        stale_states.append(serving_state(studio.serving_path)["stale"])
+        return normal(writer, request)
+    run(studio, checked)
+    assert stale_states == [True] * 6
+    assert not serving_state(studio.serving_path)["stale"]
+
+
+def test_parent_status_survives_more_than_200_child_runs(studio):
+    from santhau_studio.storage.serving import build_serving_db
+    from santhau_studio.storage.warehouse import WarehouseWriter
+    from santhau_studio.workers.jobs import claim_next_job, finish_job
+    result = queue(studio)
+    assert claim_next_job(studio.data_root).job_id == result["job_id"]
+    with closing(WarehouseWriter.open(studio.data_root)) as writer:
+        writer.register_run("parent", result["job_id"], "BACKFILL")
+        writer.finish_run("parent", "COMPLETED")
+        writer.conn.execute("UPDATE runs SET started_at_utc='2026-01-01T00:00:00Z' WHERE run_id='parent'")
+        for i in range(240):
+            writer.register_run(f"child-{i}", f"{result['job_id']}.w{i}", "BACKFILL")
+            writer.finish_run(f"child-{i}", "COMPLETED")
+        writer.conn.commit()
+    assert finish_job(studio.data_root, result["job_id"])
+    assert build_serving_db(studio.data_root / "warehouse.sqlite", studio.serving_path).published
+    done = studio.jobs()["done"]
+    assert done[0].get("status") == "COMPLETED"

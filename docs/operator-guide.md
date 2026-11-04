@@ -1,90 +1,84 @@
-# Operator guide — Săn Thầu Data Studio (RC2)
+# Hướng dẫn sử dụng — Săn Thầu RC3
 
-## Cài đặt và mở ứng dụng
+## Cài đặt và chọn kho
 
-1. Chạy `SanThau-Data-Studio-Setup-*.exe` (per-user, không cần admin). Mặc định cài vào
-   `%LocalAppData%\Programs\SanThauDataStudio`.
-2. Mở **Săn Thầu Data Studio** từ Start Menu.
-3. Màn **01 · Onboarding**: chọn Data Root (thư mục dữ liệu), bấm **Kiểm tra** để xác nhận quyền
-   ghi và dung lượng. Data Root **không nằm trong Program Files** và **không bị xoá khi uninstall**.
-4. Bấm **Dùng thư mục này** để áp dụng. Các màn hình và worker sẽ dùng kho đã chọn; lựa chọn được
-   lưu cho lần mở tiếp theo. Worker của kho cũ tiếp tục chạy nếu trước đó chưa được dừng.
+Chương trình cài tại `%LocalAppData%\Programs\SanThauDataStudio`. Mở **Săn Thầu — Kho dữ liệu**,
+vào **Kho dữ liệu** và chọn thư mục lưu. Cấu hình được giữ cho lần mở tiếp theo;
+gỡ chương trình không xóa thư mục dữ liệu. Nâng cấp sẽ yêu cầu chương trình và bộ thu thập
+đóng an toàn; nếu chúng chưa dừng, installer phải từ chối thay tệp.
 
-## Worker và job
+Kho thử nghiệm có cảnh báo rõ. Không dùng kho thử hoặc quy tắc nguồn giả lập để thu thập thật.
 
-- Worker là tiến trình riêng (`SanThauCollector.exe`). GUI **04 · Collection Jobs** → **Khởi động
-  worker**; đóng GUI **không** dừng worker.
-- Mở lại GUI sẽ **attach** vào worker đang chạy (cùng Data Root). Hai GUI trên cùng Data Root bị
-  chặn bằng mutex; worker thứ hai cùng Data Root bị chặn bằng data-root lock.
-- Nút điều khiển: **PAUSE** (dừng ở cuối page hiện hành), **RESUME** (run mới cho cùng job),
-  **STOP_GRACEFUL** (kết thúc INTERRUPTED, không tự COMPLETE), **FORCE_TERMINATE** (dừng worker).
-- Hàng đợi job là các file trong `<data root>\jobs\{queued,active,done}`. Xoá tay các file này khi
-  worker đang chạy là thao tác không được hỗ trợ.
+## Thu thập theo tuần
 
-## Nguồn dữ liệu và canary
+Trong **Thu thập dữ liệu**, chọn **Thu thập theo khoảng ngày**, **Tất cả 6 loại hồ sơ**,
+hai ngày đầu/cuối và **Theo tuần — đủ 6 loại rồi chuyển tuần tiếp**. Khoảng ngày bao gồm
+cả hai ngày, theo giờ Việt Nam. Tuần ở đây là 7 ngày liên tiếp từ ngày bắt đầu, xử lý
+từ cũ đến mới; tuần cuối có thể ngắn hơn 7 ngày.
 
-- 6 family công khai qua `egp_home`. `egp_v2` cần session trình duyệt — **BLOCKED**; `moh_quotes` /
-  `mof_quotes` đang quarantine.
-- Mọi job BACKFILL/INCREMENTAL cần một **filter boundary rule** đã canary-verified. Nếu chưa có,
-  job bị chặn với `BOUNDARY_RULE_UNVERIFIED` (fail-closed, không query không giới hạn).
-- Quy trình canary (owner duyệt): xem `docs/canary-matrix.md` và `tools/canary.py plan`. Công cụ
-  từ chối chạm nguồn thật nếu thiếu `--execute` + `SANTHAU_CANARY_APPROVED=<owner>`.
-- Deep lanes (DETAIL/HSMT/REOFFER) chỉ chạy offline với fixture; live **BLOCKED** tới canary.
+Một tác vụ tự xử lý sáu loại trong từng tuần. Ngày đã được xác nhận đủ bằng chứng được
+bỏ qua. Chạm giới hạn thời gian hoặc số yêu cầu mà vẫn hoàn thành thêm khoảng thời gian
+thì tác vụ tiếp tục phần thiếu trong cùng tuần. Nếu nguồn bị chặn, có lỗi chưa xử lý được
+hoặc không tiến triển, tác vụ dừng và giữ tiến độ. Không chuyển tuần khi chưa đủ sáu loại.
 
-## Tìm kiếm và màn hình
+Phần đã lưu không bị xóa khi chạy lại. Ngày đang dở có thể được đọc lại để đối chiếu
+với nguồn thay đổi; điều này khác với cào lại ngày đã hoàn thành. Tác vụ tuần mới không
+tự thay đổi các tác vụ cũ đã xếp hàng.
 
-- **06 · Data Explorer**: FTS5 đã fold tiếng Việt; phân trang bằng **Tải thêm**. Tìm theo tiêu đề,
-  mã hồ sơ, chủ đầu tư; nếu không khớp cột hiển thị, hệ thống tự mở rộng sang body (một trang đầu).
-- **02 · Control Center**: số liệu family lấy từ snapshot serving (cập nhật mỗi lần publish snapshot),
-  không phải đếm live.
-- **05 · Coverage**: COMPLETE phải có proof; dòng thiếu proof hiển thị lý do.
-- **07 · Record Detail**: timeline content version, raw revision, deep capture, lots/goods/documents.
-- **08 · Deep Collection**: ma trận lane (TESTED_OFFLINE / BLOCKED) + trạng thái stale/refresh.
-- **09 · Data Integrity**: object hỏng, quarantine, unresolved, reconcile gaps, marker stale.
-- **10 · Settings / Backup**: settings, danh sách backup, phiên bản, pipe name.
+Chọn đúng tác vụ trong danh sách trước khi **Tạm dừng**, **Tiếp tục** hoặc **Dừng tác vụ**.
+Đóng GUI vẫn để bộ thu thập chạy. **Tắt bộ thu thập** dùng khi cần bảo trì hoặc nâng cấp.
+Không sửa hoặc xóa thủ công tệp hàng đợi trong khi bộ thu thập đang giữ kho.
 
-## Backup / Restore
+**Cập nhật tự động** dùng mốc đã thu thập và khoảng kiểm tra chồng lấn để tìm chỉnh sửa gần đây.
+**Đối chiếu dữ liệu** kiểm tra lại khoảng đã có bằng chứng. Các chế độ này khác với việc
+chạy bù một khoảng ngày lịch sử.
 
-- Backup là thư mục chứa snapshot warehouse + object gốc + manifest sha256.
-- Restore **verify trước**, không swap nếu thiếu/hỏng object; warehouse cũ được giữ dưới tên
-  `warehouse.pre-restore-*.sqlite`. Dừng worker trước khi restore; GUI chỉ đọc snapshot nên có thể mở.
-- Không tự động GC dữ liệu chưa được verify; xoá object chỉ qua thao tác compact/GC có chủ đích.
+## Thống kê và tra cứu
 
-## Nhật ký và sự cố
+**Mức độ thu thập** hiển thị số đã lưu, tổng nguồn đã quan sát, số còn thiếu, tỷ lệ và số
+ngày đủ bằng chứng theo tháng/tuần/ngày. Tổng nguồn chưa đo đủ hoặc bị giới hạn 10.000
+không được coi là số chính xác. Bảng dùng dữ liệu hiển thị được công bố theo từng lượt,
+có thời điểm cập nhật; số lượng đạt 100% không thay thế bằng chứng thu thập đầy đủ.
 
-- Worker: `<data root>\logs\worker.log` (lỗi khởi tạo, lý do dừng).
-- GUI: `<data root>\logs\gui.log` (instance thứ hai bị từ chối).
-- Worker bị kill đột ngột → lần chạy sau đánh dấu run INTERRUPTED và re-queue job (RECOVERABLE).
-- Uninstall khi app đang mở: installer gửi tín hiệu đóng mềm và chờ cả GUI lẫn worker kết thúc;
-  nếu chạy silent automation, truyền `/CLOSEAPPLICATIONS`.
+Ngày thống kê theo từng loại phải khớp ngày nguồn dùng để lọc. Kết quả lựa chọn nhà thầu
+dùng ngày công bố kết quả, không cộng vào tháng công bố thông báo mời thầu. Tổng sáu loại
+là số hồ sơ thuộc sáu tập dữ liệu, không phải số gói thầu riêng biệt.
 
-## Lưu ý bảo mật
+**Tra cứu hồ sơ** có tìm kiếm tiếng Việt, bộ lọc, sắp xếp và phân trang. **Chi tiết hồ sơ**
+giữ dữ liệu gốc và lịch sử; trường thiếu được giữ là chưa biết. Thông tin HSMT, hàng hóa
+và tài liệu chỉ được coi là đã thu thập khi có dữ liệu và bằng chứng tương ứng.
 
-- Không nhập token/session của nguồn vào bất kỳ trường nào; ứng dụng không lưu credential.
-- Không mang file dữ liệu thật ra khỏi Data Root; repo không chứa dữ liệu thật.
-- A1 (token dashboard từng lộ) vẫn phải được thu hồi phía owner trước khi dùng bất kỳ dashboard nào.
+## Đo tổng nguồn có giới hạn
 
-## Các thao tác đã nối ở RC2
+`tools/measure_source_totals.py` mặc định chỉ in kế hoạch, không gửi yêu cầu mạng:
 
-- **Settings / Backup → Tạo backup**: collector tạo bản sao SQLite nhất quán với manifest raw,
-  lưu trong `<Data Root>/backups`. Tác vụ chạy ở process riêng, giao diện vẫn phản hồi.
-- **Khôi phục…**: nhập đường dẫn một backup Data Studio, xác nhận, và dừng worker trước. Kho đang
-  được writer giữ sẽ bị từ chối. GUI có thể mở vì chỉ đọc snapshot; bản backup cũ của warehouse được giữ.
-- **Kiểm tra dữ liệu**: kiểm hash/raw, SQLite integrity và khóa ngoại; xuất lại snapshot cho GUI.
-  Dừng worker trước thao tác này.
-- **Xuất CSV**: xuất các source record trong snapshot đang công bố, có source/family/version và
-  normalized JSON. Giá trị chưa biết để trống; ô có thể thành công thức được vô hiệu hóa.
-- **Bật lịch 08:00 / 20:00**: chỉ tạo từ thao tác này. Mỗi lần chạy tạo job INCREMENTAL cho family
-  có boundary rule được xác minh và nguồn được phép. Không có rule thì không tự thu thập nguồn.
-- Trong khi một tác vụ bảo trì chạy, ứng dụng yêu cầu chờ trước khi đổi Data Root hoặc đóng GUI.
-- Sau mỗi job, worker công bố snapshot. Trong lúc thu thập hoặc nếu công bố lỗi, GUI giữ dữ liệu
-  cũ và hiển thị trạng thái stale; không cần chạy script tạo snapshot bằng tay.
-- Khi cài đè/gỡ RC2, installer yêu cầu GUI và worker đóng mềm. Nếu quá thời gian chờ, installer
-  từ chối thay/xóa file; dừng collector từ màn Jobs rồi thử lại. Với bản spike cũ, hãy dừng worker
-  trước khi nâng cấp lần đầu.
+```powershell
+uv run --frozen python tools/measure_source_totals.py --data-root D:\Harvest\SanThauData --date-from 01/01/2022 --date-to 03/11/2026 --output D:\Harvest\reports\source-census.json
+```
 
-## Giới hạn bản dùng thử
+Chỉ sau khi owner duyệt hạn mức mới thêm `--approved-requests N --max-seconds S`. Bộ thu thập
+phải rảnh; công cụ từ chối chạy cùng một collector đang hoạt động. Nó đọc trang đầu,
+chia nhỏ khoảng bị giới hạn và không cộng chồng khoảng cha/con. Dùng `--resume` để đo tiếp
+báo cáo cùng phạm vi và quy tắc nguồn, với hạn mức được duyệt cho lần chạy tiếp theo.
+Kết quả là số nguồn báo tại các thời điểm đo, không tạo bằng chứng COMPLETE trong kho.
 
-Binary RC2 dùng để kiểm tra nội bộ tại máy. Chưa có chữ ký Authenticode hoặc nghiệm thu Windows
-sạch; quyết định phân phối Qt/PySide6 vẫn cần chủ sở hữu chốt. Deep live và các nguồn cần session
-vẫn bị chặn. Khôi phục hỗ trợ backup Data Studio; không gọi đây là công cụ import kho harvester cũ.
+## Nhập dữ liệu, sao lưu và khôi phục
+
+Trong **Cài đặt và sao lưu**, chọn nhập kho harvester cũ, sao lưu, khôi phục hoặc xuất CSV.
+Import giữ nguồn gốc và lịch sử; dữ liệu legacy thiếu bằng chứng vẫn là chưa xác minh.
+Nhập lại cùng dữ liệu được kiểm tra chống trùng.
+
+Sao lưu gồm ảnh SQLite nhất quán, đối tượng gốc và manifest SHA256. Khôi phục kiểm tra trước
+khi thay kho; thiếu/hỏng đối tượng phải bị từ chối. Dừng bộ thu thập trước khi khôi phục
+hoặc kiểm tra/bảo trì dữ liệu. Không tự xóa dữ liệu gốc để làm sạch lỗi.
+
+Lịch hằng ngày được bật riêng trong Cài đặt; không tự được tạo chỉ vì mở ứng dụng.
+Nhật ký khởi tạo nằm trong `logs/worker.log` và `logs/gui.log` của kho dữ liệu.
+Sau khi tiến trình bị gián đoạn, lần khởi động tiếp theo dùng hàng đợi và bằng chứng
+đã lưu để khôi phục; không biến một lần chết tiến trình thành trạng thái hoàn tất.
+
+## Giới hạn
+
+Các nguồn và luồng chi tiết chưa xác minh phải tiếp tục bị chặn. Không giải CAPTCHA,
+không dùng token/session đã lộ, không coi kết quả giả lập là bằng chứng nguồn thật.
+Xem [tình trạng RC3](../RC3-FINAL-READINESS.md) trước khi nghiệm thu hoặc phân phối.

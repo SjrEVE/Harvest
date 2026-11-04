@@ -1,43 +1,50 @@
-# Săn Thầu Data Studio
+# Săn Thầu — Kho dữ liệu (RC3)
 
-Ứng dụng Windows để thu thập có kiểm chứng, lưu kho và tra cứu source record đấu thầu.
-Giao diện PySide6/QML; collector chạy process riêng; SQLite và raw store nằm trong Data Root người dùng chọn.
+Ứng dụng Windows để thu thập, kiểm chứng và tra cứu hồ sơ đấu thầu. Giao diện dùng
+PySide6/QML; bộ thu thập chạy riêng. SQLite và dữ liệu gốc được lưu trong thư mục
+dữ liệu do người dùng chọn, độc lập với thư mục cài chương trình.
 
-## Bản RC2 tại máy
+## Sử dụng
 
-Bộ cài: `build/inno/SanThau-Data-Studio-Setup-0.0.1-RC2.exe`.
-Chạy trực tiếp: `build/stage/SanThauDataStudio.exe` (giữ nguyên toàn bộ thư mục `stage`).
+1. Mở **Kho dữ liệu**, chọn thư mục lưu dữ liệu và áp dụng.
+2. Vào **Thu thập dữ liệu**, chọn khoảng ngày. Với **Tất cả 6 loại hồ sơ**, chọn
+   **Theo tuần — đủ 6 loại rồi chuyển tuần tiếp**. Mỗi đợt gồm 7 ngày tính từ ngày
+   bắt đầu, xử lý từ cũ đến mới; đợt cuối kết thúc đúng ngày đã chọn.
+3. Bấm **Bắt đầu thu thập**. Ngày đã đủ bằng chứng được bỏ qua; dữ liệu đang dở
+   được giữ lại nhưng có thể cần đọc lại một phần để đối chiếu. Khi chưa đủ sáu
+   loại, tác vụ không chuyển sang tuần tiếp theo.
+4. Xem **Mức độ thu thập** để đối chiếu số đã lưu, tổng nguồn, còn thiếu và số ngày
+   đủ bằng chứng theo tháng, tuần hoặc ngày. Tổng chưa đo đủ hiển thị **Chưa biết**.
+5. **Tra cứu hồ sơ**, **Chi tiết hồ sơ**, **Kiểm tra dữ liệu** và **Cài đặt và sao lưu**
+   cung cấp tìm kiếm, lịch sử, dữ liệu gốc, nhập kho harvester cũ, sao lưu và xuất CSV.
 
-1. Mở **Onboarding**, nhập Data Root và bấm **Dùng thư mục này**.
-2. Vào **Collection Jobs → Khởi động worker** để tạo/mở kho và serving snapshot.
-3. **Sources** hiển thị trạng thái nguồn và boundary rules. Nguồn chưa có bằng chứng vẫn bị chặn.
-4. **Data Explorer** tìm/tra cứu snapshot; **Settings / Backup** có backup, restore, verify, CSV và lịch.
-5. Đóng GUI vẫn để worker thu thập; dừng worker từ Jobs khi cần bảo trì/restore.
-
-Không có dữ liệu demo tự chèn trong bản chạy bình thường. RC2 hiện chưa ký số và chưa nghiệm thu trên
-Windows sạch; live canary/deep live, license phân phối và thu hồi token dashboard cũ là các điều kiện còn mở.
-Restore nhận backup Data Studio; import định dạng harvester cũ chưa triển khai.
+Đóng cửa sổ ứng dụng không dừng bộ thu thập. Dùng các nút tạm dừng, tiếp tục hoặc
+tắt bộ thu thập khi cần bảo trì. Cài đè cần đóng bộ thu thập an toàn trước khi thay tệp.
 
 ## Kiểm tra và build
 
-Python 3.12 và dependency đã pin trong `uv.lock`. Trên PowerShell:
+Cần Windows, Python 3.12, `uv`, bộ công cụ C++ phù hợp với Nuitka và Inno Setup 6.
+Thư viện được khóa trong `uv.lock`. Từ thư mục repository, dùng PowerShell:
 
 ```powershell
 $env:PYTHONUTF8='1'
+uv sync --frozen --group dev --group build
 uv run --frozen pytest -q -o addopts=''
-uv run --frozen ruff check src tests tools
 powershell -NoProfile -ExecutionPolicy Bypass -File packaging/nuitka/build_standalone.ps1
-& 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' /DStageDir=D:\Harvest\santhau-data-studio\build\stage packaging/inno/santhau-data-studio.iss
-uv run --frozen python tools/release_manifest.py installer --installer build/inno/SanThau-Data-Studio-Setup-0.0.1-RC2.exe
+& 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' "/DStageDir=$(Join-Path $PWD 'build\stage')" packaging/inno/santhau-data-studio.iss
+uv run --frozen python tools/release_manifest.py installer --installer build/inno/SanThau-Data-Studio-Setup-0.0.1-RC3.exe
 ```
 
-`SANTHAU_SCHEDULER_TEST=1` bật test tạo/xóa một task Windows thật. Suite còn lại sử dụng dữ liệu giả;
-không gọi VNEPS. Các công cụ benchmark/fixture trong `tools/` dành cho thư mục thử riêng, không trỏ
-vào kho đang dùng.
+Bộ cài được tạo ở `build/inno/`. `build/release-manifest.json` gắn hash của source,
+GUI, bộ thu thập và installer. Không dùng bản build dở hoặc manifest của revision khác.
 
-`build/source-manifest.json`, `build/stage/build-provenance.json` và `build/release-manifest.json`
-ghi SHA256 input/artifact. Build từ working tree được ghi đúng là dirty; không nhận nhầm binary đó
-là nội dung nguyên vẹn của commit nền.
+Bộ kiểm thử mặc định dùng dữ liệu giả lập, không gọi E-GP. Riêng kiểm tra tạo/xem/xóa
+lịch Windows cần bật `SANTHAU_SCHEDULER_TEST=1`. Các công cụ đo nguồn thật chỉ được
+chạy sau khi owner duyệt phạm vi và hạn mức; dừng khi gặp CAPTCHA, không dùng token đã lộ.
 
-Tình trạng nghiệm thu: [RC2-READINESS.md](RC2-READINESS.md).
-Hướng dẫn thao tác: [docs/operator-guide.md](docs/operator-guide.md).
+Hướng dẫn chi tiết: [Hướng dẫn sử dụng](docs/operator-guide.md).
+Tình trạng nghiệm thu và giới hạn: [RC3-FINAL-READINESS.md](RC3-FINAL-READINESS.md).
+Các báo cáo RC2/G0/G1 được giữ làm lịch sử, không thay thế kết quả RC3 hiện tại.
+
+Source repository không chứa kho thật, raw responses, bản sao lưu hoặc installer.
+Việc phân phối bộ cài vẫn cần xử lý chứng chỉ ký và lựa chọn giấy phép Qt/PySide6.

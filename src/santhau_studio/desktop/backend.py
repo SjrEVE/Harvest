@@ -242,7 +242,14 @@ class StudioBackend:
         if conn is not None:
             with closing(conn):
                 latest = {}
-                for row in conn.execute("SELECT job_id,lifecycle,status FROM runs ORDER BY started_at_utc DESC LIMIT 200"):
+                job_ids = sorted({entry["job_id"] for state in ("queued", "active", "done")
+                                  for entry in payload[state] if isinstance(entry.get("job_id"), str)})
+                # Weekly child runs are audit history, not queue entries. A global limit
+                # lets them hide the parent, including its eventual COMPLETED status.
+                for row in conn.execute(
+                    "SELECT job_id,lifecycle,status FROM runs"
+                    " WHERE job_id IN (SELECT value FROM json_each(?))"
+                    " ORDER BY started_at_utc DESC,rowid DESC", (json.dumps(job_ids),)):
                     latest.setdefault(row["job_id"], dict(row))
                 for state in ("queued", "active", "done"):
                     for entry in payload[state]:
