@@ -16,6 +16,12 @@ hai ngày đầu/cuối và **Theo tuần — đủ 6 loại rồi chuyển tu�
 cả hai ngày, theo giờ Việt Nam. Tuần ở đây là 7 ngày liên tiếp từ ngày bắt đầu, xử lý
 từ tuần mới nhất lùi dần về trước; tuần cuối có thể ngắn hơn 7 ngày và được xử lý đầu tiên.
 
+Nếu chọn đến hôm nay, bộ thu thập lấy dữ liệu hiện có của hôm nay cho cả sáu loại,
+giữ trạng thái chưa chốt đủ ngày rồi tiếp tục các ngày đã kết thúc. Hôm nay có thể
+còn phát sinh hồ sơ, nên tác vụ vẫn ghi Chưa đầy đủ cùng lý do rõ ràng; chạy cập nhật
+hoặc chạy lại sau khi hết ngày để đối chiếu và chốt bằng chứng. Lỗi mạng, CAPTCHA
+và giới hạn không được bỏ qua theo cơ chế này.
+
 Một tác vụ tự xử lý sáu loại trong từng tuần. Ngày đã được xác nhận đủ bằng chứng được
 bỏ qua. Chạm giới hạn thời gian hoặc số yêu cầu mà vẫn hoàn thành thêm khoảng thời gian
 thì tác vụ tiếp tục phần thiếu trong cùng tuần. Nếu nguồn bị chặn, có lỗi chưa xử lý được

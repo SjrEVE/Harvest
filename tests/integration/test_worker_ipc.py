@@ -297,7 +297,7 @@ def poll(query, timeout: float = 30.0):
 def test_ping_roundtrip_over_named_pipe(harness) -> None:
     client = harness.connect()
     try:
-        assert client.request({"op": "ping"}) == {"ok": True, "worker": True, "capabilities": ["weekly-six-newest-v2"]}
+        assert client.request({"op": "ping"}) == {"ok": True, "worker": True, "capabilities": ["weekly-six-open-day-v3"]}
     finally:
         client.close()
 

@@ -43,7 +43,7 @@ jobs:
             tests/integration/test_migrations.py tests/integration/test_http_lane.py \
             tests/integration/test_egp_lane.py tests/integration/test_egp_date_wire.py \
             tests/integration/test_data_root_lock.py tests/integration/test_host_gate.py \
-            tests/integration/test_headless_worker.py tests/integration/test_linux_cli.py \
+            tests/integration/test_headless_worker.py tests/integration/test_weekly_open_day.py tests/integration/test_linux_cli.py \
             tests/integration/test_linux_control.py tests/integration/test_live_worker_builder.py \
             tests/integration/test_backup_restore.py tests/integration/test_fault_injection.py
       - name: Build standalone collector and packages

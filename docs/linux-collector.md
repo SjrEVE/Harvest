@@ -45,6 +45,11 @@ từng đợt 7 ngày từ ngày bắt đầu, ưu tiên đợt mới nhất r�
 trong tuần hiện tại mới lùi tuần. Đợt cuối có thể ngắn hơn 7 ngày. Ngày đã có bằng
 chứng đầy đủ sẽ được bỏ qua. Phần đang dở được giữ nhưng có thể cần đọc lại để đối chiếu.
 
+Nếu chọn đến hôm nay, lấy dữ liệu hiện có của hôm nay cho cả sáu loại rồi tiếp tục
+các ngày đã kết thúc. Hôm nay giữ trạng thái chưa đầy đủ vì còn phát sinh hồ sơ;
+chạy cập nhật hoặc chạy lại sau khi hết ngày để chốt bằng chứng. Tình trạng này
+không bị nhầm thành lỗi mạng hay nguồn chặn truy cập.
+
 Giới hạn mỗi lượt: 1.000 trang, 3.000 yêu cầu, 3.600 giây; giãn cách ít nhất 3 giây và
 chia sẻ giới hạn theo host. Có thể đặt `--max-pages`, `--max-requests`, `--max-seconds`
 và `--pacing-seconds` lúc enqueue. Khi chạm giới hạn và vẫn có tiến triển, tác vụ tuần
