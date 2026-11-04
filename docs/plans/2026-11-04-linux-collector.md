@@ -32,3 +32,4 @@
 
 - Base: aeca6a5d63d2e8212df7be99e0a87125f2803911; isolated worktree D:/Harvest/santhau-linux, branch codex/linux-collector.
 - Native worktree registration cannot attach this nested repo; Git worktree is used explicitly. Docker CLI is not usable; GitHub-hosted Ubuntu is the test environment.
+- 07175d6: CLI/runtime/package implementation pushed to feature branch for Linux CI. Windows full regression: 636 PASS, 6 platform/opt-in skips. First Linux run 41790992706: 410 PASS, 9 FAIL; eight failures share missing executable bit on the existing secret hook, one tests Windows-specific open-file rename semantics. Corrective test verifies the production writer lock on either OS; do not weaken the guard.
