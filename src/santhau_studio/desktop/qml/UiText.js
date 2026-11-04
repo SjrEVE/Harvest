@@ -140,7 +140,8 @@ function vietnamDay(offset) {
 function collectionResult(value) {
     var jobs = value.jobs || [], blocked = value.blocked || [];
     var lines = [];
-    if (jobs.length) lines.push("Đã xếp hàng " + jobs.length + "/" + (value.requested_families || jobs.length)
+    if (jobs.length && value.cadence === "WEEK") lines.push("Đã xếp hàng thu thập theo tuần, đủ 6 loại mỗi tuần. Ngày đã có bằng chứng đầy đủ sẽ được bỏ qua.");
+    else if (jobs.length) lines.push("Đã xếp hàng " + jobs.length + "/" + (value.requested_families || jobs.length)
         + " loại: " + jobs.map(function(j) {return family(j.family)}).join(", ") + ".");
     if (value.worker_started) lines.push("Bộ thu thập xử lý lần lượt. Theo dõi tiến độ bên dưới.");
     if (value.error) lines.push(message(value.error));

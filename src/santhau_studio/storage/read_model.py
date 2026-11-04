@@ -95,7 +95,8 @@ def materialise_records(conn: sqlite3.Connection, raw_root=None) -> None:
       record_id INTEGER PRIMARY KEY, source_key TEXT, family TEXT, natural_key TEXT,
       version_state TEXT,version_raw TEXT,title_display TEXT,investor_display TEXT,
       last_seen_at_utc TEXT,published_date TEXT,province TEXT,tax_id TEXT,procurement_type TEXT,
-      bid_price REAL,award_price REAL,currency TEXT,title_sort TEXT,investor_sort TEXT,province_fold TEXT)""")
+      bid_price REAL,award_price REAL,currency TEXT,title_sort TEXT,investor_sort TEXT,province_fold TEXT,
+      collection_date TEXT)""")
     cursor = conn.execute("SELECT r.id,r.source_key,r.family,r.natural_key,r.version_state,r.version_raw,r.last_seen_at_utc,v.normalized_json,r.current_record_object_sha"
                           " FROM source_records r LEFT JOIN source_record_versions v ON v.source_record_id=r.id"
                           " AND v.content_version_seq=r.current_content_version ORDER BY r.id")
@@ -119,8 +120,9 @@ def materialise_records(conn: sqlite3.Connection, raw_root=None) -> None:
                 _amount(_first(f, "bidPrice", "investTotal")),
                 _amount(_first(f, "bidWinningPrice", "ctPriceAfter")),
                 _first_scalar(f, "currency", "currencyCode", "bidPriceUnit", "investTotalUnit"), fold_vietnamese(title), fold_vietnamese(investor),
-                provinces[0][1] if len(provinces) == 1 else None))
-        conn.executemany("INSERT INTO record_fields VALUES(" + ",".join("?" * 19) + ")", output)
+                provinces[0][1] if len(provinces) == 1 else None,
+                _date(f.get("publicDateKqlcnt") if row[2] == "KQLCNT" else f.get("publicDate"))))
+        conn.executemany("INSERT INTO record_fields VALUES(" + ",".join("?" * 20) + ")", output)
         conn.executemany("INSERT INTO record_provinces VALUES(?,?,?,?)", locations)
     if store:
         store.close()
@@ -130,6 +132,7 @@ def materialise_records(conn: sqlite3.Connection, raw_root=None) -> None:
     for field in ("bid_price", "award_price"):
         conn.execute(f"CREATE INDEX ix_rf_{field} ON record_fields(COALESCE({field},-1),record_id)")
     conn.execute("CREATE INDEX ix_rf_family_seen ON record_fields(family,last_seen_at_utc,record_id)")
+    conn.execute("CREATE INDEX ix_rf_collection_date ON record_fields(source_key,collection_date,family)")
     conn.execute("ANALYZE record_fields")
     conn.execute("CREATE INDEX ix_rp_name ON record_provinces(province_fold,record_id)")
     conn.execute("CREATE INDEX ix_rp_code ON record_provinces(province_code,record_id)")

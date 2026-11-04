@@ -61,12 +61,12 @@ def choose(window, name, day):
     assert not popup.property("visible")
 
 
-@pytest.mark.parametrize(("family", "days", "expected_jobs"), [("TBMT", 3, 1), ("ALL", 1, 6), ("ALL", 1, 1)])
-def test_calendar_click_starts_real_worker_for_all_selected_days(tmp_path, monkeypatch, family, days, expected_jobs):
+@pytest.mark.parametrize(("family", "days", "expected_jobs", "weekly"), [("TBMT", 3, 1, False), ("ALL", 1, 6, False), ("ALL", 1, 1, False), ("ALL", 1, 1, True)])
+def test_calendar_click_starts_real_worker_for_all_selected_days(tmp_path, monkeypatch, family, days, expected_jobs, weekly):
     app = _qt_app()
     data = tmp_path / "native-calendar"
     initialize(data)
-    if family == "ALL" and expected_jobs == 1:
+    if family == "ALL" and expected_jobs == 1 and not weekly:
         with sqlite3.connect(data / "warehouse.sqlite") as conn:
             conn.execute("UPDATE filter_boundary_rules SET canary_verified=0 WHERE family!='TBMT'")
         build_serving_db(data / "warehouse.sqlite", data / "serving.sqlite")
@@ -86,6 +86,7 @@ def test_calendar_click_starts_real_worker_for_all_selected_days(tmp_path, monke
         window.requestActivate()
         QTest.qWait(350)
         selector = window.findChild(QObject, "collectionFamily")
+        window.findChild(QObject, "collectionCadence").setProperty("currentIndex", 0 if weekly else 1)
         if family == "TBMT":
             selector.setProperty("currentIndex", 1)
         assert selector.property("currentValue") == family
@@ -93,7 +94,7 @@ def test_calendar_click_starts_real_worker_for_all_selected_days(tmp_path, monke
         assert window.findChild(QObject, "collectionDateFrom").property("text") == "01/01/2022"
         click(window, window.findChild(QObject, "collectionYesterday"))
         assert window.findChild(QObject, "collectionDateFrom").property("text") == window.findChild(QObject, "collectionDateTo").property("text")
-        if family == "ALL" and expected_jobs == 1:
+        if family == "ALL" and expected_jobs == 1 and not weekly:
             selector.setProperty("currentIndex", 2)  # KHLCNT, deliberately unverified.
             click(window, window.findChild(QObject, "collectionStart"))
             page = window.findChild(QObject, "collectionPage")
@@ -128,11 +129,13 @@ def test_calendar_click_starts_real_worker_for_all_selected_days(tmp_path, monke
         page = window.findChild(QObject,"collectionPage")
         spin(app,lambda:not page.property("submitting"))
         assert "Đã xếp hàng" in page.property("enqueueResult"),page.property("enqueueResult")
-        if family == "ALL" and expected_jobs == 1:
+        if family == "ALL" and expected_jobs == 1 and not weekly:
             assert "1/6 loại" in page.property("enqueueResult")
             assert "nguồn chưa được xác minh" in page.property("enqueueResult")
         spin(app,lambda:len(list((data/"jobs/done").glob("*.json")))==expected_jobs,seconds=60)
         job = JobRequest.from_json(next((data/"jobs/done").glob("*.json")).read_text())
+        if weekly:
+            assert job.scope["cadence"] == "WEEK" and len(job.sources) == 6
         assert job.interval().duration == timedelta(days=days)
         assert job.interval().from_utc.astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).date()==first
         assert job.interval().to_utc.astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).date()==last+timedelta(days=1)
@@ -140,10 +143,11 @@ def test_calendar_click_starts_real_worker_for_all_selected_days(tmp_path, monke
             status = conn.execute("SELECT lifecycle,status FROM runs WHERE job_id=?",(job.job_id,)).fetchone()
             records = conn.execute("SELECT count(*) FROM source_records").fetchone()[0]
         assert status == ("FINISHED","COMPLETED"),status
-        assert records==36*days*expected_jobs,records
+        expected_families = 6 if weekly else expected_jobs
+        assert records==36*days*expected_families,records
         with sqlite3.connect(data/"warehouse.sqlite") as conn:
-            assert conn.execute("SELECT count(*) FROM runs WHERE lifecycle='FINISHED' AND status='COMPLETED'").fetchone()[0] == expected_jobs
-            assert conn.execute("SELECT count(DISTINCT family) FROM source_records").fetchone()[0] == expected_jobs
+            assert conn.execute("SELECT count(*) FROM runs WHERE lifecycle='FINISHED' AND status='COMPLETED'").fetchone()[0] == (7 if weekly else expected_jobs)
+            assert conn.execute("SELECT count(DISTINCT family) FROM source_records").fetchone()[0] == expected_families
         QMetaObject.invokeMethod(page, "reload")
         def ui_finished():
             state=page.property("state")
@@ -153,7 +157,7 @@ def test_calendar_click_starts_real_worker_for_all_selected_days(tmp_path, monke
         def coverage_finished():
             overview = page.property("overview")
             overview = overview.toVariant() if hasattr(overview, "toVariant") else overview
-            return sum(r["yesterday_status"] == "COMPLETE" for r in overview.get("families", [])) == expected_jobs
+            return sum(r["yesterday_status"] == "COMPLETE" for r in overview.get("families", [])) == expected_families
         spin(app, coverage_finished)
         # Switching to automatic must hide both dates rather than silently ignoring visible input.
         window.findChild(QObject,"collectionMode").setProperty("currentIndex",1)

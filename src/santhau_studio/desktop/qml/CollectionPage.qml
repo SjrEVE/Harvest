@@ -22,6 +22,7 @@ Item {
     function submit() {
         var request={job_kind:mode.currentValue,family:family.currentValue,
             request_limits:{max_pages:pages.value,max_requests:requests.value,max_seconds:seconds.value,pacing_seconds:pacing.value}}
+        if (mode.currentValue === "BACKFILL" && family.currentValue === "ALL") request.cadence=cadence.currentValue
         if (mode.currentValue === "INCREMENTAL") request.auto_range=true
         else {request.date_from=from.text;request.date_to=to.text}
         submitting=true; enqueueResult=""
@@ -55,6 +56,17 @@ Item {
                         DateField { id:from; objectName:"collectionDateFrom"; Layout.fillWidth:true; label:"Từ ngày"; text:"01/01/2022"; visible:mode.currentValue!=="INCREMENTAL" }
                         DateField { id:to; objectName:"collectionDateTo"; Layout.fillWidth:true; label:"Đến hết ngày"; text:T.vietnamDay(-1); visible:mode.currentValue!=="INCREMENTAL" }
                     }
+                    RowLayout {
+                        visible:mode.currentValue==="BACKFILL" && family.currentValue==="ALL"
+                        Layout.fillWidth:true
+                        Label { text:"Chia đợt";color:"#526477" }
+                        StudioComboBox {
+                            id:cadence;objectName:"collectionCadence";Layout.fillWidth:true
+                            textRole:"label";valueRole:"value"
+                            model:[{label:"Theo tuần — đủ 6 loại rồi chuyển tuần tiếp",value:"WEEK"},{label:"Theo từng loại — toàn bộ khoảng ngày",value:"RANGE"}]
+                            Accessible.name:"Chọn thu thập theo tuần hoặc theo từng loại"
+                        }
+                    }
                     Flow {
                         Layout.fillWidth:true; spacing:8; visible:mode.currentValue!=="INCREMENTAL"
                         StudioButton { objectName:"collectionSince2022"; text:"Từ năm 2022"; onClicked:page.preset("01/01/2022",T.vietnamDay(-1)) }
@@ -79,7 +91,9 @@ Item {
                         Label { text:"Giãn cách (giây)"; color:"#526477" }
                         StudioSpinBox { id:pacing;from:3;to:300;value:3;editable:true;Accessible.name:"Khoảng cách giữa hai yêu cầu, tính bằng giây" }
                     }
-                    Label { Layout.fillWidth:true;wrapMode:Text.Wrap;color:"#526477";text:"Mỗi loại tối đa "+Math.round(seconds.value/60)+" phút / "+requests.value+" yêu cầu mỗi lượt. Chạm giới hạn sẽ ghi Chưa đầy đủ; chạy lại cùng khoảng ngày để lấy tiếp phần thiếu." }
+                    Label { Layout.fillWidth:true;wrapMode:Text.Wrap;color:"#526477";text:mode.currentValue==="BACKFILL" && family.currentValue==="ALL" && cadence.currentValue==="WEEK"
+                        ? "Mỗi tuần gồm 7 ngày từ ngày bắt đầu, xử lý từ cũ đến mới. Đủ cả 6 loại mới chuyển tuần; ngày đã có bằng chứng đầy đủ được bỏ qua. Mỗi lượt tối đa "+Math.round(seconds.value/60)+" phút / "+requests.value+" yêu cầu: nếu đã hoàn thành thêm ngày, tự lấy tiếp phần thiếu trong cùng tuần. Bị chặn hoặc không tiến triển thì dừng và báo rõ."
+                        : "Mỗi loại tối đa "+Math.round(seconds.value/60)+" phút / "+requests.value+" yêu cầu mỗi lượt. Chạm giới hạn sẽ ghi Chưa đầy đủ; chạy lại cùng khoảng ngày để lấy tiếp phần thiếu." }
                     Label { objectName:"collectionResult"; visible:!!page.enqueueResult; Layout.fillWidth:true;wrapMode:Text.Wrap;text:page.enqueueResult;color:"#965a08" }
                     Label { visible:!!page.state.collection_blocked_reason; Layout.fillWidth:true;wrapMode:Text.Wrap;text:page.state.collection_blocked_reason||"";color:"#b42336" }
                     StudioButton { visible:!!page.state.collection_blocked_reason; text:"Chọn kho dữ liệu thật"; onClicked:page.selectDataRootRequested() }
@@ -91,7 +105,7 @@ Item {
             }
             Label {
                 Layout.fillWidth:true;wrapMode:Text.Wrap;color:"#087f75"
-                text:{var s=page.state.active_status||{};var runs=s.runs||[];var last=runs.length?runs[runs.length-1]:{};var p=s.progress||{};return s.job_id ? T.label(last.lifecycle)+" · "+T.label(last.status)+(p.family ? " · "+T.family(p.family)+" · "+p.rows+" dòng · "+p.pages+" trang" : "") : "Chưa có tác vụ đang chạy."}
+                text:{var s=page.state.active_status||{};var runs=s.runs||[];var last=runs.length?runs[runs.length-1]:{};var p=s.progress||{};return s.job_id ? T.label(last.lifecycle)+" · "+T.label(last.status)+(p.week_index ? " · Tuần "+p.week_index+"/"+p.week_count+" · "+T.collectionSpan(p.week_from,p.week_to,"BACKFILL")+" · Loại "+p.family_index+"/6" : "")+(p.family ? " · "+T.family(p.family)+" · "+p.rows+" dòng · "+p.pages+" trang" : "") : "Chưa có tác vụ đang chạy."}
             }
             StudioComboBox {
                 id:target;objectName:"collectionTarget";Layout.fillWidth:true
@@ -101,6 +115,10 @@ Item {
                 Accessible.name:"Chọn tác vụ để tạm dừng, tiếp tục hoặc dừng"
                 onActivated:page.selectedJobId=currentValue
                 onModelChanged:{var at=model.findIndex(function(j){return j.value===page.selectedJobId});if(at>=0)currentIndex=at}
+            }
+            Label {
+                Layout.fillWidth:true;wrapMode:Text.Wrap;color:"#965a08";visible:!!text
+                text:{var runs=(page.state.active_status||{}).runs||[];var tasks=runs.length?runs[runs.length-1].tasks||[]:[];var detail=tasks.length?tasks[tasks.length-1].detail||{}:{};return detail.reason?T.message(detail.reason):""}
             }
             Flow {
                 Layout.fillWidth:true; spacing:8
@@ -118,7 +136,7 @@ Item {
                     Layout.fillWidth:true;implicitHeight:60;color:"#ffffff";radius:5
                     RowLayout {
                         anchors.fill:parent;anchors.margins:12;spacing:16
-                        Label { text:(modelData.families||[]).map(T.familyShort).join(", ");Layout.preferredWidth:120;font.weight:Font.DemiBold;color:"#172b3a" }
+                        Label { text:(modelData.scope||{}).cadence==="WEEK"?"Theo tuần · 6 loại":(modelData.families||[]).map(T.familyShort).join(", ");Layout.preferredWidth:120;font.weight:Font.DemiBold;color:"#172b3a" }
                         ColumnLayout {
                             Layout.fillWidth:true;spacing:3
                             Label { Layout.fillWidth:true;elide:Text.ElideRight;text:T.collectionSpan((modelData.scope||{}).from,(modelData.scope||{}).to,modelData.job_kind);color:"#172b3a" }

@@ -400,7 +400,10 @@ class Runner:
             (f"coverage:evidence:{outcome.interval_id}",
              _json({"interval_id":outcome.interval_id,"family":self.family,"from":_iso(outcome.interval.from_utc),
                     "to":_iso(outcome.interval.to_utc),"granularity":outcome.granularity,"blockers":blockers,
-                    "pages":outcome.pages,"rows":outcome.rows,"requests":outcome.requests}), _iso(self.clock())))
+                    "pages":outcome.pages,"rows":outcome.rows,"requests":outcome.requests,
+                    "source_key":self.source_key,"query_contract":query_contract_for(self.family),
+                    "total_first":outcome.total_first,"total_last":outcome.total_last,
+                    "total_trusted":outcome.total_trusted,"measured_at":_iso(checked_at)}), _iso(self.clock())))
         self.conn.commit()
         outcome.blockers = tuple(blockers)
         if outcome.status != "INTERRUPTED":

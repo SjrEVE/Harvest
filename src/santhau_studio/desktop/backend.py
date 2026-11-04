@@ -188,7 +188,9 @@ class StudioBackend:
             try:
                 client = PipeClient.connect(worker_pipe_name(data_root=self.data_root), timeout_seconds=0.5)
                 try:
-                    payload["pipe_ok"] = bool(client.request({"op": "ping"}).get("ok"))
+                    reply = client.request({"op": "ping"})
+                    payload["pipe_ok"] = bool(reply.get("ok"))
+                    payload["capabilities"] = reply.get("capabilities", [])
                 finally:
                     client.close()
             except (PipeTransportError, PipeClosedError, OSError, json.JSONDecodeError) as exc:
@@ -276,6 +278,16 @@ class StudioBackend:
             if family not in (*FAMILY_ORDER, "ALL"):
                 return {"ok": False, "error_code": "FAMILY_INVALID", "error": "Hãy chọn loại hồ sơ cần thu thập."}
             scope = collection_scope(payload, kind)
+            weekly = payload.get("cadence") == "WEEK"
+            if weekly:
+                if kind != "BACKFILL" or family != "ALL":
+                    return {"ok": False, "error": "Thu thập theo tuần cần chọn khoảng ngày và tất cả sáu loại hồ sơ."}
+                from santhau_studio.workers.weekly import CAPABILITY
+                worker = self.worker_status()
+                if worker.get("running") and CAPABILITY not in worker.get("capabilities", []):
+                    return {"ok": False, "error_code": "WORKER_UPGRADE_REQUIRED",
+                            "error": "Bộ thu thập cũ vẫn đang chạy. Chờ lượt hiện tại kết thúc rồi mở bản mới để dùng chế độ theo tuần; dữ liệu đã lưu được giữ nguyên."}
+                scope["cadence"] = "WEEK"
             blocker = self._collection_blocker()
             if blocker:
                 return {"ok": False, "error_code": "SYNTHETIC_ROOT", "error": blocker}
@@ -303,11 +315,15 @@ class StudioBackend:
                     sources=({**rule, "family": selected},)))
             if not planned:
                 return {"ok": False, **blocked[0], "blocked": blocked, "jobs": []}
+            if weekly:
+                if blocked:
+                    return {"ok": False, **blocked[0], "blocked": blocked, "jobs": []}
+                planned = [replace(template, sources=tuple(j.sources[0] for j in planned))]
             jobs = []
             for request in planned:
                 try:
                     path = enqueue_job(self.data_root, request)
-                    jobs.append({"family": request.sources[0]["family"], "job_id": request.job_id, "queued_as": path.name})
+                    jobs.append({"family": "ALL" if weekly else request.sources[0]["family"], "job_id": request.job_id, "queued_as": path.name})
                 except OSError:
                     blocked.append({"family": request.sources[0]["family"], "status": "FAILED",
                                     "error_code": "QUEUE_WRITE_FAILED",
@@ -319,7 +335,8 @@ class StudioBackend:
         if not jobs:
             return {"ok": False, **blocked[0], "blocked": blocked, "jobs": []}
         return {"ok": True, **jobs[0], "status": "PARTIAL" if blocked else "QUEUED",
-                "jobs": jobs, "blocked": blocked, "requested_families": 6 if family == "ALL" else 1}
+                "jobs": jobs, "blocked": blocked, "requested_families": 6 if family == "ALL" else 1,
+                "cadence": "WEEK" if weekly else "RANGE"}
 
     def collection_overview(self) -> dict[str, Any]:
         from santhau_studio.desktop.collection import overview
@@ -350,7 +367,7 @@ class StudioBackend:
             log = self.data_root / "logs/collection-last-result.json"
             log.parent.mkdir(parents=True, exist_ok=True)
             log.write_text(json.dumps({"at": _now(), "input": {key: payload.get(key)
-                for key in ("family", "job_kind", "date_from", "date_to", "auto_range")},
+                for key in ("family", "job_kind", "date_from", "date_to", "auto_range", "cadence")},
                 "result": result}, ensure_ascii=False, indent=2), encoding="utf-8")
         except OSError:
             pass

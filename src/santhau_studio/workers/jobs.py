@@ -343,6 +343,7 @@ class WorkerLoop:
         self._paused_job: str | None = None
         self._paused_jobs: set[str] = set()
         self.progress = {}
+        self._weekly_progress = {}
 
     # -- called from the IPC thread
     def post_command(self, *, job_id: str | None, command: str, sid: str) -> None:
@@ -395,7 +396,7 @@ class WorkerLoop:
             self._writer.store.recover(self._writer.conn)
             if self._scheduled:
                 self._enqueue_scheduled()
-            if not (self.data_root / "serving.sqlite").exists() or (self.data_root / "serving.stale.json").exists():
+            if self._snapshot_needs_refresh():
                 self._publish_snapshot()
             self._idle_since = time.monotonic()
             while True:
@@ -453,6 +454,16 @@ class WorkerLoop:
         except (OSError, sqlite3.Error) as exc:
             self.last_error = f"Snapshot publish failed: {exc}"
 
+    def _snapshot_needs_refresh(self) -> bool:
+        path = self.data_root / "serving.sqlite"
+        if not path.exists() or (self.data_root / "serving.stale.json").exists():
+            return True
+        try:
+            with contextlib.closing(connect_read_only(path)) as conn:
+                return "collection_date" not in {r[1] for r in conn.execute("PRAGMA table_info(record_fields)")}
+        except sqlite3.Error:
+            return True
+
     def _execute(self, request: JobRequest) -> None:
         writer = self._writer
         if writer is None:  # pragma: no cover - run() owns the writer
@@ -489,6 +500,9 @@ class WorkerLoop:
 
     def _dispatch(self, request: JobRequest, run_id: str) -> tuple[str, dict[str, Any]]:
         """Run the job kind; return the run_tasks status and its detail summary."""
+        if request.scope.get("cadence") == "WEEK":
+            from santhau_studio.workers.weekly import dispatch
+            return dispatch(self, request, run_id)
         kind = request.job_kind
         if kind not in ("BACKFILL", "INCREMENTAL", "RECONCILE", *LANE_KINDS):
             return "BLOCKED", {"reason": f"KIND_{kind}_NOT_DISPATCHABLE"}
@@ -539,7 +553,7 @@ class WorkerLoop:
             max_pages=request.request_limits.get("max_pages", 10000),
             max_records=request.request_limits.get("max_records", 1000000))
         runner = Runner(
-            writer=self._writer, limits=limits, progress=lambda value: setattr(self, "progress", {"job_id":request.job_id, **value}),
+            writer=self._writer, limits=limits, progress=lambda value: setattr(self, "progress", {"job_id":request.job_id, **value, **self._weekly_progress}),
             source_key=str(source["source_key"]),
             family=str(source["family"]),
             endpoint=endpoint,
@@ -559,7 +573,8 @@ class WorkerLoop:
         counts: dict[str, int] = {}
         for leaf in leaves:
             counts[leaf.status] = counts.get(leaf.status, 0) + 1
-        detail = {"intervals": len(leaves), "status_counts": counts, "rows": sum(o.rows for o in leaves)}
+        detail = {"intervals": len(leaves), "status_counts": counts, "rows": sum(o.rows for o in leaves),
+                  "blockers": sorted({b for o in leaves for b in o.blockers})}
         return _judge(leaves), detail
 
     # -- commands
@@ -615,7 +630,8 @@ class WorkerController:
     def __call__(self, payload: dict, sid: str) -> dict:
         op = payload.get("op")
         if op == "ping":
-            return {"ok": True, "worker": True}
+            from santhau_studio.workers.weekly import CAPABILITY
+            return {"ok": True, "worker": True, "capabilities": [CAPABILITY]}
         if op == "status":
             job_id = payload.get("job_id")
             if not isinstance(job_id, str) or not job_id:
