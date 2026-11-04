@@ -1,0 +1,91 @@
+{
+  "status": "PASS",
+  "scope": "Windows RC3 build evidence at source commit 1e65962 (build 04/11 17:12-17:14 +0700)",
+  "verified_by": "Hermes (thay Codex bi usage_limit_exceeded luc 17:26 +0700)",
+  "captured_at_utc": "2026-11-04T11:08:27.328235+00:00",
+  "source_commit": "1e659620adf3b080dcc816a8dd0de919ec07671b",
+  "head_commit_at_verification": "3eb0f6a102bca38c61eeb8160556224f8a2ee31d",
+  "source_commit_is_ancestor_of_head": true,
+  "working_tree_clean_at_verification": true,
+  "source_inputs_checked": 127,
+  "source_inputs_mismatch": [],
+  "artifacts": {
+    "SanThauCollector.exe": {
+      "sha256": "63728d9061da0e9e228da8e8ceef526bcd0861058b236c7d0084b6c406c7fb1b",
+      "bytes": 18321920,
+      "path": "build/stage/SanThauCollector.exe"
+    },
+    "SanThau-Data-Studio-Setup-0.0.1-RC3.exe": {
+      "sha256": "db5757f21f424c37d90c8a175c3fecf5dfd84e843a9bfd10339053b99d9c97ea",
+      "bytes": 49372976,
+      "path": "build/inno/SanThau-Data-Studio-Setup-0.0.1-RC3.exe"
+    }
+  },
+  "checksum_file": "SHA256SUMS",
+  "checksum_verification": "2 OK (doi chieu bang SHA256SUMS, 2 artifact nam khac thu muc)",
+  "tests": {
+    "tests": "637",
+    "passed": "636",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "1",
+    "time_seconds": "196.777",
+    "command": ".venv/Scripts/python.exe -m pytest -ra --junitxml=build/RC3-final-1e65962/tests.xml",
+    "junit": "tests.xml",
+    "skip_reason": "tests/integration/test_scheduler.py:67 writes a real scheduled task; SANTHAU_SCHEDULER_TEST=1"
+  },
+  "lint": "ruff check src tests tools -> All checks passed",
+  "previous_installed_build": {
+    "commit": "ac20d595370c8b46698e3dbc7eb5422345669c0b",
+    "installer_sha256": "db6a4e106009f00e112048feeced870d5f5f1c439d6b66a9bdd30622b01dbfff",
+    "installer_bytes": 49338148,
+    "evidence": "build/RC3-final/SHA256SUMS.txt + RC3-FINAL-READINESS.md",
+    "rollback_evidence_retained": true
+  },
+  "data_root_snapshot": {
+    "mode": "READ_ONLY (sqlite mode=ro; khong ghi, khong resume, khong xoa writer.lock)",
+    "source_records": 70234,
+    "coverage_intervals": 734,
+    "coverage_complete": 145,
+    "coverage_partial": 589,
+    "coverage_proofs": 145,
+    "fetch_requests": 7148,
+    "runs": 71,
+    "paused_job": "job-cef1bf50a525 / run-36aa3e15dc134983bea9fbc0b20fe919, lifecycle=PAUSED (warehouse.sqlite job_commands PAUSE 09:54:49Z)",
+    "week_2026_10_29_to_2026_11_03_partial_or_missing": {
+      "TBMT": "3 COMPLETE + 8 PARTIAL",
+      "KQLCNT": "1 COMPLETE (7 ngay chua co)",
+      "KHLCNT": "5 COMPLETE + 1 PARTIAL",
+      "YCBG": "1 COMPLETE (7 ngay chua co)",
+      "DU_AN": "8 COMPLETE",
+      "HOP_DONG": "8 COMPLETE"
+    },
+    "source_registry": {
+      "egp_home": "ALLOWED_AND_VERIFIED",
+      "egp_v2": "NEEDS_USER_SESSION",
+      "moh_quotes": "DISABLED",
+      "mof_quotes": "DISABLED"
+    },
+    "writer_lock": {
+      "pid": 16192,
+      "machine": "SjrEVE",
+      "role": "worker"
+    },
+    "resume": "NOT_RUN"
+  },
+  "blocked": {
+    "install_over_running_app": "NOT_RUN - can dung app + backup Data Root; ban dang cai van la ac20d595",
+    "resume_week_collection": "NOT_RUN - writer.lock con, job PAUSED, can lenh owner",
+    "live_canary": "BLOCKED - owner approval + SANTHAU_CANARY_APPROVED (release-checklist.md §5)",
+    "authenticode": "BLOCKED - chung chi owner (§2)",
+    "qt_license": "BLOCKED - quyet dinh phap ly LGPL/commercial (§3)",
+    "clean_windows_vm": "NOT_TESTED",
+    "pr_merge_release": "NOT_RUN - dung lenh owner: chi push nhanh"
+  },
+  "claims_not_made": [
+    "Khong tu nhan da thay ban Windows dang cai",
+    "Khong tu nhan da caho E-GP that tuan 29/10-03/11",
+    "Khong tu nhan da ky so / chon license Qt / nghiem thu VM sach",
+    "Test xanh khong chung minh resume worker hoat dong sau khi thay ban"
+  ]
+}

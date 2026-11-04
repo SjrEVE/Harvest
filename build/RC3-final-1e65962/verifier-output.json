@@ -1,0 +1,25 @@
+{
+  "status": "PASS",
+  "base_commit": "1e659620adf3b080dcc816a8dd0de919ec07671b",
+  "manifest_working_tree_dirty": false,
+  "captured_at_utc": "2026-11-04T10:02:34.798884+00:00",
+  "inputs_checked": 127,
+  "inputs_mismatch": [],
+  "artifacts": [
+    {
+      "name": "SanThauCollector.exe",
+      "sha256": "63728d9061da0e9e228da8e8ceef526bcd0861058b236c7d0084b6c406c7fb1b",
+      "bytes": 18321920
+    },
+    {
+      "name": "SanThau-Data-Studio-Setup-0.0.1-RC3.exe",
+      "sha256": "db5757f21f424c37d90c8a175c3fecf5dfd84e843a9bfd10339053b99d9c97ea",
+      "bytes": 49372976
+    }
+  ],
+  "artifacts_missing": [],
+  "head_commit": "3eb0f6a102bca38c61eeb8160556224f8a2ee31d",
+  "source_commit_exists": true,
+  "source_commit_is_ancestor_of_head": true,
+  "working_tree_clean": true
+}
