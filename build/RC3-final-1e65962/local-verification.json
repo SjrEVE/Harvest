@@ -54,9 +54,9 @@
     "paused_job": "job-cef1bf50a525 / run-36aa3e15dc134983bea9fbc0b20fe919, lifecycle=PAUSED (warehouse.sqlite job_commands PAUSE 09:54:49Z)",
     "week_2026_10_29_to_2026_11_03_partial_or_missing": {
       "TBMT": "3 COMPLETE + 8 PARTIAL",
-      "KQLCNT": "1 COMPLETE (7 ngay chua co)",
+      "KQLCNT": "1 COMPLETE trong khung; khong co interval nao khac (khong dem ngay truc tiep)",
       "KHLCNT": "5 COMPLETE + 1 PARTIAL",
-      "YCBG": "1 COMPLETE (7 ngay chua co)",
+      "YCBG": "1 COMPLETE trong khung; khong co interval nao khac (khong dem ngay truc tiep)",
       "DU_AN": "8 COMPLETE",
       "HOP_DONG": "8 COMPLETE"
     },
@@ -82,6 +82,11 @@
     "clean_windows_vm": "NOT_TESTED",
     "pr_merge_release": "NOT_RUN - dung lenh owner: chi push nhanh"
   },
+  "evidence_caveats": [
+    "build/release-manifest.json ghi captured_at_utc=2026-11-04T10:02:34Z (17:02 +0700), nhung artifact build 17:12-17:14 va manifest co mtime 17:14: manifest duoc tai su dung tu snapshot truoc build. 127/127 input van khop hash voi source 1e65962. Verifier khong kiem tra lech timestamp nay.",
+    "Khong co GitHub Actions workflow nao chay cho codex/rc3-completion; 636 passed la ket qua pytest LOCAL, khong phai CI badge.",
+    "Thu muc build/ bi .gitignore; evidence duoc force-add, da bo sung negation de regenerate khong bi bo sot."
+  ],
   "claims_not_made": [
     "Khong tu nhan da thay ban Windows dang cai",
     "Khong tu nhan da caho E-GP that tuan 29/10-03/11",

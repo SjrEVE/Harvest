@@ -46,3 +46,11 @@ cd D:/Harvest/santhau-data-studio
 Thay bản đang cài, resume thu thập, canary E-GP thật, Authenticode,
 quyết định LGPL/commercial Qt, VM Windows sạch. Xem `docs/release-checklist.md` §2–§5
 và `local-verification.json` → key `blocked`.
+
+## Caveat khi đọc evidence
+
+- `release-manifest.json` ghi `captured_at_utc` 17:02 nhưng artifact build 17:12–17:14:
+  manifest tái dùng snapshot trước build. 127/127 input vẫn khớp hash nguồn `1e65962`.
+- 636 passed là **pytest local**; nhánh `codex/rc3-completion` không có workflow CI.
+- Evidence nằm trong `build/` (vốn bị ignore) nên đã được `git add -f`; `.gitignore`
+  đã bổ sung negation cho đúng thư mục này để lần regenerate sau không bị bỏ sót.
