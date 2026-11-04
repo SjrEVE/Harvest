@@ -88,7 +88,8 @@ def test_date_filter_is_only_sent_when_the_source_filter_is_verified() -> None:
                                                                                  "2026-10-02 00:00:00"))
     )
     assert verified["publicDate"]["searchType"] == "range"
-    assert verified["publicDate"]["from"] == "2026-10-01 00:00:00"
+    assert verified["publicDate"]["from"] == "2026-10-01T00:00:00"
+    assert verified["publicDate"]["to"] == "2026-10-02T00:00:00"
 
 
 def test_only_one_half_of_a_window_does_not_activate_the_filter() -> None:
