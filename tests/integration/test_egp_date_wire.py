@@ -31,6 +31,7 @@ def test_verified_calendar_window_uses_the_accepted_wire_format():
 
 def test_approved_canary_driver_uses_absolute_https_url(tmp_path,monkeypatch):
     import tools.canary as cli
+
     from santhau_studio.collectors import http_client
     seen=[]
     def handle(request):
