@@ -14,7 +14,7 @@ Kho thử nghiệm có cảnh báo rõ. Không dùng kho thử hoặc quy tắc 
 Trong **Thu thập dữ liệu**, chọn **Thu thập theo khoảng ngày**, **Tất cả 6 loại hồ sơ**,
 hai ngày đầu/cuối và **Theo tuần — đủ 6 loại rồi chuyển tuần tiếp**. Khoảng ngày bao gồm
 cả hai ngày, theo giờ Việt Nam. Tuần ở đây là 7 ngày liên tiếp từ ngày bắt đầu, xử lý
-từ cũ đến mới; tuần cuối có thể ngắn hơn 7 ngày.
+từ tuần mới nhất lùi dần về trước; tuần cuối có thể ngắn hơn 7 ngày và được xử lý đầu tiên.
 
 Một tác vụ tự xử lý sáu loại trong từng tuần. Ngày đã được xác nhận đủ bằng chứng được
 bỏ qua. Chạm giới hạn thời gian hoặc số yêu cầu mà vẫn hoàn thành thêm khoảng thời gian

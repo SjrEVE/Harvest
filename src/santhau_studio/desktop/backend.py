@@ -293,7 +293,7 @@ class StudioBackend:
                 worker = self.worker_status()
                 if worker.get("running") and CAPABILITY not in worker.get("capabilities", []):
                     return {"ok": False, "error_code": "WORKER_UPGRADE_REQUIRED",
-                            "error": "Bộ thu thập cũ vẫn đang chạy. Chờ lượt hiện tại kết thúc rồi mở bản mới để dùng chế độ theo tuần; dữ liệu đã lưu được giữ nguyên."}
+                            "error": "Bộ thu thập cũ vẫn đang chạy. Dừng tác vụ an toàn rồi mở bản mới để thu thập theo tuần từ mới về cũ; dữ liệu đã lưu được giữ nguyên."}
                 scope["cadence"] = "WEEK"
             blocker = self._collection_blocker()
             if blocker:
