@@ -1,5 +1,27 @@
 # Săn Thầu Collector RC3 — bản Linux chỉ thu thập
 
+## Bản vá mới nhất ngày 04/11/2026
+
+Thay thế gói ban đầu bên dưới: nguồn `fcd9a0cc33dcaebae3177d54c02c361d381fc831`,
+thư mục `D:/Harvest/releases/SanThau-Collector-RC3-Linux-fcd9a0c/`.
+Đã sửa ưu tiên tuần mới và lấy dữ liệu hôm nay cho đủ sáu loại mà không chặn phần lịch sử.
+Hôm nay vẫn PARTIAL cho đến khi có đủ bằng chứng sau khi ngày kết thúc.
+
+[CI 41836099431](https://github.com/SjrEVE/Harvest/actions/runs/41836099431):
+430 PASS, 1 skip Win32; cài/chạy/nâng cấp/gỡ ngoại tuyến trên Ubuntu 22.04 và 24.04 PASS.
+Đối chiếu tải về: 96 đầu vào nguồn và 693 tệp standalone khớp manifest.
+Một lượt CI trước hết thời gian chờ 15 giây ở fixture khôi phục; bài kiểm tra đã thêm
+chẩn đoán và thời gian chờ có giới hạn 45 giây cho hoàn tất 336 trang giả lập, đồng thời
+kiểm tra trạng thái COMPLETED, 672 records và 84 proofs. Không tăng thời gian chờ lệnh điều khiển.
+Các giới hạn live Linux/systemd reboot/ARM/Alpine của bản trước vẫn giữ nguyên.
+
+```text
+6c266a0d45a40b3591f420ffec7955a6893da66ce805ba7a20397191bd6a321e  santhau-collector_0.0.1~rc3_amd64.deb
+03bbaa83d64ca38f90d5d64ed081adf0c63a35193e5601ba6f95054afcd1a599  santhau-collector-0.0.1-RC3-linux-x86_64.tar.gz
+```
+
+## Hồ sơ bản đóng gói ban đầu (lịch sử)
+
 Ngày nghiệm thu: 04/11/2026. **Đạt nghiệm thu ngoại tuyến trên Linux x86-64. Chưa nghiệm thu gọi nguồn E-GP thật từ Linux.**
 
 Bản này giữ thu thập sáu loại theo tuần, cập nhật và đối chiếu, dữ liệu gốc, lịch sử,
