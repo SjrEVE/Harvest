@@ -31,20 +31,37 @@ def output(value):
     print(json.dumps(value, ensure_ascii=False, default=str), flush=True)
 
 
-def run_worker(root, *, offline=False, idle_exit=None):
-    if not sys.platform.startswith("linux"):
-        raise ValueError("Dịch vụ nền này chỉ dành cho Linux.")
-    from santhau_studio.linux import control, fixture
+def make_loop(root, *, offline=False, idle_exit=None):
+    from santhau_studio.collectors.cgttrg import public_spec
+    from santhau_studio.collectors.public_deep import PublicDeepFetcher
+    from santhau_studio.linux import fixture
 
     if offline and not fixture.enabled(root):
         raise ValueError("Kho thử không hợp lệ; từ chối chạy.")
-    loop = WorkerLoop(
+    if not offline and (root / "warehouse.sqlite").exists():
+        with closing(connect_read_only(root / "warehouse.sqlite")) as conn:
+            row = conn.execute("SELECT value_json FROM settings WHERE key='evidence_class'").fetchone()
+        if row and json.loads(row[0]).get("class") == fixture.PROFILE:
+            raise ValueError("Kho synthetic chỉ chạy với --offline-test; không gọi nguồn thật.")
+    if offline:
+        from santhau_studio.linux.deep_fixture import OfflineDeepFetcher
+    return WorkerLoop(
         root,
         page_source_builder=fixture.builder if offline else live_builder,
         idle_exit_seconds=idle_exit,
         publish_serving=False,
         resume_on_shutdown=True,
+        deep_factory=OfflineDeepFetcher if offline else PublicDeepFetcher,
+        deep_specs=public_spec,
     )
+
+
+def run_worker(root, *, offline=False, idle_exit=None):
+    if not sys.platform.startswith("linux"):
+        raise ValueError("Dịch vụ nền này chỉ dành cho Linux.")
+    from santhau_studio.linux import control
+
+    loop = make_loop(root, offline=offline, idle_exit=idle_exit)
     controller = WorkerController(loop)
 
     def handle(payload, uid):
@@ -181,7 +198,7 @@ def parser():
         prog="santhau-collector",
         description="Bộ thu thập Linux: sáu loại, theo tuần, không giao diện/thống kê.",
     )
-    cli.add_argument("--version", action="version", version="Săn Thầu Collector 0.0.1-RC3-2 (Linux x86-64)")
+    cli.add_argument("--version", action="version", version="Săn Thầu Collector 0.0.1-RC3-3 (Linux x86-64)")
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "--data-root",
@@ -197,6 +214,13 @@ def parser():
     )
     init.add_argument("--source-profile", type=Path)
     init.add_argument("--no-profile", action="store_true")
+    deep = sub.add_parser("deep-config", parents=[common], help="Bật/tắt chạy bù CGTTRG; dừng worker trước khi đổi")
+    choice = deep.add_mutually_exclusive_group(required=True)
+    choice.add_argument("--enable", action="store_true")
+    choice.add_argument("--disable", action="store_true")
+    deep.add_argument("--batch-requests", type=int, default=30)
+    sub.add_parser("deep-status", parents=[common], help="Đọc checkpoint và lỗi thu thập chi tiết")
+    sub.add_parser("self-test-deep", parents=[common], help="Thử deep collector ngoại tuyến trên thư mục mới")
     enqueue = sub.add_parser(
         "enqueue", parents=[common], help="Xếp hàng; tất cả sáu loại mặc định chia theo tuần"
     )
@@ -234,6 +258,18 @@ def main(argv=None):
         os.umask(0o077)
     root = args.data_root.expanduser().resolve()
     try:
+        if args.command == "deep-config":
+            from santhau_studio.linux.deep import configure_deep
+            output(configure_deep(root, enabled=args.enable, batch_requests=args.batch_requests))
+            return 0
+        if args.command == "deep-status":
+            from santhau_studio.linux.deep import deep_status
+            output(deep_status(root))
+            return 0
+        if args.command == "self-test-deep":
+            from santhau_studio.linux.deep_fixture import self_test as deep_self_test
+            output(deep_self_test(root))
+            return 0
         if args.command == "init":
             initialize(
                 root,

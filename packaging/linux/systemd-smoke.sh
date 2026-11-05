@@ -19,7 +19,7 @@ cleanup() {
     systemctl --user daemon-reload || true
 }
 trap cleanup EXIT INT TERM
-santhau-collector self-test --data-root "$work/data"
+santhau-collector self-test-deep --data-root "$work/data"
 cat > "$dropin/99-ci-offline.conf" <<EOF
 [Service]
 ExecStart=
@@ -35,6 +35,8 @@ for attempt in 1 2 3 4 5 6 7 8 9 10; do
 done
 cat "$work/status.json"
 grep -q '"phase": "IDLE"' "$work/status.json"
+santhau-collector deep-status --data-root "$work/data" > "$work/deep.json"
+grep -q '"FETCHED": 9' "$work/deep.json"
 systemctl --user is-active santhau-collector.service
 systemctl --user is-enabled santhau-collector.service
 systemctl --user restart santhau-collector.service

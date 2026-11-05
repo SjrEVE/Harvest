@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -87,7 +88,6 @@ def test_capture_rerun_refresh_cross_lane_and_unallotted_storage(tmp_path):
 
     from test_deep_run import seed_records
 
-    from santhau_studio.desktop.backend import StudioBackend
     from santhau_studio.storage.deep import record_deep_capture
     from santhau_studio.storage.serving import build_serving_db
 
@@ -139,6 +139,9 @@ def test_capture_rerun_refresh_cross_lane_and_unallotted_storage(tmp_path):
         assert build_serving_db(
             tmp_path / "warehouse.sqlite", tmp_path / "serving.sqlite"
         ).published
+        if sys.platform != "win32":
+            return  # Desktop IPC is Windows-only; persistence above is portable.
+        from santhau_studio.desktop.backend import StudioBackend
         detail = StudioBackend(tmp_path).record_detail(rid)
         assert len(detail["goods_rows"]) == 2
     finally:

@@ -4,9 +4,13 @@ Bản Linux chỉ thu thập và lưu dữ liệu: không GUI, Qt, dashboard, t�
 Kho SQLite, dữ liệu gốc, lịch sử và bằng chứng vẫn dùng cùng hợp đồng dữ liệu với Windows.
 Không tạo hoặc rebuild `serving.sqlite`.
 
-Bản cập nhật **0.0.1-RC3-2** (`.deb`: `0.0.1~rc3-2`) dành cho Linode chạy
-Ubuntu 22.04/24.04 x86-64 (Intel/AMD). Giữ định dạng kho RC3, không yêu cầu
-chuyển đổi hoặc xóa dữ liệu. Bản mới bổ sung:
+Bản cập nhật **0.0.1-RC3-3** (`.deb`: `0.0.1~rc3-3`) dành cho Linode chạy
+Ubuntu 22.04/24.04 x86-64 (Intel/AMD). Tự áp dụng migration v2 để thêm checkpoint
+chi tiết, giữ nguyên dữ liệu v1 và tiến độ đã có. Bản mới bổ sung:
+
+- Thu thập HSMT/chi tiết/chào giá công khai cho TBMT/CGTTRG, ghi raw, lịch sử,
+  lô/hàng hóa, người chào giá, tham chiếu tài liệu và liên kết theo mã nguồn.
+- Chạy bù tự động trên chính worker; checkpoint, hạn mức và tạm dừng dùng chung.
 
 - Lấy lại ngày vừa khép nếu phần lịch sử chạy qua nửa đêm; lượt bắt đầu khi
   ngày còn mở không được tự cấp proof chỉ vì hoàn thành sau nửa đêm.
@@ -23,7 +27,7 @@ Gói x86-64 nhắm Ubuntu 22.04 trở lên (glibc từ 2.35). Phạm vi đã ki�
 
 ```sh
 sha256sum -c SHA256SUMS
-sudo apt install ./santhau-collector_0.0.1~rc3-2_amd64.deb
+sudo apt install ./santhau-collector_0.0.1~rc3-3_amd64.deb
 santhau-collector --version
 ```
 
@@ -33,8 +37,8 @@ Cài đặt không tự chạy dịch vụ và không gọi E-GP. Không cần c
 Bản tar.gz có thể cài bằng tài khoản thường:
 
 ```sh
-tar -xzf santhau-collector-0.0.1-RC3-2-linux-x86_64.tar.gz
-cd santhau-collector-0.0.1-RC3-2-linux-x86_64
+tar -xzf santhau-collector-0.0.1-RC3-3-linux-x86_64.tar.gz
+cd santhau-collector-0.0.1-RC3-3-linux-x86_64
 sh install.sh "$HOME/.local/opt/santhau-collector"
 "$HOME/.local/opt/santhau-collector/santhau-collector" --version
 ```
@@ -48,7 +52,8 @@ cho hai máy hoặc hai bộ thu thập đang chạy.
 
 ```sh
 santhau-collector init
-santhau-collector enqueue --from 2026-01-01 --to 2026-11-03
+santhau-collector deep-config --enable --batch-requests 30
+santhau-collector enqueue --from 2022-01-01 --to "$(TZ=Asia/Ho_Chi_Minh date +%F)"
 santhau-collector run
 ```
 
@@ -78,11 +83,42 @@ santhau-collector stop
 
 `status` chỉ xem trạng thái vận hành và tiến độ tác vụ, không chạy thống kê toàn kho.
 `running: true` nghĩa là tiến trình đang hoạt động; xem `runtime.phase` để phân biệt
-STARTING, RECOVERING, COLLECTING, PAUSING, STOPPING_JOB, STOPPING_WORKER và IDLE.
+STARTING, RECOVERING, COLLECTING, DEEP_COLLECTING, PAUSING, STOPPING_JOB, STOPPING_WORKER và IDLE.
 `progress.updated_at` là lần nhận trang gần nhất. Khi chưa có tác vụ chạy, tiến độ rỗng.
 `stop` hoặc SIGTERM lưu trang hiện tại rồi xếp lại tác vụ dở cho lần khởi động kế tiếp.
 `cancel` kết thúc tác vụ được chọn; dữ liệu đã lưu vẫn còn. Tạm dừng có chủ đích cần
 `resume`; không tự bỏ qua lựa chọn tạm dừng khi khởi động lại.
+
+### Chạy bù dữ liệu chi tiết
+
+Chạy `deep-config` khi worker đã dừng; khóa một writer từ chối thay đổi khi collector
+đang ghi. Cấu hình được lưu trong kho và tồn tại qua restart/upgrade. Mặc định tắt
+cho đến khi bật rõ như ví dụ trên. Xem tiến độ trong lúc worker chạy:
+
+```sh
+santhau-collector deep-status --data-root "$HOME/SanThauData"
+```
+
+Worker xử lý tối đa 30 cặp hồ sơ/lane mỗi đợt, xen giữa các lượt danh sách và khi rảnh,
+giữ nhịp tối thiểu 3 giây/request toàn host. Tác vụ được pause thì tự động cũng dừng.
+Capture còn mới được bỏ qua; listing thay đổi hoặc hết hạn 30 ngày thì làm mới và giữ
+lịch sử. FAILED/PARSE_ERROR có cooldown ít nhất 60 phút; endpoint bị chặn dừng trong
+worker hiện tại. `deep-status` phân biệt FETCHED, SOURCE_EMPTY, PARSE_ERROR, BLOCKED,
+FAILED; không coi phản hồi lỗi là không có dữ liệu.
+
+Chỉ hỗ trợ các đường CGTTRG đã xác minh. Documents hiện là REFERENCE_ONLY, chưa tải
+file đính kèm. KQLCNT_FULL, BOQ và HSMT ngoài CGTTRG vẫn chưa xác minh. Không suy
+OFFEROR thành người trúng/liên danh/mã số thuế. `enqueue --to` là ngày kết thúc cố định;
+không tự tạo lịch ngày mới. Sau đó có thể enqueue INCREMENTAL để cập nhật danh sách.
+
+```sh
+santhau-collector enqueue --mode INCREMENTAL --data-root "$HOME/SanThauData"
+santhau-collector self-test-deep --data-root /tmp/santhau-deep-offline-check
+```
+
+Self-test chỉ dùng payload synthetic trên thư mục mới; không gọi E-GP, không phải
+bằng chứng IP Linode truy cập được nguồn thật. Worker từ chối chạy kho synthetic
+bằng đường live. Không dùng kho self-test làm kho production.
 
 ## Dịch vụ nền
 
@@ -107,6 +143,8 @@ Ví dụ dưới chọn `~/SanThauData` trên ổ server, không dùng tài kho�
 ```sh
 mkdir -p "$HOME/SanThauData" "$HOME/.config/systemd/user/santhau-collector.service.d"
 santhau-collector init --data-root "$HOME/SanThauData"
+santhau-collector deep-config --enable --batch-requests 30 --data-root "$HOME/SanThauData"
+santhau-collector enqueue --data-root "$HOME/SanThauData" --from 2022-01-01 --to "$(TZ=Asia/Ho_Chi_Minh date +%F)"
 cat > "$HOME/.config/systemd/user/santhau-collector.service.d/data-root.conf" <<EOF
 [Service]
 Environment="SANTHAU_DATA_ROOT=$HOME/SanThauData"
@@ -117,8 +155,8 @@ systemctl --user enable --now santhau-collector.service
 santhau-collector status --data-root "$HOME/SanThauData"
 ```
 
-Các lệnh trên chưa xếp tác vụ gọi nguồn. Khi muốn lấy dữ liệu, chọn khoảng ngày
-và dùng `enqueue --data-root "$HOME/SanThauData" --from ... --to ...`.
+Các lệnh trên xếp đầy đủ sáu loại từ 2022 đến hôm nay và bật chạy bù chi tiết;
+việc gọi nguồn bắt đầu khi service chạy. Thay khoảng ngày trước khi enqueue nếu cần.
 Mọi lệnh điều khiển đều truyền cùng `--data-root`. Với Linode Volume, thay bằng
 thư mục trên volume đã mount ổn định, thuộc tài khoản chạy; không lưu kho trong
 `/opt/santhau-collector`.
@@ -158,8 +196,9 @@ Giữ nguyên Data Root, dừng dịch vụ an toàn rồi cài đè gói mới.
 ```sh
 systemctl --user stop santhau-collector.service
 santhau-collector status --data-root "$HOME/SanThauData"
-sudo apt install ./santhau-collector_0.0.1~rc3-2_amd64.deb
+sudo apt install ./santhau-collector_0.0.1~rc3-3_amd64.deb
 systemctl --user daemon-reload
+santhau-collector deep-config --enable --batch-requests 30 --data-root "$HOME/SanThauData"
 systemctl --user start santhau-collector.service
 ```
 

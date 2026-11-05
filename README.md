@@ -1,6 +1,6 @@
 # Săn Thầu — Kho dữ liệu (RC3)
 
-**Nhánh này bàn giao Linux RC3-2 cho Ubuntu 22.04/24.04 x86-64 trên Linode.**
+**Nhánh này bàn giao Linux RC3-3 cho Ubuntu 22.04/24.04 x86-64 trên Linode, gồm chạy bù dữ liệu chi tiết CGTTRG.**
 Cài gói `.deb` hoặc tar độc lập theo [hướng dẫn Linux](docs/linux-collector.md).
 Bản Linux không có Qt, dashboard, tìm kiếm hoặc `serving.sqlite`.
 Kết quả build, nghiệm thu và bộ cài: [LINUX-READINESS.md](LINUX-READINESS.md).

@@ -12,8 +12,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "build/linux"
-VERSION = "0.0.1~rc3-2"
-BUNDLE_VERSION = "0.0.1-RC3-2"
+VERSION = "0.0.1~rc3-3"
+BUNDLE_VERSION = "0.0.1-RC3-3"
 
 
 def run(*args):
@@ -34,7 +34,7 @@ def main():
         subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip()
     )
     files = subprocess.check_output(
-        ["git", "ls-files", "src", "packaging/linux", "tools/build_linux.py", "uv.lock"],
+        ["git", "ls-files", "src", "packaging/linux", "tools/build_linux.py", "docs/ddl", "docs/linux-collector.md", "pyproject.toml", "uv.lock"],
         cwd=ROOT,
         text=True,
     ).splitlines()
@@ -97,6 +97,7 @@ def main():
         "--include-package-data=tzdata",
         "--include-package-data=certifi",
         "--include-data-files=docs/ddl/g0_b_proposed.sql=docs/ddl/g0_b_proposed.sql",
+        "--include-data-files=docs/ddl/002_public_deep.sql=docs/ddl/002_public_deep.sql",
         "--include-data-files=packaging/linux/config/egp-profile.json=config/egp-profile.json",
         f"--include-data-files={info}=config/build-info.json",
         *(f"--nofollow-import-to={name}" for name in excluded),

@@ -1,5 +1,12 @@
 # Săn Thầu Collector RC3 — bản Linux chỉ thu thập
 
+## RC3-3 — cập nhật ngày 06/11/2026
+
+Đã nối shared public CGTTRG collector và tự động chạy bù vào runtime Linux.
+Thêm deep-config, deep-status và self-test-deep; migration v2 giữ kho cũ.
+Đang nghiệm thu gói mới; kết quả RC3-2 bên dưới không được dùng thay cho RC3-3.
+Không có triển khai hoặc kiểm thử trên server Linode đích trong lượt này.
+
 ## RC3-2 — nghiệm thu hoàn tất ngày 05/11/2026
 
 Bản **0.0.1-RC3-2** đã build và kiểm chứng cho **Ubuntu 22.04/24.04 x86-64**,
