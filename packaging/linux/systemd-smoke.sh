@@ -38,6 +38,12 @@ grep -q '"phase": "IDLE"' "$work/status.json"
 systemctl --user is-active santhau-collector.service
 systemctl --user is-enabled santhau-collector.service
 systemctl --user restart santhau-collector.service
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if santhau-collector status --data-root "$work/data" > "$work/restarted.json" &&
+       grep -q '"phase": "IDLE"' "$work/restarted.json"; then break; fi
+    sleep 1
+done
+grep -q '"phase": "IDLE"' "$work/restarted.json"
 systemctl --user is-active santhau-collector.service
 systemctl --user stop santhau-collector.service
 test "$(systemctl --user show santhau-collector.service --property=ExecMainStatus --value)" = 0
