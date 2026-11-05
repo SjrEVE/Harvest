@@ -322,6 +322,7 @@ class WorkerLoop:
         idle_exit_seconds: float | None = None,
         deep_fetcher: DeepFetcher | None = None,
         deep_specs: SpecProvider | None = None,
+        deep_factory=None,
         scheduled: bool = False,
         publish_serving: bool = True,
         resume_on_shutdown: bool = False,
@@ -337,6 +338,7 @@ class WorkerLoop:
         self._idle_since = time.monotonic()
         self._deep_fetcher = deep_fetcher
         self._deep_specs = deep_specs
+        self._deep_factory = deep_factory
         self._scheduled = scheduled
         self._publish_serving = publish_serving
         self._resume_on_shutdown = resume_on_shutdown
@@ -452,6 +454,9 @@ class WorkerLoop:
                     break
                 request = claim_next_job(self.data_root)
                 if request is None:
+                    from santhau_studio.workers.auto_deep import enqueue_idle_batch
+                    if enqueue_idle_batch(self):
+                        continue
                     stop.wait(self._poll)
                     continue
                 self._idle_since = time.monotonic()
@@ -577,6 +582,10 @@ class WorkerLoop:
 
     def _dispatch(self, request: JobRequest, run_id: str) -> tuple[str, dict[str, Any]]:
         """Run the job kind; return the run_tasks status and its detail summary."""
+        if request.scope.get('automatic_deep_batch'):
+            from santhau_studio.workers.auto_deep import run_batch
+            count=run_batch(self,run_id)
+            return ('PARTIAL' if self.flag.interrupt_requested else 'COMPLETED'),{'automatic':True,'processed':count}
         if request.scope.get("cadence") == "WEEK":
             from santhau_studio.workers.weekly import dispatch
             return dispatch(self, request, run_id)
@@ -609,9 +618,11 @@ class WorkerLoop:
                 family=str(source["family"]),
                 lane=kind,
                 scope=request.scope,
-                fetcher=self._deep_fetcher,
+                fetcher=(self._deep_factory(self._writer, request, lambda: self.flag.interrupt_requested)
+                         if self._deep_factory else self._deep_fetcher),
                 spec_provider=self._deep_specs,
                 clock=self._clock,
+                stop_requested=lambda: self.flag.interrupt_requested,
             )
             return result.status, result.detail
         adapter_sha = str(source.get("adapter_sha") or "")
@@ -724,7 +735,7 @@ class WorkerController:
         op = payload.get("op")
         if op == "ping":
             from santhau_studio.workers.weekly import CAPABILITY
-            return {"ok": True, "worker": True, "capabilities": [CAPABILITY, "runtime-status-v1"],
+            return {"ok": True, "worker": True, "capabilities": [CAPABILITY, "runtime-status-v1"] + (["public-cgttrg-deep-v1", "automatic-public-deep-v1"] if self.loop._deep_factory else []),
                     "runtime": self.loop.runtime_status()}
         if op == "status":
             job_id = payload.get("job_id")

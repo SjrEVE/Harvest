@@ -23,6 +23,7 @@ from typing import Any
 
 from santhau_studio.collectors.deep import (
     DeepLaneSpec,
+    DetailShapeError,
     ParsedDetail,
     parse_detail,
 )
@@ -59,6 +60,7 @@ def record_deep_capture(
     now: datetime,
     lane_status: str = "FULL",
     refresh_after_days: int | None = None,
+    parse_error: str | None = None,
 ) -> DeepCaptureResult:
     """Persist one deep capture atomically: objects, latest row, history, derived rows.
 
@@ -68,7 +70,22 @@ def record_deep_capture(
     """
     response_payload = redact_payload(response_payload)
     detail = redact_payload(detail)
-    parsed = parse_detail(spec, detail)
+    parse_failed = False
+    try:
+        if parse_error:
+            raise DetailShapeError(parse_error)
+        parsed = parse_detail(spec, detail)
+    except (DetailShapeError, ValueError, TypeError) as exc:
+        if not spec.parser_kind:
+            raise
+        parse_failed = True
+        completeness, lane_status = "PARTIAL", "FAILED"
+        parsed = ParsedDetail("{}", {}, (), (), (str(exc),))
+    if parsed.problems:
+        completeness = "PARTIAL"
+        if any('TABLE_MISSING_OR_INVALID' in p for p in parsed.problems):
+            parse_failed = True
+        lane_status = "FAILED" if parse_failed else "PARTIAL"
     conn = writer.conn
     days = spec.refresh_after_days if refresh_after_days is None else refresh_after_days
     due = _iso(now + timedelta(days=days)) if days is not None else None
@@ -79,10 +96,15 @@ def record_deep_capture(
         writer.register_object(response_ref)
         writer.register_object(detail_ref)
         existing = conn.execute(
-            "SELECT id, latest_capture_seq FROM deep_captures"
+            "SELECT id, latest_capture_seq,response_object_sha,record_object_sha,source_version_json,completeness,stale,stale_reason FROM deep_captures"
             " WHERE source_record_id=? AND lane=? AND endpoint_kind=?",
             (source_record_id, spec.lane, spec.endpoint_kind),
         ).fetchone()
+        if (spec.parser_kind and not parse_failed and not parsed.problems and existing and existing["response_object_sha"] == response_ref.sha256
+                and existing["record_object_sha"] == detail_ref.sha256 and not existing["stale"]):
+            conn.execute("UPDATE deep_captures SET captured_at_utc=?,refresh_due_at_utc=? WHERE id=?", (_iso(now),due,existing["id"]))
+            conn.execute("COMMIT")
+            return DeepCaptureResult(existing["id"],existing["latest_capture_seq"],existing["completeness"],0,None,response_ref.sha256,detail_ref.sha256)
         if existing is None:
             cur = conn.execute(
                 "INSERT INTO deep_captures (source_record_id, lane, endpoint_kind, latest_capture_seq,"
@@ -116,7 +138,21 @@ def record_deep_capture(
                 content_hash(detail), completeness, parsed.source_version_json, run_id,
             ),
         )
-        _write_derived(conn, writer, source_record_id, spec, parsed)
+        if spec.parser_kind and not parse_failed:
+            from santhau_studio.storage.public_deep import write_projection
+            # Projection errors must not roll back the raw capture/history.
+            conn.execute("SAVEPOINT deep_projection")
+            try:
+                write_projection(conn, writer, source_record_id, spec, parsed, capture_id, seq, response_ref.sha256)
+            except (ValueError, sqlite3.Error) as exc:
+                conn.execute("ROLLBACK TO deep_projection")
+                parsed = ParsedDetail(parsed.source_version_json, {}, (), (), (str(exc),))
+                completeness = "PARTIAL"
+                conn.execute("UPDATE deep_captures SET completeness='PARTIAL',lane_status='FAILED' WHERE id=?", (capture_id,))
+                conn.execute("UPDATE deep_capture_history SET completeness='PARTIAL' WHERE deep_capture_id=? AND capture_seq=?", (capture_id,seq))
+            conn.execute("RELEASE deep_projection")
+        elif not spec.parser_kind:
+            _write_derived(conn, writer, source_record_id, spec, parsed)
         stale, stale_reason = 0, None
         if parsed.problems:
             stale, stale_reason = 1, STALE_QUARANTINED_MEMBER

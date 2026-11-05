@@ -105,17 +105,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             _log_failure(args.data_root, f"page source module unusable: {args.page_source_file}")
             return EXIT_BAD_PAGE_SOURCE
 
-    deep_fetcher = deep_specs = None
+    from santhau_studio.collectors.cgttrg import public_spec
+    from santhau_studio.collectors.public_deep import PublicDeepFetcher
+    deep_fetcher, deep_specs, deep_factory = None, public_spec, PublicDeepFetcher
     if os.environ.get("SANTHAU_OFFLINE_ACCEPTANCE_ROOT") == str(args.data_root.resolve()):
         from santhau_studio.collectors.offline_acceptance import builder as offline_builder
         from santhau_studio.collectors.offline_acceptance import deep_fetch, deep_spec, enabled
         if not enabled(args.data_root):
             return EXIT_BAD_PAGE_SOURCE
         builder, deep_fetcher, deep_specs = offline_builder, deep_fetch, deep_spec
+        deep_factory = None
 
     loop = WorkerLoop(
         args.data_root,
         page_source_builder=builder, deep_fetcher=deep_fetcher, deep_specs=deep_specs,
+        deep_factory=deep_factory,
         poll_seconds=args.poll_seconds,
         idle_exit_seconds=args.idle_exit_seconds,
         scheduled=args.scheduled,

@@ -22,18 +22,22 @@ REPO_ROOT = SCHEMA_PATH.parents[2]
 def test_bootstrap_records_the_frozen_contract_as_version_one(tmp_path: Path) -> None:
     conn = connect(tmp_path / "warehouse.sqlite", create_schema=True)
     state = status(conn)
-    assert state.current_version == 1
-    assert state.applied == ((1, "g0_b_contract"),)
+    assert state.current_version == 2
+    assert state.applied == ((1, "g0_b_contract"), (2, "public_deep_checkpoints"))
     assert state.up_to_date
-    recorded = conn.execute("SELECT name, checksum FROM software_migrations WHERE version=1").fetchone()
-    assert recorded["checksum"] == checksum(SCHEMA_PATH.read_text(encoding="utf-8").replace("\r\n", "\n"))
+    recorded = conn.execute(
+        "SELECT name, checksum FROM software_migrations WHERE version=1"
+    ).fetchone()
+    assert recorded["checksum"] == checksum(
+        SCHEMA_PATH.read_text(encoding="utf-8").replace("\r\n", "\n")
+    )
     conn.close()
 
 
 def test_writer_open_gives_a_migrated_database(tmp_path: Path) -> None:
     writer = WarehouseWriter.open(tmp_path, create_schema=True, role="backfill")
     try:
-        assert status(writer.conn).current_version == 1
+        assert status(writer.conn).current_version == 2
     finally:
         writer.close()
 
@@ -51,7 +55,10 @@ def test_changed_contract_file_is_refused_rather_than_rerun(tmp_path: Path, monk
     """The realistic drift: someone edits the frozen DDL under a database built from the old one."""
     conn = connect(tmp_path / "warehouse.sqlite", create_schema=True)
     tampered = tmp_path / "contract.sql"
-    tampered.write_text(SCHEMA_PATH.read_text(encoding="utf-8") + "\n-- added after the database was built\n", encoding="utf-8")
+    tampered.write_text(
+        SCHEMA_PATH.read_text(encoding="utf-8") + "\n-- added after the database was built\n",
+        encoding="utf-8",
+    )
     monkeypatch.setattr(migrations, "MIGRATIONS", ((1, "g0_b_contract", tampered),))
     with pytest.raises(RuntimeError, match="checksum changed"):
         migrate(conn, REPO_ROOT)
@@ -64,14 +71,37 @@ def test_a_database_with_no_migration_row_reports_pending(tmp_path: Path) -> Non
     bare.execute("CREATE TABLE unrelated (x)")
     state = status(bare)
     assert state.current_version == 0
-    assert state.pending == ((1, "g0_b_contract"),)
+    assert state.pending == ((1, "g0_b_contract"), (2, "public_deep_checkpoints"))
     assert not state.up_to_date
     bare.close()
 
 
 def test_migration_list_is_the_frozen_contract_only() -> None:
     """A new entry means a new contract decision; it should never appear silently."""
-    assert ((1, "g0_b_contract", Path("docs/ddl/g0_b_proposed.sql")),) == MIGRATIONS
+    assert (
+        (1, "g0_b_contract", Path("docs/ddl/g0_b_proposed.sql")),
+        (2, "public_deep_checkpoints", Path("docs/ddl/002_public_deep.sql")),
+    ) == MIGRATIONS
+
+
+def test_public_deep_upgrade_preserves_existing_records(tmp_path, monkeypatch):
+    from test_deep_run import seed_records
+
+    with monkeypatch.context() as patch:
+        patch.setattr(migrations, "MIGRATIONS", MIGRATIONS[:1])
+        writer = seed_records(tmp_path)
+        before = [tuple(r) for r in writer.conn.execute("SELECT * FROM source_records ORDER BY id")]
+        writer.close()
+    writer = WarehouseWriter.open(tmp_path, create_schema=True)
+    try:
+        assert status(writer.conn).current_version == 2
+        assert [
+            tuple(r) for r in writer.conn.execute("SELECT * FROM source_records ORDER BY id")
+        ] == before
+        assert writer.conn.execute("SELECT COUNT(*) FROM deep_tasks").fetchone()[0] == 0
+        assert writer.conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        writer.close()
 
 
 def test_a_failed_migration_leaves_no_schema_and_no_version(tmp_path: Path, monkeypatch) -> None:

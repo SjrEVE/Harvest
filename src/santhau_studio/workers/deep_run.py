@@ -69,14 +69,14 @@ def _targets(writer: WarehouseWriter, family: str, request_scope: dict, limit: i
     if explicit:
         placeholders = ",".join("?" for _ in explicit)
         rows = writer.conn.execute(
-            f"SELECT id, family, natural_key FROM source_records WHERE family=? AND id IN ({placeholders})"
+            f"SELECT * FROM source_records WHERE family=? AND id IN ({placeholders})"
             f" ORDER BY id LIMIT {int(limit)}",
             (family, *[int(value) for value in explicit]),
         ).fetchall()
     else:
         rows = writer.conn.execute(
-            "SELECT id, family, natural_key FROM source_records WHERE family=? ORDER BY id LIMIT ?",
-            (family, int(limit)),
+            "SELECT * FROM source_records WHERE family=? AND id>? ORDER BY id LIMIT ?",
+            (family, int(request_scope.get("after_record_id", 0)), int(limit)),
         ).fetchall()
     return [dict(row) for row in rows]
 
@@ -92,6 +92,7 @@ def run_deep_batch(
     spec_provider: SpecProvider | None = None,
     clock: Clock | None = None,
     limit: int = DEFAULT_BATCH_LIMIT,
+    stop_requested=lambda: False,
 ) -> DeepBatchResult:
     lane = LANE_KINDS.get(lane, lane)
     if lane not in LANE_KINDS:
@@ -101,6 +102,11 @@ def run_deep_batch(
     provided = (spec_provider or _default_spec)(family, lane)
     if provided is None:
         return DeepBatchResult("BLOCKED", {"reason": "DEEP_SPEC_UNVERIFIED", "lane": lane})
+    if provided.parser_kind:
+        from santhau_studio.workers.public_deep_run import collect_public
+        return collect_public(writer, run_id, lane, scope, fetcher, provided,
+                              _targets(writer, family, scope, min(limit, int(scope.get("limit", limit)))),
+                              clock or (lambda: datetime.now(UTC)), stop_requested)
     now = (clock or (lambda: datetime.now(UTC)))()
     captured: list[DeepCaptureResult] = []
     stale_marked = 0
