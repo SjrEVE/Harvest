@@ -18,6 +18,7 @@ function describe(state, fresh) {
         RECOVERING:["Đang kiểm tra kho dữ liệu","Đang kiểm tra dữ liệu đã lưu trước khi nhận tác vụ. Chưa lấy dữ liệu mới.","busy"],
         PUBLISHING_SNAPSHOT:["Đang cập nhật dữ liệu hiển thị","Đang dựng và kiểm tra bản dữ liệu cho giao diện. Tạm thời chưa lấy trang mới; hàng đợi sẽ tiếp tục sau bước này.","busy"],
         COLLECTING:["Đang thu thập dữ liệu","Bộ thu thập đang xử lý tác vụ. Số dòng và số trang bên dưới là tiến độ của khoảng đang lấy.","busy"],
+        DEEP_COLLECTING:["Đang lấy bù dữ liệu chi tiết","Tự lấy HSMT, hàng hóa và chi tiết chào giá thuộc nguồn CGTTRG đã xác minh. Sau đợt này sẽ tiếp tục danh mục đang dở.","busy"],
         PAUSING:["Đang tạm dừng","Đã nhận yêu cầu. Chờ xử lý và lưu xong bước hiện tại; chưa tạm dừng hoàn toàn.","warning"],
         STOPPING_JOB:["Đang dừng tác vụ","Đã nhận yêu cầu. Chờ lưu xong bước hiện tại. Bộ thu thập có thể tiếp tục tác vụ khác trong hàng đợi.","warning"],
         STOPPING_WORKER:["Đang tắt bộ thu thập","Chờ lưu xong bước hiện tại. Khi tắt xong, hàng đợi sẽ ngừng xử lý; ứng dụng vẫn mở.","warning"],
@@ -31,7 +32,7 @@ function describe(state, fresh) {
     }
     var chosen = states[phase] || ["Bộ thu thập đang bật · chưa rõ bước xử lý","Bản worker này chưa cung cấp trạng thái chi tiết. Cần cập nhật worker để phân biệt chuẩn bị và thu thập.","warning"];
     return {title:chosen[0], detail:chosen[1], tone:chosen[2], busy:chosen[2] === "busy",
-            phase:phase, progress:phase === "COLLECTING" ? progress : {}};
+            phase:phase, progress:(phase === "COLLECTING" || phase === "DEEP_COLLECTING") ? progress : {}};
 }
 
 function jobLabel(job) {

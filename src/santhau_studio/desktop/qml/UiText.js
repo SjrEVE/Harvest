@@ -2,6 +2,8 @@
 
 // Presentation only. Stored values, command names and original source bytes stay unchanged.
 var words = {
+    PUBLIC_CGTTRG:"Nguồn công khai · chỉ CGTTRG",FETCHED:"Đã lấy",SOURCE_EMPTY:"Đã lấy · nguồn rỗng",
+    PARSE_ERROR:"Lỗi phân tích dữ liệu",REFERENCE_ONLY:"Chỉ có tham chiếu file",DOWNLOADED:"Đã tải và kiểm tra file",
     TESTED_OFFLINE:"Đã kiểm tra bằng dữ liệu giả lập",
     ALL:"Tất cả 6 loại hồ sơ",
     BACKFILL:"Thu thập theo khoảng ngày", INCREMENTAL:"Cập nhật tự động đến hiện tại", RECONCILE:"Đối chiếu lại dữ liệu",

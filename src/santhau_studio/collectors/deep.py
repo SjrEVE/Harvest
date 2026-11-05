@@ -77,6 +77,7 @@ class DeepLaneSpec:
     hsmt_columns: tuple[str, ...] = ()
     requires_session: bool = False
     refresh_after_days: int = DEFAULT_REFRESH_DAYS
+    parser_kind: str | None = None
 
 
 @dataclass(frozen=True)
@@ -88,6 +89,7 @@ class ParsedGoodsRow:
     quantity_presence: str
     quantity: float | None
     quantity_raw: str | None
+    raw: Any = None
 
 
 @dataclass(frozen=True)
@@ -96,6 +98,7 @@ class ParsedLot:
     lot_label: str | None
     lot_version: str | None
     goods: tuple[ParsedGoodsRow, ...]
+    raw: Any = None
 
 
 @dataclass(frozen=True)
@@ -118,6 +121,9 @@ class ParsedDetail:
     lots: tuple[ParsedLot, ...]
     members: tuple[ParsedMember, ...]
     problems: tuple[str, ...] = ()
+    unallotted_goods: tuple[ParsedGoodsRow, ...] = ()
+    documents: tuple[dict, ...] = ()
+    relations: tuple[dict, ...] = ()
 
 
 def _scalar(value: Any) -> Any:
@@ -268,6 +274,9 @@ def _lots(spec: DeepLaneSpec, detail: dict[str, Any], problems: list[str]) -> tu
 def parse_detail(spec: DeepLaneSpec, detail: Any) -> ParsedDetail:
     """Parse one detail payload against the lane spec. Member/lot damage becomes a problem,
     never a silent drop; envelope damage raises."""
+    if spec.parser_kind:
+        from santhau_studio.collectors.cgttrg import parse_public
+        return parse_public(spec, detail)
     if not isinstance(detail, dict):
         raise DetailShapeError(f"detail payload is {type(detail).__name__}, not an object")
     problems: list[str] = []

@@ -709,7 +709,9 @@ class StudioBackend:
                     "documents": [
                         dict(row)
                         for row in conn.execute(
-                            "SELECT document_kind, name, media_type, byte_len FROM documents"
+                            "SELECT document_kind, name, media_type, byte_len, object_sha, provenance_json,"
+                            " json_extract(provenance_json,'$.download_status') AS download_status,"
+                            " json_extract(provenance_json,'$.owner_key') AS owner_key FROM documents"
                             " WHERE source_record_id=? ORDER BY document_kind, name LIMIT 50",
                             (record_id,),
                         )
@@ -755,14 +757,22 @@ class StudioBackend:
                 return {"present": True, "error": f"{type(exc).__name__}: {exc}"}
         from santhau_studio.desktop.data_quality import source_fields
         detail["source_fields"] = source_fields(self.data_root, detail["record"]["current_record_object_sha"])
+        if detail.get('present'):
+            from santhau_studio.desktop.deep_status import states
+            state_conn = self._serving()
+            if state_conn is not None:
+                with closing(state_conn):
+                    detail['deep_states'] = states(state_conn, record_id)
+                    detail['relation_edges'] = [dict(row) for row in state_conn.execute(
+                        "SELECT DISTINCT e.* FROM relation_edges e JOIN entity_source_links l "
+                        "ON l.entity_id=e.from_entity OR l.entity_id=e.to_entity WHERE l.source_record_id=?",(record_id,))]
         return detail
 
     def enqueue_deep(self, payload):
         import os
 
         from santhau_studio.collectors.offline_acceptance import enabled
-        if not enabled(self.data_root) or os.environ.get("SANTHAU_OFFLINE_ACCEPTANCE_ROOT") != str(self.data_root.resolve()):
-            return {"ok":False,"status":"BLOCKED","error":LIVE_BLOCK_REASON + ": chưa có endpoint và hợp đồng deep được owner xác minh"}
+        offline = enabled(self.data_root) and os.environ.get("SANTHAU_OFFLINE_ACCEPTANCE_ROOT") == str(self.data_root.resolve())
         try:
             record_id = int(payload["record_id"])
             detail = self.record_detail(record_id)
@@ -772,13 +782,23 @@ class StudioBackend:
             lane = payload.get("lane", "DETAIL")
             if lane not in ("DETAIL","HSMT","REOFFER"):
                 raise ValueError("Lane không hỗ trợ")
+            if not offline:
+                from santhau_studio.storage.rawstore import RawObjectStore
+                with closing(RawObjectStore(self.data_root,read_only=True)) as store:
+                    raw=json.loads(store.read(detail['record']['current_record_object_sha']))
+                if family!='TBMT' or raw.get('bidForm')!='CGTTRG':
+                    raise ValueError('Chỉ xác minh nguồn công khai cho TBMT/CGTTRG')
+                worker=self.worker_status()
+                if worker.get('running') and 'public-cgttrg-deep-v1' not in worker.get('capabilities',[]):
+                    raise ValueError('Cần cập nhật worker hỗ trợ public-cgttrg-deep-v1 trước khi chạy chi tiết')
             rule = self._verified_rule("egp_home", family)
             if not rule:
                 raise ValueError("Không có rule")
             request = JobRequest(job_id="deep-"+uuid.uuid4().hex[:12],job_kind=lane,requested_by="gui",
-                sources=({**rule,"family":family},),scope={"record_ids":[record_id]},created_at=_now())
+                sources=({**rule,"family":family},),scope={"record_ids":[record_id],"force_refresh":bool(payload.get('force_refresh'))},
+                request_limits={"max_requests":5,"max_seconds":120,"pacing_seconds":3},created_at=_now())
             enqueue_job(self.data_root,request)
-            return {"ok":True,"job_id":request.job_id,"profile":"SYNTHETIC_OFFLINE"}
+            return {"ok":True,"job_id":request.job_id,"profile":"SYNTHETIC_OFFLINE" if offline else "PUBLIC_CGTTRG"}
         except (KeyError,ValueError) as exc:
             return {"ok":False,"error":str(exc)}
 
@@ -813,6 +833,9 @@ class StudioBackend:
         if conn is None:
             return {"present": False, "rows": [], "summary": {}}
         with closing(conn):
+            if not self.workspace_identity()['synthetic']:
+                from santhau_studio.desktop.deep_status import queue
+                return queue(conn)
             try:
                 rows = [
                     dict(row)

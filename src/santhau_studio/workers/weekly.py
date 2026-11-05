@@ -48,6 +48,9 @@ def dispatch(loop, request, parent_run):
     pending_weeks = set()
     children_since_publish = 0
     initial_work = list(work_periods(periods, loop._clock()))
+    from santhau_studio.workers.auto_deep import run_batch
+    if run_batch(loop,parent_run):
+        loop._publish_snapshot()
 
     def scheduled_work():
         yield from initial_work
@@ -103,6 +106,7 @@ def dispatch(loop, request, parent_run):
                         (child_run, "BACKFILL", status, json.dumps({**detail, "parent_run": parent_run}, ensure_ascii=False)))
                     conn.commit()
                     children_since_publish += 1
+                    run_batch(loop,parent_run)
                     after = resolve()
                     if loop.flag.interrupt_requested:
                         return "PARTIAL", {"weeks_completed": completed, "reason": "Đã dừng theo yêu cầu; tiến độ đã lưu."}

@@ -25,7 +25,8 @@ Rectangle {
             objectName:"collectionLiveProgress"; Layout.fillWidth:true; wrapMode:Text.Wrap
             property var progress: panel.view.progress || {}
             visible: !!progress.family
-            text: T.family(progress.family)+" · "+(progress.rows||0)+" dòng · "+(progress.pages||0)+" trang"
+            text: progress.lane ? T.label(progress.lane)+" · "+progress.natural_key+" · Đã xử lý "+progress.completed_in_batch+"/"+progress.batch_size+" trong đợt"
+                : T.family(progress.family)+" · "+(progress.rows||0)+" dòng · "+(progress.pages||0)+" trang"
                 +(progress.week_index?" · Tuần "+progress.week_index+"/"+progress.week_count+" · Loại "+progress.family_index+"/6":"")
                 +(progress.from?"\n"+T.collectionSpan(progress.from,progress.to,"BACKFILL"):"")
             color:"#172b3a"; font.weight:Font.DemiBold

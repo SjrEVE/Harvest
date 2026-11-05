@@ -16,7 +16,7 @@ from santhau_studio.storage.backup import create_backup, restore_backup
 from santhau_studio.storage.serving import build_serving_db
 from santhau_studio.storage.warehouse import WarehouseWriter, connect_read_only
 
-ACTIONS = ("backup", "restore", "verify", "export", "identity", "import-legacy", "inspect-legacy", "schedule-enable", "schedule-disable", "schedule-status")
+ACTIONS = ("backup", "restore", "verify", "export", "identity", "import-legacy", "inspect-legacy", "schedule-enable", "schedule-disable", "schedule-status", "collection-setup")
 
 
 def _cell(value: object) -> str:
@@ -27,6 +27,9 @@ def _cell(value: object) -> str:
 def perform(action: str, root: Path, source: str | None = None) -> dict:
     root = Path(root)
     try:
+        if action == 'collection-setup':
+            from santhau_studio.workers.collection_setup import configure_collection
+            return configure_collection(root,json.loads(source or '{}'))
         if action == "identity":
             from santhau_studio.storage.identity_actions import apply_action
             with closing(WarehouseWriter.open(root, role="identity-review")) as writer:

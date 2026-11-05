@@ -339,7 +339,13 @@ Window {
                             wrapMode: Text.WrapAnywhere
                         }
                         Text {
-                            text: "Đầy đủ: " + ((page8.state.summary || {}).FULL || 0)
+                            text: page8.state.scope ? page8.state.scope + "\nĐã lấy: " + (page8.state.summary.FETCHED||0)
+                                  + " · Nguồn rỗng: " + (page8.state.summary.SOURCE_EMPTY||0)
+                                  + " · Lỗi parse: " + (page8.state.summary.PARSE_ERROR||0)
+                                  + " · Bị chặn: " + (page8.state.summary.BLOCKED||0)
+                                  + " · Lỗi lấy: " + (page8.state.summary.FAILED||0)
+                                  + " · Chưa lấy: " + (page8.state.summary.NOT_COLLECTED||0)
+                                  : "Đầy đủ: " + ((page8.state.summary || {}).FULL || 0)
                                   + " · Chưa đầy đủ: " + ((page8.state.summary || {}).PARTIAL || 0)
                                   + " · Chưa thu thập: " + ((page8.state.summary || {}).NOT_COLLECTED || 0)
                                   + " · Cần cập nhật: " + ((page8.state.summary || {}).stale || 0)
@@ -368,7 +374,7 @@ Window {
                                         font.pixelSize: 13; width: 110
                                     }
                                     Text {
-                                        text: modelData.stale ? ("Cần cập nhật: " + T.message(modelData.stale_reason))
+                                        text: modelData.state ? T.label(modelData.state) : modelData.stale ? ("Cần cập nhật: " + T.message(modelData.stale_reason))
                                              : (modelData.needs_refresh ? "cần cập nhật" : "đã cập nhật")
                                         color: modelData.stale || modelData.needs_refresh ? "#965a08" : "#087f75"
                                         font.pixelSize: 13; width: 170
