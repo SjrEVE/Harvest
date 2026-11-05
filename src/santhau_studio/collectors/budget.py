@@ -1,4 +1,5 @@
 """Shared request/time budget for a bounded job, including retries and split windows."""
+import math
 import time
 
 
@@ -13,6 +14,12 @@ class RequestBudget:
         if self.used >= self.limit or self.clock() + delay >= self.deadline:
             from santhau_studio.collectors.http_client import FetchFailed
             raise FetchFailed("REQUEST_BUDGET_EXHAUSTED")
+
+    def remaining_pages(self, pacing_seconds):
+        """Planning ceiling only; latency/retries can still exhaust the enforced cap."""
+        seconds = max(0, self.deadline - self.clock())
+        slots = max(0, math.ceil(seconds / pacing_seconds) - 1)
+        return min(max(0, self.limit - self.used), slots)
 
     def consume(self):
         self.check()

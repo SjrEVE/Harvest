@@ -1,6 +1,12 @@
 # Săn Thầu — Kho dữ liệu (RC3)
 
-Bản Linux chỉ thu thập, không giao diện hoặc thống kê: [hướng dẫn Linux](docs/linux-collector.md).
+**Nhánh này bàn giao Linux RC3-2 cho Ubuntu 22.04/24.04 x86-64 trên Linode.**
+Cài gói `.deb` hoặc tar độc lập theo [hướng dẫn Linux](docs/linux-collector.md).
+Bản Linux không có Qt, dashboard, tìm kiếm hoặc `serving.sqlite`.
+Kết quả build, nghiệm thu và bộ cài: [LINUX-READINESS.md](LINUX-READINESS.md).
+
+Phần bên dưới mô tả ứng dụng Windows dùng chung lõi; không dùng các lệnh build
+Windows bên dưới để cài collector trên server Linux.
 
 Ứng dụng Windows để thu thập, kiểm chứng và tra cứu hồ sơ đấu thầu. Giao diện dùng
 PySide6/QML; bộ thu thập chạy riêng. SQLite và dữ liệu gốc được lưu trong thư mục
@@ -11,7 +17,7 @@ dữ liệu do người dùng chọn, độc lập với thư mục cài chươn
 1. Mở **Kho dữ liệu**, chọn thư mục lưu dữ liệu và áp dụng.
 2. Vào **Thu thập dữ liệu**, chọn khoảng ngày. Với **Tất cả 6 loại hồ sơ**, chọn
    **Theo tuần — đủ 6 loại rồi chuyển tuần tiếp**. Mỗi đợt gồm 7 ngày tính từ ngày
-   bắt đầu, xử lý từ cũ đến mới; đợt cuối kết thúc đúng ngày đã chọn.
+   bắt đầu, xử lý từ mới về cũ; đợt cuối kết thúc đúng ngày đã chọn.
 3. Bấm **Bắt đầu thu thập**. Ngày đã đủ bằng chứng được bỏ qua; dữ liệu đang dở
    được giữ lại nhưng có thể cần đọc lại một phần để đối chiếu. Khi chưa đủ sáu
    loại, tác vụ không chuyển sang tuần tiếp theo.

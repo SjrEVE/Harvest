@@ -4,6 +4,10 @@ deb=$(find /packages -maxdepth 1 -name '*.deb' -print -quit)
 archive=$(find /packages -maxdepth 1 -name '*.tar.gz' -print -quit)
 if command -v python3 >/dev/null 2>&1; then echo 'Smoke image must not contain Python'; exit 1; fi
 dpkg -i "$deb"
+package_version=$(dpkg-query -W -f='${Version}' santhau-collector)
+dpkg --compare-versions "$package_version" gt '0.0.1~rc3'
+test "$(dpkg-query -W -f='${Installed-Size}' santhau-collector)" -gt 0
+test ! -d /opt/santhau-collector/zstandard
 santhau-collector --version
 santhau-collector self-test --data-root '/tmp/data with spaces'
 find '/tmp/data with spaces' -type f -exec sha256sum '{}' \; | sort > /tmp/before

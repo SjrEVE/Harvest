@@ -4,6 +4,18 @@ Bản Linux chỉ thu thập và lưu dữ liệu: không GUI, Qt, dashboard, t�
 Kho SQLite, dữ liệu gốc, lịch sử và bằng chứng vẫn dùng cùng hợp đồng dữ liệu với Windows.
 Không tạo hoặc rebuild `serving.sqlite`.
 
+Bản cập nhật **0.0.1-RC3-2** (`.deb`: `0.0.1~rc3-2`) dành cho Linode chạy
+Ubuntu 22.04/24.04 x86-64 (Intel/AMD). Giữ định dạng kho RC3, không yêu cầu
+chuyển đổi hoặc xóa dữ liệu. Bản mới bổ sung:
+
+- Lấy lại ngày vừa khép nếu phần lịch sử chạy qua nửa đêm; lượt bắt đầu khi
+  ngày còn mở không được tự cấp proof chỉ vì hoàn thành sau nửa đêm.
+- Chia khoảng sớm theo hạn mức còn lại, tính cả yêu cầu thăm dò khoảng cha.
+- Trạng thái runtime và dấu thời gian trang mới; không trả tiến độ cũ sau
+  khi tác vụ kết thúc. Từ chối lệnh không có tác vụ phù hợp hoặc lệnh tiếp tục lặp.
+- Gói chạy bỏ thư viện zstandard chỉ cần lúc build; raw vẫn dùng gzip.
+
+
 ## Cài đặt
 
 Gói x86-64 nhắm Ubuntu 22.04 trở lên (glibc từ 2.35). Phạm vi đã kiểm thực tế nằm trong
@@ -11,7 +23,7 @@ Gói x86-64 nhắm Ubuntu 22.04 trở lên (glibc từ 2.35). Phạm vi đã ki�
 
 ```sh
 sha256sum -c SHA256SUMS
-sudo apt install ./santhau-collector_0.0.1~rc3_amd64.deb
+sudo apt install ./santhau-collector_0.0.1~rc3-2_amd64.deb
 santhau-collector --version
 ```
 
@@ -21,8 +33,8 @@ Cài đặt không tự chạy dịch vụ và không gọi E-GP. Không cần c
 Bản tar.gz có thể cài bằng tài khoản thường:
 
 ```sh
-tar -xzf santhau-collector-0.0.1-RC3-linux-x86_64.tar.gz
-cd santhau-collector-0.0.1-RC3-linux-x86_64
+tar -xzf santhau-collector-0.0.1-RC3-2-linux-x86_64.tar.gz
+cd santhau-collector-0.0.1-RC3-2-linux-x86_64
 sh install.sh "$HOME/.local/opt/santhau-collector"
 "$HOME/.local/opt/santhau-collector/santhau-collector" --version
 ```
@@ -65,6 +77,9 @@ santhau-collector stop
 ```
 
 `status` chỉ xem trạng thái vận hành và tiến độ tác vụ, không chạy thống kê toàn kho.
+`running: true` nghĩa là tiến trình đang hoạt động; xem `runtime.phase` để phân biệt
+STARTING, RECOVERING, COLLECTING, PAUSING, STOPPING_JOB, STOPPING_WORKER và IDLE.
+`progress.updated_at` là lần nhận trang gần nhất. Khi chưa có tác vụ chạy, tiến độ rỗng.
 `stop` hoặc SIGTERM lưu trang hiện tại rồi xếp lại tác vụ dở cho lần khởi động kế tiếp.
 `cancel` kết thúc tác vụ được chọn; dữ liệu đã lưu vẫn còn. Tạm dừng có chủ đích cần
 `resume`; không tự bỏ qua lựa chọn tạm dừng khi khởi động lại.
@@ -83,6 +98,34 @@ Chỉ bật sau khi đã chọn kho và xếp tác vụ muốn chạy. Nếu c�
 quản trị viên có thể bật lingering cho tài khoản đó. Dừng bằng
 `systemctl --user stop santhau-collector.service` trước khi nâng cấp/gỡ.
 Dùng override của service nếu cần đặt `SANTHAU_DATA_ROOT` khác mặc định.
+
+### Thiết lập trên Linode và tiếp tục sau khi thoát SSH
+
+Dùng cùng một tài khoản Linux cho khởi tạo, xếp tác vụ, điều khiển và service.
+Ví dụ dưới chọn `~/SanThauData` trên ổ server, không dùng tài khoản root cho collector:
+
+```sh
+mkdir -p "$HOME/SanThauData" "$HOME/.config/systemd/user/santhau-collector.service.d"
+santhau-collector init --data-root "$HOME/SanThauData"
+cat > "$HOME/.config/systemd/user/santhau-collector.service.d/data-root.conf" <<EOF
+[Service]
+Environment="SANTHAU_DATA_ROOT=$HOME/SanThauData"
+EOF
+sudo loginctl enable-linger "$(id -un)"
+systemctl --user daemon-reload
+systemctl --user enable --now santhau-collector.service
+santhau-collector status --data-root "$HOME/SanThauData"
+```
+
+Các lệnh trên chưa xếp tác vụ gọi nguồn. Khi muốn lấy dữ liệu, chọn khoảng ngày
+và dùng `enqueue --data-root "$HOME/SanThauData" --from ... --to ...`.
+Mọi lệnh điều khiển đều truyền cùng `--data-root`. Với Linode Volume, thay bằng
+thư mục trên volume đã mount ổn định, thuộc tài khoản chạy; không lưu kho trong
+`/opt/santhau-collector`.
+
+`enable-linger` giữ user service khi thoát SSH; service được enable để tự chạy
+cùng user manager. Xem `LINUX-READINESS.md` để phân biệt kiểm thử service với
+thử reboot/server Linode thật.
 
 Lịch cập nhật tự động dùng bộ lập lịch của hệ điều hành để gọi
 `santhau-collector enqueue --mode INCREMENTAL`; bản này không kèm Task Scheduler hay màn cấu hình lịch.
@@ -113,10 +156,35 @@ Lệnh này không gọi mạng và từ chối dùng kho đã tồn tại. Khô
 Giữ nguyên Data Root, dừng dịch vụ an toàn rồi cài đè gói mới. Với `.deb`:
 
 ```sh
-sudo apt install ./santhau-collector_0.0.1~rc3_amd64.deb
+systemctl --user stop santhau-collector.service
+santhau-collector status --data-root "$HOME/SanThauData"
+sudo apt install ./santhau-collector_0.0.1~rc3-2_amd64.deb
+systemctl --user daemon-reload
+systemctl --user start santhau-collector.service
+```
+
+Chỉ cài đè sau khi `status` báo `running: false`. Nếu worker chạy thủ công,
+dùng `santhau-collector stop --data-root ...` và chờ thoát. Khi muốn gỡ:
+
+```sh
+systemctl --user disable --now santhau-collector.service
 sudo apt remove santhau-collector
 ```
 
 Với bản tar, chạy lại `install.sh` cùng thư mục để nâng cấp; gỡ bằng `uninstall.sh` ở
 thư mục đã cài. Script từ chối xóa nếu phát hiện kho SQLite bên trong thư mục cài.
 Không xóa Data Root hoặc job files để sửa lỗi. Dữ liệu lớn cần được sao lưu riêng trước bảo trì.
+
+
+## Dung lượng và chuyển kho
+
+Collector không cần `serving.sqlite` của Windows. Giữ warehouse, raw và trạng thái
+cần thiết. Không copy database đang ghi bằng thao tác copy tệp thông thường:
+dừng collector an toàn hoặc dùng bản sao SQLite nhất quán cùng raw tương ứng.
+Không để Windows và Linux ghi đồng thời vào cùng một kho.
+
+Mốc 05/11: khoảng 222 nghìn bản ghi có 737 MB warehouse, 276 MB raw đã nén và
+khoảng 5 MB tệp ghi tạm; tổng khoảng 1,02 GB khi không mang bản tra cứu sang.
+Đây là mốc tham chiếu, không phải dung lượng cố định hoặc phép đo trên Linode.
+Lịch sử, đối chiếu, backup và tài liệu đính kèm có thể làm tăng dung lượng.
+Manifest mới ghi `installed_file_bytes` và `artifact_bytes` để đối chiếu gói thực tế.

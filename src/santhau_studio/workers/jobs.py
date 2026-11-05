@@ -347,6 +347,36 @@ class WorkerLoop:
         self._paused_jobs: set[str] = set()
         self.progress = {}
         self._weekly_progress = {}
+        self._phase = "STARTING"
+        self._phase_since = _now()
+        self._last_job_id = None
+        self._pending_actions = {}
+        self._action_lock = threading.Lock()
+        self.snapshot_error = None
+
+    def _set_phase(self, phase):
+        self._phase, self._phase_since = phase, _now()
+
+    def _set_progress(self, value):
+        self.progress = {"job_id": self._current.job_id if self._current else None,
+                         **value, **self._weekly_progress, "updated_at": _now()}
+
+    def runtime_status(self):
+        phase = self._phase
+        current = self._current
+        if phase not in ("STOPPED", "FAILED"):
+            if self.flag.shutdown_requested:
+                phase = "STOPPING_WORKER"
+            elif current and self.flag.stop_requested:
+                phase = "STOPPING_JOB"
+            elif current and self.flag.interrupt_requested:
+                phase = "PAUSING"
+        with self._action_lock:
+            pending = dict(self._pending_actions)
+        return {"phase": phase, "step": self._phase, "phase_since": self._phase_since,
+                "observed_at": _now(), "current_job_id": current.job_id if current else None,
+                "last_job_id": self._last_job_id, "pending_actions": pending,
+                "progress": dict(self.progress) if current else {}, "snapshot_error": self.snapshot_error}
 
     # -- called from the IPC thread
     def post_command(self, *, job_id: str | None, command: str, sid: str) -> None:
@@ -356,11 +386,18 @@ class WorkerLoop:
         page boundary of a run that is already in flight — it would sit in the queue until the
         run finished, which is exactly what §2.3's "kết thúc page hiện hành" forbids.
         """
-        paused_target = job_id in self._paused_jobs or job_id == self._paused_job
-        if command in ("PAUSE", "STOP_GRACEFUL") and job_id and (not self._current or self._current.job_id != job_id) and not (command == 'STOP_GRACEFUL' and paused_target):
+        if command in ("PAUSE", "STOP_GRACEFUL") and not job_id:
+            job_id = self._current.job_id if self._current else None
+        paused_target = bool(job_id and (job_id in self._paused_jobs or job_id == self._paused_job))
+        if command in ("PAUSE", "STOP_GRACEFUL") and (not self._current or self._current.job_id != job_id) and not (command == 'STOP_GRACEFUL' and paused_target):
             raise JobError("JOB_TARGET_NOT_RUNNING")
         if command == "RESUME" and not paused_target:
             raise JobError("JOB_TARGET_NOT_PAUSED")
+        if command in ("PAUSE", "RESUME", "STOP_GRACEFUL"):
+            with self._action_lock:
+                if job_id in self._pending_actions:
+                    raise JobError("JOB_COMMAND_PENDING")
+                self._pending_actions[job_id] = command
         if command == "PAUSE":
             self.flag.request_pause()
         elif command == "STOP_GRACEFUL" and not paused_target:
@@ -381,8 +418,10 @@ class WorkerLoop:
         except Exception as exc:
             self.exit_code = 3 if isinstance(exc, DataRootBusy) else 1
             self.last_error = f"{type(exc).__name__}: {exc}"
+            self._set_phase("FAILED")
             return
         try:
+            self._set_phase("RECOVERING")
             recover_interrupted_runs(self._writer.conn, self.data_root)
             self._paused_jobs = {row[0] for row in self._writer.conn.execute(
                 "SELECT r.job_id FROM runs r WHERE r.lifecycle='PAUSED' AND r.rowid="
@@ -401,6 +440,7 @@ class WorkerLoop:
                 self._enqueue_scheduled()
             if self._snapshot_needs_refresh():
                 self._publish_snapshot()
+            self._set_phase("IDLE")
             self._idle_since = time.monotonic()
             while True:
                 self._drain_commands()
@@ -417,6 +457,7 @@ class WorkerLoop:
                 self._idle_since = time.monotonic()
                 self._execute(request)
                 self._publish_snapshot()
+                self._set_phase("IDLE")
                 self._idle_since = time.monotonic()
         except Exception:
             self.exit_code = 1
@@ -427,6 +468,7 @@ class WorkerLoop:
             if self._writer is not None:
                 self._writer.close()
                 self._writer = None
+            self._set_phase("FAILED" if self.exit_code else "STOPPED")
 
     # -- one job, claim to terminal row
     def _enqueue_scheduled(self) -> None:
@@ -453,12 +495,24 @@ class WorkerLoop:
         if not self._publish_serving:
             return
         from santhau_studio.storage.serving import build_serving_db
+        previous = self.progress
+        previous_phase = self._phase
+        self._set_phase("PUBLISHING_SNAPSHOT")
+        if self._current:
+            self.progress = {**previous, "job_id": self._current.job_id, "state": "PUBLISHING_SNAPSHOT"}
         try:
             result = build_serving_db(self.data_root / "warehouse.sqlite", self.data_root / "serving.sqlite")
             if not result.published:
                 self.last_error = f"Snapshot publish failed: {result.reason}"
+                self.snapshot_error = self.last_error
+            else:
+                self.snapshot_error = None
         except (OSError, sqlite3.Error) as exc:
             self.last_error = f"Snapshot publish failed: {exc}"
+            self.snapshot_error = self.last_error
+        finally:
+            self.progress = previous if self._current else {}
+            self._set_phase(previous_phase)
 
     def _snapshot_needs_refresh(self) -> bool:
         if not self._publish_serving:
@@ -482,7 +536,10 @@ class WorkerLoop:
         if writer is None:  # pragma: no cover - run() owns the writer
             return
         self.flag.reset_run_flags()
+        self.progress = {}
         self._current = request
+        self._last_job_id = request.job_id
+        self._set_phase("COLLECTING")
         self._mark_snapshot_stale()
         run_id = f"run-{uuid.uuid4().hex}"
         conn = writer.conn
@@ -513,6 +570,10 @@ class WorkerLoop:
         )
         conn.commit()
         self._current = None
+        self.progress = {}
+        with self._action_lock:
+            if self._pending_actions.get(request.job_id) in ("PAUSE", "STOP_GRACEFUL"):
+                self._pending_actions.pop(request.job_id, None)
 
     def _dispatch(self, request: JobRequest, run_id: str) -> tuple[str, dict[str, Any]]:
         """Run the job kind; return the run_tasks status and its detail summary."""
@@ -569,7 +630,7 @@ class WorkerLoop:
             max_pages=request.request_limits.get("max_pages", 10000),
             max_records=request.request_limits.get("max_records", 1000000))
         runner = Runner(
-            writer=self._writer, limits=limits, progress=lambda value: setattr(self, "progress", {"job_id":request.job_id, **value, **self._weekly_progress}),
+            writer=self._writer, limits=limits, progress=self._set_progress,
             source_key=str(source["source_key"]),
             family=str(source["family"]),
             endpoint=endpoint,
@@ -589,7 +650,10 @@ class WorkerLoop:
         counts: dict[str, int] = {}
         for leaf in leaves:
             counts[leaf.status] = counts.get(leaf.status, 0) + 1
-        detail = {"intervals": len(leaves), "status_counts": counts, "rows": sum(o.rows for o in leaves),
+        detail = {"intervals": len(leaves), "status_counts": counts,
+                  **{name: sum(getattr(o, name) for o in outcomes) for name in (
+                      "rows", "rows_received", "pages", "requests", "attempts", "attempt_errors",
+                      "records_new", "records_updated", "records_raw_only", "records_unchanged", "records_unresolved")},
                   "blockers": sorted({b for o in leaves for b in o.blockers})}
         if any("INTERVAL_NOT_CLOSED" in leaf.blockers for leaf in leaves):
             detail["open_day_snapshot"] = all(
@@ -599,7 +663,7 @@ class WorkerLoop:
                     and bool(leaf.terminal_evidence) and leaf.total_trusted
                     and not (leaf.malformed or leaf.unrecovered_requests or leaf.max_pages_hit or leaf.max_records_hit)
                 ) for leaf in leaves)
-        return _judge(leaves), detail
+        return _judge(outcomes), detail
 
     # -- commands
     def _drain_commands(self) -> None:
@@ -608,7 +672,12 @@ class WorkerLoop:
                 command = self._commands.get_nowait()
             except queue.Empty:
                 return
-            self._apply(command)
+            try:
+                self._apply(command)
+            finally:
+                with self._action_lock:
+                    if self._pending_actions.get(command.job_id) == command.command:
+                        self._pending_actions.pop(command.job_id, None)
 
     def _apply(self, command: Command) -> None:
         writer = self._writer
@@ -655,7 +724,8 @@ class WorkerController:
         op = payload.get("op")
         if op == "ping":
             from santhau_studio.workers.weekly import CAPABILITY
-            return {"ok": True, "worker": True, "capabilities": [CAPABILITY]}
+            return {"ok": True, "worker": True, "capabilities": [CAPABILITY, "runtime-status-v1"],
+                    "runtime": self.loop.runtime_status()}
         if op == "status":
             job_id = payload.get("job_id")
             if not isinstance(job_id, str) or not job_id:
@@ -680,7 +750,7 @@ class WorkerController:
             conn = self._read_conn()
             rows = conn.execute(
                 "SELECT run_id, lifecycle, status, started_at_utc, finished_at_utc FROM runs"
-                " WHERE job_id=? ORDER BY started_at_utc",
+                " WHERE job_id=? ORDER BY started_at_utc, rowid",
                 (job_id,),
             ).fetchall()
         except sqlite3.Error:
@@ -704,7 +774,9 @@ class WorkerController:
                     ],
                 }
             )
-        return {"runs": runs, "progress": self.loop.progress if self.loop.progress.get("job_id") == job_id else {}}
+        progress = self.loop.progress
+        running = bool(runs and runs[-1]["lifecycle"] not in ("FINISHED", "TERMINATED", "PAUSED"))
+        return {"runs": runs, "progress": progress if running and progress.get("job_id") == job_id else {}}
 
     def _read_conn(self) -> sqlite3.Connection:
         if self._conn is None:

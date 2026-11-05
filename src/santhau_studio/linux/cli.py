@@ -49,13 +49,15 @@ def run_worker(root, *, offline=False, idle_exit=None):
 
     def handle(payload, uid):
         if payload.get("op") == "status" and not payload.get("job_id"):
+            runtime = loop.runtime_status()
             return {
                 "ok": True,
                 "running": True,
                 "pid": os.getpid(),
                 "job_id": loop._current.job_id if loop._current else None,
                 "paused_jobs": sorted(loop._paused_jobs),
-                "progress": loop.progress,
+                "progress": runtime["progress"],
+                "runtime": runtime,
             }
         if (
             payload.get("op") == "command"
@@ -179,7 +181,7 @@ def parser():
         prog="santhau-collector",
         description="Bộ thu thập Linux: sáu loại, theo tuần, không giao diện/thống kê.",
     )
-    cli.add_argument("--version", action="version", version="Săn Thầu Collector 0.0.1-RC3 (Linux)")
+    cli.add_argument("--version", action="version", version="Săn Thầu Collector 0.0.1-RC3-2 (Linux x86-64)")
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "--data-root",

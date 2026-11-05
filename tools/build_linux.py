@@ -12,7 +12,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "build/linux"
-VERSION = "0.0.1~rc3"
+VERSION = "0.0.1~rc3-2"
+BUNDLE_VERSION = "0.0.1-RC3-2"
 
 
 def run(*args):
@@ -66,6 +67,9 @@ def main():
     excluded = (
         "PySide6",
         "PyQt6",
+        # Build-time Nuitka compression is not a collector runtime requirement.
+        # Raw segments use gzip; httpx negotiates only installed decoders.
+        "zstandard",
         "santhau_studio.desktop",
         "santhau_studio.storage.serving",
         "santhau_studio.storage.read_model",
@@ -103,6 +107,8 @@ def main():
         raise RuntimeError("Standalone output missing")
     if any("pyside" in p.name.lower() or "libqt" in p.name.lower() for p in dist.rglob("*")):
         raise RuntimeError("Unexpected Qt library in collector-only artifact")
+    if any("zstandard" in str(p.relative_to(dist)).lower() for p in dist.rglob("*")):
+        raise RuntimeError("Build-only zstandard leaked into runtime artifact")
     notices = dist / "LICENSES"
     notices.mkdir(exist_ok=True)
     for name in (
@@ -144,7 +150,7 @@ def main():
             destination = notices / "system" / name
             destination.mkdir(parents=True, exist_ok=True)
             shutil.copy2(copyright_file, destination / "copyright")
-    bundle = OUT / "santhau-collector-0.0.1-RC3-linux-x86_64"
+    bundle = OUT / f"santhau-collector-{BUNDLE_VERSION}-linux-x86_64"
     bundle.mkdir(exist_ok=True)
     shutil.copytree(dist, bundle / "app", dirs_exist_ok=True)
     for name in ("install.sh", "uninstall.sh"):
@@ -175,6 +181,7 @@ Priority: optional
 Architecture: amd64
 Maintainer: SjrEVE <270443947+SjrEVE@users.noreply.github.com>
 Depends: libc6 (>= 2.35), libgcc-s1, libstdc++6, zlib1g, ca-certificates
+Installed-Size: {(sum(p.stat().st_size for p in dist.rglob('*') if p.is_file()) + 1023) // 1024}
 Description: San Thau collector-only service
  Six-family weekly collection with durable raw storage and coverage proof.
  No GUI, dashboard, statistics or serving snapshot generation.
@@ -192,6 +199,9 @@ Description: San Thau collector-only service
     manifest["standalone_files"] = {
         p.relative_to(dist).as_posix(): sha(p) for p in dist.rglob("*") if p.is_file()
     }
+    manifest["package_version"] = VERSION
+    manifest["installed_file_bytes"] = sum(p.stat().st_size for p in dist.rglob("*") if p.is_file())
+    manifest["artifact_bytes"] = {p.name: p.stat().st_size for p in (deb, archive)}
     for name, digest in manifest["inputs"].items():
         if sha(ROOT / name) != digest:
             raise RuntimeError("Source changed during build")

@@ -22,6 +22,7 @@ def egp_page_source(
     lane_factory: Callable[[], FetchLane] | None = None,
     page_size: int | None = None,
     pacing_seconds: float | None = None,
+    budget=None,
 ) -> Callable[[Interval, str, RunnerWindow], Iterator[Page]]:
     """A page source for one family that walks the real lane page by page.
 
@@ -46,7 +47,13 @@ def egp_page_source(
             yield from home.iter_pages()
         finally:
             home.close()
+            if lane is not None:
+                # A factory creates one lane per window; this generator owns it.
+                # In particular, early splitting must release its HTTP client.
+                lane.close()
 
+    if budget is not None:
+        page_source.remaining_capacity = lambda: (budget.remaining_pages(pacing_seconds or 3), None)
     return page_source
 
 
@@ -72,4 +79,14 @@ def bounded_source(source, *, max_pages, max_records):
             close = getattr(iterator, "close", None)
             if close:
                 close()
+    def remaining_capacity():
+        available_pages, available_rows = max_pages - pages, max_records - rows
+        upstream = getattr(source, "remaining_capacity", None)
+        if upstream:
+            upstream_pages, upstream_rows = upstream()
+            available_pages = min(available_pages, upstream_pages)
+            if upstream_rows is not None:
+                available_rows = min(available_rows, upstream_rows)
+        return max(0, available_pages), max(0, available_rows)
+    walk.remaining_capacity = remaining_capacity
     return walk

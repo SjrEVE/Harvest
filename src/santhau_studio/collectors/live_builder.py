@@ -24,6 +24,7 @@ def live_builder(writer, request):
     return egp_page_source(
         family=str(source["family"]),
         pacing_seconds=limits.get("pacing_seconds", 3),
+        budget=budget,
         lane_factory=lambda: FetchLane(
             url=f"https://{SOURCES[key].host}{SOURCES[key].endpoint}", source_key=key, budget=budget
         ),

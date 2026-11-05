@@ -38,6 +38,7 @@ jobs:
             tests/unit/test_linux_config.py tests/unit/test_sanitizer.py tests/unit/test_schema_path.py \
             tests/unit/test_secret_gate.py tests/unit/test_weekly_order.py tests/integration/test_boundary_contract.py \
             tests/integration/test_canary_state.py tests/integration/test_coverage_store.py \
+            tests/integration/test_budget_windowing.py tests/integration/test_collector_runtime.py \
             tests/integration/test_writer_contract.py tests/integration/test_segment_store.py \
             tests/integration/test_runner_modes.py tests/integration/test_public_tables.py \
             tests/integration/test_migrations.py tests/integration/test_http_lane.py \
@@ -70,12 +71,16 @@ jobs:
             nuitka-crash-report.xml
   install-test:
     needs: build
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        base: ['ubuntu:22.04', 'ubuntu:24.04']
+        include:
+          - base: ubuntu:22.04
+            runner: ubuntu-22.04
+          - base: ubuntu:24.04
+            runner: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -91,3 +96,5 @@ jobs:
         run: docker build --build-arg BASE=${{ matrix.base }} -f packaging/linux/Dockerfile.smoke -t santhau-linux-smoke .
       - name: Install, run, upgrade and remove offline
         run: docker run --rm --network none -v "$PWD/packages:/packages:ro" santhau-linux-smoke
+      - name: Packaged systemd service on Ubuntu VM (offline fixture)
+        run: sh packaging/linux/systemd-smoke.sh "$PWD/packages"

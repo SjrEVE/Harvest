@@ -2,7 +2,7 @@
 import json
 import uuid
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from santhau_studio.collectors.source_registry import FAMILY_ORDER
@@ -45,8 +45,19 @@ def dispatch(loop, request, parent_run):
     completed = 0
     pending = []
     pending_weeks = set()
+    children_since_publish = 0
+    initial_work = list(work_periods(periods, loop._clock()))
+
+    def scheduled_work():
+        yield from initial_work
+        # The history pass may cross midnight. Re-fetch the formerly open span;
+        # the resolver skips families already verified after it closed.
+        for index, week, span, current_day, _ in initial_work:
+            if current_day and span.to_utc <= loop._clock():
+                yield index, week, span, False, False
+
     try:
-        for index, week, span, current_day, last_part in work_periods(periods, loop._clock()):
+        for index, week, span, current_day, last_part in scheduled_work():
             for family in FAMILY_ORDER:
                 source = sources[family]
                 def resolve(source=source, family=family, span=span):
@@ -57,17 +68,25 @@ def dispatch(loop, request, parent_run):
                     before = resolve()
                     if before.can_skip:
                         break
+                    # Publish batches on the writer thread. Deferring until actual
+                    # next work avoids rebuilding just before the terminal snapshot.
+                    if children_since_publish >= len(FAMILY_ORDER):
+                        loop._publish_snapshot()
+                        children_since_publish = 0
+                        if loop.flag.interrupt_requested:
+                            return "PARTIAL", {"weeks_completed": completed, "reason": "Đã dừng theo yêu cầu; tiến độ đã lưu."}
                     loop._weekly_progress = {"week_index": index, "week_count": len(periods),
                         "week_from": week.from_utc.isoformat(), "week_to": week.to_utc.isoformat(),
                         "family_index": FAMILY_ORDER.index(family) + 1, "attempt": attempt,
                         "current_day_snapshot": current_day}
                     loop.progress = {"job_id": request.job_id, "family": family, "rows": 0, "pages": 0,
+                        "from": span.from_utc.isoformat(), "to": span.to_utc.isoformat(),
                         **loop._weekly_progress}
                     child = replace(request, sources=(source,), scope={"from": span.from_utc.isoformat(), "to": span.to_utc.isoformat()})
                     child_run = "run-" + uuid.uuid4().hex
                     # Distinct runs preserve every retry's attempts/observations and leave the
                     # parent lifecycle as the sole user control target, including crash recovery.
-                    child_id = f"{request.job_id}.w{index:03d}.{family}.{attempt}"
+                    child_id = f"{request.job_id}.w{index:03d}.{family}.{attempt}.{span.from_utc:%Y%m%dT%H%M}"
                     if current_day:
                         child_id += ".today"
                     writer.register_run(child_run, child_id, "BACKFILL", requested_by=request.requested_by)
@@ -82,7 +101,7 @@ def dispatch(loop, request, parent_run):
                     conn.execute("INSERT INTO run_tasks(run_id,task_kind,status,detail_json) VALUES(?,?,?,?)",
                         (child_run, "BACKFILL", status, json.dumps({**detail, "parent_run": parent_run}, ensure_ascii=False)))
                     conn.commit()
-                    loop._publish_snapshot()
+                    children_since_publish += 1
                     after = resolve()
                     if loop.flag.interrupt_requested:
                         return "PARTIAL", {"weeks_completed": completed, "reason": "Đã dừng theo yêu cầu; tiến độ đã lưu."}
@@ -104,16 +123,25 @@ def dispatch(loop, request, parent_run):
                                   if exhausted and recoverable else "Nguồn bị chặn hoặc có lỗi chưa xử lý được; chưa chuyển tuần. Tiến độ đã lưu, chạy lại để tiếp tục phần thiếu.")
                         return status if status in ("BLOCKED", "FAILED") else "PARTIAL", {
                             "weeks_completed": completed, "week_index": index, "family": family,
-                            "reason": reason,
+                            "reason": f"Ngày {span.from_utc.astimezone(ZoneInfo('Asia/Ho_Chi_Minh')):%d/%m/%Y}: {reason}",
                             "last_attempt": detail}
                 else:
                     return "PARTIAL", {"weeks_completed": completed, "reason": "Đã chạm giới hạn tiếp tục an toàn của tuần; tiến độ đã lưu."}
             if last_part and index not in pending_weeks:
                 completed += 1
+        pending = [item for item in pending if not coverage.resolve(
+            conn, sources[item["family"]]["source_key"], item["family"],
+            datetime.fromisoformat(item["from"]),
+            datetime.fromisoformat(item["to"])).can_skip]
+        completed = sum(all(coverage.resolve(conn, sources[family]["source_key"], family,
+            week.from_utc, week.to_utc).can_skip for family in FAMILY_ORDER) for week in periods)
         if pending:
+            dates = ", ".join(sorted({
+                datetime.fromisoformat(item["from"]).astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%d/%m/%Y")
+                for item in pending}))
             return "PARTIAL", {"weeks_completed":completed, "weeks_total":len(periods),
                 "pending_current_day":pending,
-                "reason":"Đã lấy dữ liệu hiện có của hôm nay cho cả 6 loại và xử lý các ngày cũ. Hôm nay chưa kết thúc nên chưa chốt đủ ngày; chạy cập nhật để lấy hồ sơ phát sinh thêm."}
+                "reason":f"Đã lấy dữ liệu hiện có ngày {dates}. Ngày này chưa kết thúc khi lấy dữ liệu nên chưa chốt đủ ngày; cần cập nhật sau khi ngày khép để kiểm chứng phần phát sinh."}
         return "COMPLETED", {"weeks_completed": completed, "weeks_total": len(periods)}
     finally:
         loop._weekly_progress = {}

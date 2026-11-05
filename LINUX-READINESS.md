@@ -1,5 +1,15 @@
 # Săn Thầu Collector RC3 — bản Linux chỉ thu thập
 
+## RC3-2 — đang nghiệm thu ngày 05/11/2026
+
+Đang chốt bản Ubuntu 22.04/24.04 x86-64 cho Linode: port sửa hạn mức, counters,
+chốt ngày xuyên nửa đêm và trạng thái điều khiển; giữ collector-only và dữ liệu RC3.
+Bộ cài tăng revision thành `0.0.1~rc3-2`, bỏ zstandard khỏi runtime và có phép đo
+kích thước trong manifest. Hồi quy portable: 444 passed, 5 Linux-specific skipped
+trên Windows; chưa dùng kết quả đó thay nghiệm thu Linux. Các kết quả CI/artifact
+ở phần dưới là của gói cũ, không chứng nhận RC3-2 trước khi workflow mới hoàn tất.
+
+
 ## Bản vá mới nhất ngày 04/11/2026
 
 Thay thế gói ban đầu bên dưới: nguồn `fcd9a0cc33dcaebae3177d54c02c361d381fc831`,

@@ -84,9 +84,12 @@ def test_linux_process_pause_resume_sigterm_and_restart(tmp_path, monkeypatch):
 
     process = launch()
     try:
-        wait(lambda: request(root, {"op": "status"}).get("progress"))
+        state = wait(lambda: request(root, {"op": "status"}).get("progress") and request(root, {"op": "status"}))
+        assert state["runtime"]["phase"] == "COLLECTING"
         assert request(root, {"op": "command", "command": "PAUSE", "job_id": job.job_id})["ok"]
         wait(lambda: job.job_id in request(root, {"op": "status"})["paused_jobs"])
+        wait(lambda: request(root, {"op": "status"})["runtime"]["phase"] == "IDLE")
+        assert request(root, {"op": "status"})["progress"] == {}
         assert request(root, {"op": "command", "command": "RESUME", "job_id": job.job_id})["ok"]
         wait(lambda: request(root, {"op": "status"}).get("job_id") == job.job_id)
         process.send_signal(signal.SIGTERM)
