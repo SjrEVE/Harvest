@@ -1,13 +1,62 @@
 # Săn Thầu Collector RC3 — bản Linux chỉ thu thập
 
-## RC3-2 — đang nghiệm thu ngày 05/11/2026
+## RC3-2 — nghiệm thu hoàn tất ngày 05/11/2026
 
-Đang chốt bản Ubuntu 22.04/24.04 x86-64 cho Linode: port sửa hạn mức, counters,
-chốt ngày xuyên nửa đêm và trạng thái điều khiển; giữ collector-only và dữ liệu RC3.
-Bộ cài tăng revision thành `0.0.1~rc3-2`, bỏ zstandard khỏi runtime và có phép đo
-kích thước trong manifest. Hồi quy portable: 444 passed, 5 Linux-specific skipped
-trên Windows; chưa dùng kết quả đó thay nghiệm thu Linux. Các kết quả CI/artifact
-ở phần dưới là của gói cũ, không chứng nhận RC3-2 trước khi workflow mới hoàn tất.
+Bản **0.0.1-RC3-2** đã build và kiểm chứng cho **Ubuntu 22.04/24.04 x86-64**,
+phục vụ cài trên Linode. Chưa triển khai lên server của user hoặc gọi E-GP thật từ
+server đó. Không biến kiểm thử nguồn giả thành bằng chứng thu thập live.
+
+- Source build: `d33296e36d2d6a7430436f46ee876b651c90091a`, working tree sạch.
+- Nhánh `codex/linux-collector`; các commit tài liệu sau build không thay input chương trình.
+- [CI 41988456300](https://github.com/SjrEVE/Harvest/actions/runs/41988456300): cả ba job thành công.
+- [Tải artifact linux-collector-rc3](https://github.com/SjrEVE/Harvest/actions/runs/41988456300/artifacts/13397317934).
+  Cần đăng nhập GitHub; workflow giữ artifact 30 ngày. Gói cũng đã tải về local tại
+  `D:/Harvest/releases/SanThau-Collector-RC3-2-Linux-d33296e/`.
+- [Bằng chứng kiểm chứng JSON](docs/releases/linux-rc3-2-verification.json).
+
+### Gói và dung lượng
+
+| Gói | Dung lượng | SHA256 |
+|---|---:|---|
+| `santhau-collector_0.0.1~rc3-2_amd64.deb` | 22.293.706 byte | `99cec83bcc2381c250ea44feaa6e7b604608acc9bba65f26a9473f532456a8fe` |
+| `santhau-collector-0.0.1-RC3-2-linux-x86_64.tar.gz` | 29.339.601 byte | `317da951474a892df1bbecbee446884fcd8c32972132e02c2309fe0a242d35fa` |
+
+Tệp chương trình chiếm **75.530.009 byte (~75,5 MB)**, chưa tính metadata filesystem
+và dữ liệu thu thập. Gói trước giải nén khoảng 99,95 MB; giảm khoảng 24,4%.
+Không có Qt hoặc zstandard trong runtime. Bộ cài không kèm kho thật hoặc credentials.
+
+### Những phần đã hoàn thiện
+
+- Chốt ngày xuyên nửa đêm bằng lượt lấy mới; không cấp proof cho lượt bắt đầu khi ngày còn mở.
+- Chia khoảng sớm theo hạn mức; counters gồm khoảng cha/con; dừng trước các khoảng chưa lấy
+  không tạo COMPLETE giả. Đóng HTTP client do page source sở hữu.
+- Unix IPC có pha chạy và thời điểm nhận trang; không trả tiến độ cũ sau kết thúc.
+  Từ chối pause/stop không có target và resume lặp.
+- Giữ shutdown requeue, pause/resume, một writer, gzip segments và định dạng kho RC3.
+  Không tạo serving, đổi endpoint/page size/nhịp hoặc migration kho.
+- Revision mới cho nâng cấp; Installed-Size và dung lượng artifact nằm trong manifest.
+  Hướng dẫn Linode chọn Data Root ngoài thư mục cài và chạy sau khi thoát SSH.
+
+### Kết quả và giới hạn
+
+| Hạng mục | Kết quả |
+|---|---|
+| Collector regression trên Linux | **448 passed, 1 skipped**, 34,97s; skip hành vi khóa/rename đặc thù Windows. |
+| Hồi quy portable trên Windows | 444 passed, 5 bài Linux-specific skipped; không thay kết quả Linux. |
+| Lint và secret scan | PASS trên source/config/docs thuộc workflow. |
+| Deb cài/chạy/cài đè/gỡ | PASS trên container Ubuntu 22.04 và 24.04 sạch, không Python/Qt, network tắt; hash Data Root trước/sau khớp. Cài đè dùng cùng RC3-2, chưa thử mọi bản cũ. |
+| Tar cài/chạy/gỡ | PASS với đường dẫn có dấu cách; Data Root ngoài thư mục cài còn nguyên. |
+| systemd user service | PASS enable/start/status/restart/stop trên VM Ubuntu 22.04 và 24.04; fixture ngoại tuyến, IDLE, exit 0, dữ liệu còn và không có serving. |
+| Đối chiếu gói tải về | PASS hash hai artifact, 97 source input và 691 file standalone. |
+| Review | Tự rà của tác giả, không có reviewer độc lập. |
+| Linode thật, reboot/đăng nhập lại | NOT_TESTED trên server đích; không có quyền truy cập server trong lượt này. |
+| E-GP live từ Linux/Linode | Chưa kiểm chứng; profile RULE_VERIFIED không chứng minh IP server truy cập được nguồn. |
+| Deep/HSMT/hàng hóa, độ phủ dưới một giây | Không bổ sung trong RC3-2. Lane chưa xác minh vẫn chặn; persistence chuẩn hóa về giây, runner mặc định chia tới MINUTE. |
+| ARM, Alpine/musl | NOT_TESTED/không phải mục tiêu gói này. |
+
+Log/XML/manifest: `_evidence/linux-server-20261105/` và thư mục release local.
+[Hướng dẫn cài và chạy trên Linode](docs/linux-collector.md).
+Các mục dưới đây giữ lịch sử gói cũ, không thay thế bằng chứng RC3-2.
 
 
 ## Bản vá mới nhất ngày 04/11/2026
