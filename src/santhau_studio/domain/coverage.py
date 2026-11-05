@@ -258,6 +258,9 @@ def resolve_coverage(
         status = "PARTIAL"
     elif blocked_intervals and not legacy_intervals:
         status = "BLOCKED"
+    elif any(r.status in ("PARTIAL", "FAILED", "INTERRUPTED") for r in scoped):
+        status = "PARTIAL"
+        reasons.append("ACCESSED_WITHOUT_COMPLETE_PROOF")
     else:
         status = "PARTIAL" if (gaps and (proven_in_range or legacy_intervals)) else "NOT_ACCESSED"
 

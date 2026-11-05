@@ -79,7 +79,7 @@ def _default_builder(writer, request):
     limits = request.request_limits
     budget = RequestBudget(limits.get("max_requests", 30000), limits.get("max_seconds", 3600))
     key = source["source_key"]
-    return egp_page_source(family=str(source["family"]), pacing_seconds=limits.get("pacing_seconds", 3),
+    return egp_page_source(family=str(source["family"]), pacing_seconds=limits.get("pacing_seconds", 3), budget=budget,
         lane_factory=lambda: FetchLane(url=f"https://{SOURCES[key].host}{SOURCES[key].endpoint}",
                                       source_key=key, budget=budget))
 

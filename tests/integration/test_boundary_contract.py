@@ -127,13 +127,14 @@ def test_total_at_the_es_window_is_untrusted_and_never_complete(writer) -> None:
     assert writer.conn.execute("SELECT COUNT(*) FROM coverage_proofs").fetchone()[0] == 0
 
 
-def test_max_pages_cap_never_completes(writer) -> None:
+def test_window_over_page_cap_defers_early_without_complete_proof(writer) -> None:
     pages = [page(no, 10, total=100, has_more=True) for no in range(5)]
     outcome = runner(writer, pages, limits=RunLimits(max_pages=2, max_records=4000, page_size=10)).run_interval(
         DAY, "DAY", "run-b"
     )
     assert outcome.status == "PARTIAL"
-    assert any("MAX_PAGES_HIT" in blocker for blocker in outcome.blockers)
+    assert "WINDOW_DEFERRED_BUDGET_EXHAUSTED" in outcome.blockers
+    assert outcome.pages == 1 and outcome.max_pages_hit == 0
     assert writer.conn.execute("SELECT COUNT(*) FROM coverage_proofs").fetchone()[0] == 0
 
 

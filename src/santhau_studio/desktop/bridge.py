@@ -47,10 +47,16 @@ class BackendBridge(QObject):
     @Slot(str, str, str, result=int)
     def requestRead(self, key, method, payload_json):
         from santhau_studio.desktop.async_reads import ReadTask
+        payload = self._payload(payload_json)
+        existing = self.pending.get(self.latest.get(key))
+        if (method not in {"start_worker", "worker_command", "enqueue_collection", "start_collection", "enqueue_deep"}
+            and existing is not None and existing.generation == self.generation
+            and existing.method == method and existing.payload == payload):
+            return existing.serial
         self.serial += 1
         self.latest[key] = self.serial
         self.readStarted.emit(key, self.serial, method)
-        task = ReadTask(self.backend, key, self.serial, self.generation, method, self._payload(payload_json))
+        task = ReadTask(self.backend, key, self.serial, self.generation, method, payload)
         task.signals.completed.connect(self._read_done)
         self.pending[self.serial] = task
         self.pool.start(task)

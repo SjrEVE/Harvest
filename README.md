@@ -9,7 +9,7 @@ dữ liệu do người dùng chọn, độc lập với thư mục cài chươn
 1. Mở **Kho dữ liệu**, chọn thư mục lưu dữ liệu và áp dụng.
 2. Vào **Thu thập dữ liệu**, chọn khoảng ngày. Với **Tất cả 6 loại hồ sơ**, chọn
    **Theo tuần — đủ 6 loại rồi chuyển tuần tiếp**. Mỗi đợt gồm 7 ngày tính từ ngày
-   bắt đầu, xử lý từ cũ đến mới; đợt cuối kết thúc đúng ngày đã chọn.
+   bắt đầu, xử lý từ tuần mới nhất lùi dần về trước; đợt cuối kết thúc đúng ngày đã chọn.
 3. Bấm **Bắt đầu thu thập**. Ngày đã đủ bằng chứng được bỏ qua; dữ liệu đang dở
    được giữ lại nhưng có thể cần đọc lại một phần để đối chiếu. Khi chưa đủ sáu
    loại, tác vụ không chuyển sang tuần tiếp theo.
@@ -20,6 +20,11 @@ dữ liệu do người dùng chọn, độc lập với thư mục cài chươn
 
 Đóng cửa sổ ứng dụng không dừng bộ thu thập. Dùng các nút tạm dừng, tiếp tục hoặc
 tắt bộ thu thập khi cần bảo trì. Cài đè cần đóng bộ thu thập an toàn trước khi thay tệp.
+
+Trạng thái thu thập lấy trực tiếp từ worker, tách khỏi kết quả tác vụ trước. Tra cứu
+dùng bản dữ liệu được cập nhật theo nhóm lượt thu thập; cảnh báo dữ liệu chưa cập nhật
+không có nghĩa bộ thu thập đã dừng. Nếu mất phản hồi, giao diện báo chưa xác nhận
+trạng thái thay vì tiếp tục khẳng định đang chạy hoặc đã dừng.
 
 ## Kiểm tra và build
 

@@ -59,9 +59,11 @@ class IntervalOutcome:
     attempt_errors: int = 0
     unrecovered_requests: int = 0
     rows: int = 0
+    rows_received: int = 0
     records_new: int = 0
     records_updated: int = 0
     records_raw_only: int = 0
+    records_unchanged: int = 0
     records_unresolved: int = 0
     malformed: int = 0
     identity_keys: set[str] = field(default_factory=set)
@@ -74,6 +76,7 @@ class IntervalOutcome:
     blockers: tuple[str, ...] = ()
     children: tuple[IntervalOutcome, ...] = ()
     interval_id: int | None = None
+    fetch_started_at: datetime | None = None
 
     @property
     def distinct_ids(self) -> int:
@@ -169,9 +172,10 @@ class Runner:
 
     # ------------------------------------------------------------------ one interval
 
-    def fetch_interval(self, interval: Interval, granularity: str, run_id: str) -> IntervalOutcome:
+    def fetch_interval(self, interval: Interval, granularity: str, run_id: str, *, split_early=False) -> IntervalOutcome:
         """Walk every page of one interval, writing each attempt and committing each page."""
-        outcome = IntervalOutcome(interval=interval, granularity=granularity, status="FETCHED")
+        outcome = IntervalOutcome(interval=interval, granularity=granularity, status="FETCHED",
+                                  fetch_started_at=self.clock())
         binding = binding_for(self.family)
         window = self.window_for(interval, granularity)
         if window is None:
@@ -184,6 +188,15 @@ class Runner:
             pages = self.page_source(interval, granularity, window)
         except (AccessBlocked, FetchFailed) as exc:
             return self._refusal(outcome, exc, run_id, 0)
+        try:
+            return self._walk_pages(pages, outcome, run_id, binding, split_early=split_early)
+        finally:
+            close = getattr(pages, "close", None)
+            if close:
+                close()
+
+    def _walk_pages(self, pages, outcome, run_id, binding, *, split_early):
+        interval, granularity = outcome.interval, outcome.granularity
         seen_records = 0
         page_no = 0
         while True:
@@ -234,10 +247,12 @@ class Runner:
                 run_id=run_id, attempt_id=attempt_id, response_ref=response_ref, records=report.records
             )
             outcome.pages += 1
+            outcome.rows_received += page.rows
             outcome.rows += len(report.records)
             outcome.records_new += committed.records_new
             outcome.records_updated += committed.records_updated
             outcome.records_raw_only += committed.records_raw_only
+            outcome.records_unchanged += committed.records_unchanged
             outcome.records_unresolved += committed.records_unresolved
             # Off-family rows mean the source did not honour the expected result slice.
             # Keep the raw response, but never certify the filtered subset as COMPLETE.
@@ -261,6 +276,12 @@ class Runner:
                     "page_size": self.limits.page_size,
                 }
                 break
+            if split_early:
+                reason = self._early_split_reason(outcome)
+                if reason:
+                    outcome.status = "PARTIAL"
+                    outcome.blockers = (reason,)
+                    return outcome
             page_no += 1
 
         if outcome.total_first is not None and outcome.total_last is not None and outcome.total_first != outcome.total_last:
@@ -268,11 +289,49 @@ class Runner:
             outcome.blockers = (f"TOTAL_CHANGED {outcome.total_first}->{outcome.total_last}",)
         return outcome
 
+    def _split_level(self, interval, granularity):
+        # A resolver gap can span several hours. Split that gap into hours before
+        # considering minutes; it is not a single HOUR merely because it is <24h.
+        finer = granularity if interval.duration > _granularity_step(granularity) else coverage.finer_granularity(granularity)
+        if (finer is not None and
+            coverage.granularity_rank(finer) <= coverage.granularity_rank(self.max_split_granularity) and
+            interval.duration > _granularity_step(finer)):
+            return finer
+        return None
+
+    def _early_split_reason(self, outcome):
+        total = outcome.total_last
+        if total is None:
+            return None
+        if total >= ES_TRUNCATION_TOTAL:
+            return "SOURCE_TOTAL_SATURATED"
+        finer = self._split_level(outcome.interval, outcome.granularity)
+        if not outcome.total_trusted:
+            return None
+        pages_left = self.limits.max_pages - outcome.pages
+        rows_left = self.limits.max_records - outcome.rows
+        capacity = getattr(self.page_source, "remaining_capacity", None)
+        if capacity:
+            source_pages, source_rows = capacity()
+            pages_left = min(pages_left, source_pages)
+            if source_rows is not None:
+                rows_left = min(rows_left, source_rows)
+        # Full final pages need a further empty page for terminal evidence.
+        pages_needed = max(0, total // self.limits.page_size + 1 - outcome.pages)
+        if pages_needed > pages_left or max(0, total - outcome.rows) >= rows_left:
+            if finer is not None and self.boundary_rule(finer) is not None:
+                return "WINDOW_EXCEEDS_REMAINING_BUDGET"
+            # A DAY-only source cannot safely narrow to hours. Keep the probe,
+            # then let the weekly retry use a fresh budget for the missing day.
+            return "WINDOW_DEFERRED_BUDGET_EXHAUSTED"
+        return None
+
     def _refusal(self, outcome: IntervalOutcome, exc: Exception, run_id: str, page_no: int) -> IntervalOutcome:
         """The lane gave up: an access refusal blocks the interval, a dead request stays partial."""
-        outcome.requests += 1
-        outcome.unrecovered_requests += 1
         attempts = getattr(exc, "attempt_log", ())
+        sent = bool(attempts) or "BUDGET_EXHAUSTED" not in str(exc)
+        outcome.requests += int(sent)
+        outcome.unrecovered_requests += int(sent)
         outcome.attempts += len(attempts)
         outcome.attempt_errors += len(attempts)
         for attempt in attempts:
@@ -323,29 +382,30 @@ class Runner:
 
     # ------------------------------------------------------------------ split + record
 
-    def run_interval(self, interval: Interval, granularity: str, run_id: str) -> IntervalOutcome:
+    def run_interval(self, interval: Interval, granularity: str, run_id: str, *, order=ORDER_NEWEST_FIRST) -> IntervalOutcome:
         """Fetch, split when the source truncated or a cap was hit, then record leaf rows."""
-        outcome = self.fetch_interval(interval, granularity, run_id)
+        outcome = self.fetch_interval(interval, granularity, run_id, split_early=True)
         truncated = outcome.total_first is not None and outcome.total_first >= ES_TRUNCATION_TOTAL
         capped = bool(outcome.max_pages_hit or outcome.max_records_hit)
-        finer = coverage.finer_granularity(granularity)
-        splittable = (
-            (truncated or capped)
-            and finer is not None
-            and coverage.granularity_rank(finer) <= coverage.granularity_rank(self.max_split_granularity)
-            and interval.duration > _granularity_step(finer)
-        )
+        finer = self._split_level(interval, granularity)
+        splittable = (truncated or capped or "WINDOW_EXCEEDS_REMAINING_BUDGET" in outcome.blockers) and finer is not None
         if splittable:
-            outcome.children = tuple(
-                self.run_interval(child, finer, run_id) for child in split_for_granularity(interval, finer)
-            )
-            for name in ("requests", "attempts", "attempt_errors", "unrecovered_requests", "rows",
-                         "records_new", "records_updated", "records_raw_only", "records_unresolved", "malformed"):
-                setattr(outcome, name, sum(getattr(child, name) for child in outcome.children))
-            outcome.identity_keys = set().union(*(child.identity_keys for child in outcome.children))
-            all_complete = bool(outcome.children) and all(child.status == "COMPLETE" for child in outcome.children)
-            outcome.status = "COMPLETE" if all_complete else "PARTIAL"
-            outcome.blockers = () if all_complete else (outcome.blockers or ("SPLIT_INCOMPLETE",))
+            parts = split_for_granularity(interval, finer)
+            children = []
+            for child in reversed(parts) if order == ORDER_NEWEST_FIRST else parts:
+                result = self.run_interval(child, finer, run_id, order=order)
+                children.append(result)
+                if self.stop_requested() or _budget_exhausted(result) or result.status == "BLOCKED":
+                    break
+            outcome.children = tuple(children)
+            for name in ("pages", "requests", "attempts", "attempt_errors", "unrecovered_requests", "rows", "rows_received",
+                         "records_new", "records_updated", "records_raw_only", "records_unchanged", "records_unresolved", "malformed"):
+                setattr(outcome, name, getattr(outcome, name) + sum(getattr(child, name) for child in outcome.children))
+            outcome.identity_keys.update(set().union(*(child.identity_keys for child in outcome.children)))
+            all_complete = len(outcome.children) == len(parts) and all(child.status == "COMPLETE" for child in outcome.children)
+            outcome.status = "COMPLETE" if all_complete else (
+                "BLOCKED" if any(child.status == "BLOCKED" for child in outcome.children) else "PARTIAL")
+            outcome.blockers = () if all_complete else tuple(sorted({b for child in outcome.children for b in child.blockers})) or ("SPLIT_INCOMPLETE",)
             return outcome
         self._record(outcome, run_id)
         return outcome
@@ -354,7 +414,7 @@ class Runner:
         rule = self.boundary_rule(outcome.granularity)
         blockers: list[str] = list(outcome.blockers)
         checked_at = self.clock()
-        if outcome.interval.to_utc > checked_at:
+        if outcome.interval.to_utc > min(checked_at, outcome.fetch_started_at or checked_at):
             blockers.append("INTERVAL_NOT_CLOSED")
         if rule is None:
             blockers.append("BOUNDARY_RULE_UNVERIFIED")
@@ -422,7 +482,10 @@ class Runner:
         for day in days:
             parts = self._unproven_parts(day) if skip_proven else [day]
             for interval in parts:
-                outcomes.append(self.run_interval(interval, interval_granularity(interval), run_id))
+                outcome = self.run_interval(interval, interval_granularity(interval), run_id, order=order)
+                outcomes.append(outcome)
+                if _budget_exhausted(outcome):
+                    return outcomes
             if self.stop_requested():
                 break
         return outcomes
@@ -494,6 +557,10 @@ class Runner:
 
 
 # ------------------------------------------------------------------ module helpers
+
+
+def _budget_exhausted(outcome):
+    return any("BUDGET_EXHAUSTED" in blocker for blocker in outcome.blockers)
 
 _LANE_OUTCOME_TO_DDL = {"OK": "OK", "BLOCKED": "BLOCKED", "MALFORMED": "MALFORMED"}
 

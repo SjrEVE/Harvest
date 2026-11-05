@@ -1,0 +1,79 @@
+{
+  "checked_at_vn": "2026-11-05T13:44:39.564717+07:00",
+  "base_commit": "68fa8279845575deb7221c6fad62a9bd40d9baca",
+  "branch": "codex/rc3-completion",
+  "regression": {
+    "tests": 670,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 1,
+    "passed": 669,
+    "seconds": 187.05,
+    "command": ".venv/Scripts/python.exe -m pytest --tb=short --junitxml=_evidence/rc3/completion-push-20261105/final-regression.xml",
+    "network": "offline fixtures; no source canary"
+  },
+  "scheduler_opt_in": {
+    "passed": 1,
+    "seconds": 0.58,
+    "scope": "real temporary Windows task created, queried, deleted, absence verified"
+  },
+  "lint": "PASS for modified/added Python files",
+  "review": "author review; no independent reviewer",
+  "ui": {
+    "installed": "read-only observation of collecting screen at about 13:38 VN; workspace stale-status bug reproduced",
+    "source_fix": "real Qt state transitions and stale-reply regression; offline render inspected at 1080x620 and 1380x900"
+  },
+  "installed": {
+    "installer_sha256": "a5f912ce9e1aa18c7c17143e21a3eba1eb254eaca34026b00e8daa2dfd834765",
+    "executable_hashes_match_release_manifest": true,
+    "new_runtime_input_not_installed": [
+      "src/santhau_studio/desktop/qml/Main.qml"
+    ]
+  },
+  "changed_code_git_blobs": {
+    "src/santhau_studio/collectors/budget.py": "2beb9597d3f639b69d0a6f67c559a220ee8ff4c7",
+    "src/santhau_studio/collectors/lane_source.py": "f7447f12c158f35889e143010e92f16343c4002b",
+    "src/santhau_studio/desktop/backend.py": "ecabed0d56090cec1a0961d37284bc384b88b6ad",
+    "src/santhau_studio/desktop/bridge.py": "c55ddcfed60b5531c6cfef2551d1a9faff48e2a2",
+    "src/santhau_studio/desktop/collection_status.py": "cc5e51ab2b1ab7eef2103203e394b6bdfa01467d",
+    "src/santhau_studio/desktop/qml/CollectionPage.qml": "874875ece953d668444e47272d93a5bde83b3920",
+    "src/santhau_studio/desktop/qml/CollectionState.js": "48c2d3b12add10e9919c27e83d704a790df379f5",
+    "src/santhau_studio/desktop/qml/CollectionStatus.qml": "10381b6d5e38a925b1f20f9f16a8775b99c4188b",
+    "src/santhau_studio/desktop/qml/Main.qml": "d2697d38a8b90d4eeb8c60b333a14fa44abd0f8d",
+    "src/santhau_studio/desktop/qml/UiText.js": "dcb27a44f9e38692285c498f0ff9263e2a5ba41e",
+    "src/santhau_studio/domain/coverage.py": "bc176f471df0b693e14ba0f74c38dfb4244fcfc7",
+    "src/santhau_studio/workers/jobs.py": "1a0b717a7033281441f7690f9c4cbc948cf5c7c2",
+    "src/santhau_studio/workers/runner.py": "1b94565661fdef9a10bf5e7c3aa0e1c3170aa740",
+    "src/santhau_studio/workers/service.py": "1fe8f99842888d043c3a0b809b33b0ee047e4c21",
+    "src/santhau_studio/workers/weekly.py": "111620e902577cefd1e6c687325f13e55dd58c41",
+    "tests/integration/test_async_bridge.py": "36dfd18e1a7f88846e12fcc612bb965a7ee837aa",
+    "tests/integration/test_boundary_contract.py": "0e5af1aa679648aecb857ae5419d7bb1832908f7",
+    "tests/integration/test_budget_windowing.py": "4d23475a9a5f9b61b8752b283b686c833e1eb054",
+    "tests/integration/test_collection_date_ui.py": "34439e4f2aeb439e14d22021658947d2c82a3c28",
+    "tests/integration/test_collection_selection.py": "7f9bc02a7c84d5148f66b81b3d0f763179656b2b",
+    "tests/integration/test_collection_status_ui.py": "8db429ae88953fba8e897ee6086dff2f57bc661d",
+    "tests/integration/test_qml_state_binding.py": "402eac7a6b770fa82438640ff1a2e64d44b844d4",
+    "tests/integration/test_runtime_status.py": "8ea061ede142f45d02a3b9a24a7ca75fc7e6ca2e",
+    "tests/integration/test_weekly_collection.py": "baa39e823dc8b6713558546e605becd80df88f70",
+    "tests/integration/test_weekly_open_day.py": "e1dc792f108d6ef2a6a03ea0ada1da3bbc8c42e2",
+    "tests/integration/test_worker_ipc.py": "059ba335d1469295532580804d8349d7e4b640a7",
+    "tools/bench_weekly_snapshots.py": "d746c74e07f01309730dd8e90da5715e38f36a7a"
+  },
+  "local_evidence_sha256": {
+    "final-regression.xml": "83b539344ec489a7a2ac42b89f1c9e5b3dfcef18269c12e57901fed9b884e9c7",
+    "final-regression.log": "ebea20406b3ea5f5490dd660a6add23f2c59cad4a1d7711e9e121ccf4470e889",
+    "workspace-red.log": "87223635592580be48d8d4ab3a6129f26794a353c15b0c27489fd595f29a7af7",
+    "workspace-green.log": "53f731f562423b4f2d4e85bcbabe25f1209b87b46db06854229fbb3d8040daab",
+    "scheduler-live.log": "e232b009c8b279a968fb83127164a50cacb1547adcab91b45906a159e7a7ff1f",
+    "lint.log": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+    "workspace-1080.png": "c65dc5876d808cb60421ac7f8770c3bf99f681dd80305996300326bdca3828fc",
+    "workspace-1380.png": "aff6eb0b6c3901632b0c3a99dcf044597dc1c6097a09dde8fb5a9fef645311c9"
+  },
+  "limits": [
+    "subsecond coverage persistence not fixed",
+    "deep live endpoints unverified; real document/goods tables remain empty",
+    "no clean Windows VM or full system DPI acceptance",
+    "additional Main.qml fix not packaged or installed",
+    "no new source requests/jobs, worker restart, or data/queue edits in this pass"
+  ]
+}

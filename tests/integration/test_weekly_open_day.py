@@ -17,7 +17,7 @@ TODAY = vn_calendar_day(date(2026, 11, 4))
 NOW = datetime(2026, 11, 4, 12, tzinfo=UTC)
 
 
-def collect(root, calls, *, first=date(2026, 10, 27), now=NOW, fault=None, drift=False):
+def collect(root, calls, *, first=date(2026, 10, 27), now=NOW, fault=None, drift=False, clock=None):
     if not (root / "warehouse.sqlite").exists():
         initialize(root)
     with closing(connect_read_only(root / "warehouse.sqlite")) as conn:
@@ -50,7 +50,7 @@ def collect(root, calls, *, first=date(2026, 10, 27), now=NOW, fault=None, drift
                     total_hint_trusted=True, http_status=200, attempt_log=())
         return pages
 
-    loop = WorkerLoop(root, page_source_builder=builder, clock=lambda: now,
+    loop = WorkerLoop(root, page_source_builder=builder, clock=clock or (lambda: now),
         idle_exit_seconds=.01, poll_seconds=.001)
     loop.run()
     assert loop.exit_code == 0, loop.last_error
@@ -121,3 +121,57 @@ def test_pending_today_cannot_hide_a_fault_on_a_closed_day(tmp_path):
     assert detail["weeks_completed"] == 0
     assert "NETWORK_UNAVAILABLE" in str(detail["last_attempt"])
     assert len(calls) == 7
+
+
+def test_crossing_midnight_rechecks_only_pending_day(tmp_path):
+    calls = []
+    current = [NOW]
+    def rollover(interval):
+        if interval != TODAY:
+            current[0] = datetime(2026, 11, 5, 0, tzinfo=UTC)
+    status, detail, counts, _ = collect(tmp_path, calls, fault=rollover, clock=lambda: current[0])
+    assert status == "COMPLETED"
+    assert detail["weeks_completed"] == 2
+    assert counts == (54, 54, 60, 54)
+    assert len(calls) == 60 and all(span == TODAY for _, span in calls[-6:])
+    calls.clear()
+    assert collect(tmp_path, calls, now=current[0])[2] == counts
+    assert calls == []
+
+
+def test_day_closing_during_fetch_requires_a_fresh_fetch(tmp_path):
+    calls = []
+    current = [NOW]
+    def rollover(_interval):
+        current[0] = datetime(2026, 11, 5, 0, tzinfo=UTC)
+    status, _, counts, _ = collect(tmp_path, calls, first=date(2026, 11, 4),
+        fault=rollover, clock=lambda: current[0])
+    assert status == "COMPLETED"
+    # Only the first family began before midnight; it must be observed again.
+    assert counts == (6, 6, 7, 6)
+    assert len(calls) == 7 and calls[-1][0] == FAMILY_ORDER[0]
+
+
+def test_closing_day_failure_remains_partial_without_false_proof(tmp_path):
+    calls = []
+    current = [NOW]
+    def fault(interval):
+        if interval != TODAY:
+            current[0] = datetime(2026, 11, 5, 0, tzinfo=UTC)
+        elif current[0] != NOW:
+            raise FetchFailed("NETWORK_UNAVAILABLE")
+    status, detail, counts, _ = collect(tmp_path, calls, fault=fault, clock=lambda: current[0])
+    assert status == "PARTIAL" and counts == (54, 54, 54, 48)
+    assert "NETWORK_UNAVAILABLE" in str(detail.get("last_attempt"))
+    assert "04/11/2026" in detail["reason"]
+    assert "Hôm nay chưa kết thúc" not in detail["reason"]
+
+
+def test_partial_snapshot_reports_access_without_granting_skip(tmp_path):
+    from santhau_studio.storage.coverage import resolve
+    collect(tmp_path, [], first=date(2026, 11, 4))
+    with closing(connect_read_only(tmp_path / "warehouse.sqlite")) as conn:
+        result = resolve(conn, "egp_home", "TBMT", TODAY.from_utc, TODAY.to_utc)
+    assert result.status == "PARTIAL"
+    assert result.proven_fraction == 0 and not result.can_skip
+    assert result.proof_ids == () and result.gaps == (TODAY,)
