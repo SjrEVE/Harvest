@@ -1,0 +1,128 @@
+{
+  "source_commit": "c76d015ea9151c664abf257aed6a1a8f3ab65b3b",
+  "working_tree_clean_at_build": true,
+  "input_hashes_verified": 113,
+  "standalone_hashes_verified": 692,
+  "artifact_hashes": {
+    "santhau-collector_0.0.1~rc3-3_amd64.deb": "8670d85949f960a4ad621ec4f457371ad1114b750713b5e2b122e2dd87e53763",
+    "santhau-collector-0.0.1-RC3-3-linux-x86_64.tar.gz": "088378c83ce214db2bf620ea142d7718bacb63a232443da9d7fc8486f1bb9f53"
+  },
+  "artifact_bytes": {
+    "santhau-collector_0.0.1~rc3-3_amd64.deb": 22424976,
+    "santhau-collector-0.0.1-RC3-3-linux-x86_64.tar.gz": 29524175
+  },
+  "installed_file_bytes": 76019238,
+  "tests": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "4",
+      "tests": "470",
+      "time": "37.468",
+      "timestamp": "2026-11-05T18:08:36.392920+00:00",
+      "hostname": "runnervmlby3q"
+    }
+  ],
+  "skipped": [
+    {
+      "test": {
+        "classname": "tests.integration.test_public_deep",
+        "name": "test_saved_real_payload_contract[hsmt-probe-6.json-3-28]",
+        "time": "0.001"
+      },
+      "reason": {
+        "type": "pytest.skip",
+        "message": "local source evidence is kept outside Git"
+      }
+    },
+    {
+      "test": {
+        "classname": "tests.integration.test_public_deep",
+        "name": "test_saved_real_payload_contract[hsmt-probe-3.json-0-1]",
+        "time": "0.001"
+      },
+      "reason": {
+        "type": "pytest.skip",
+        "message": "local source evidence is kept outside Git"
+      }
+    },
+    {
+      "test": {
+        "classname": "tests.integration.test_public_deep",
+        "name": "test_saved_real_payload_contract[hsmt-probe-1.json-0-38]",
+        "time": "0.001"
+      },
+      "reason": {
+        "type": "pytest.skip",
+        "message": "local source evidence is kept outside Git"
+      }
+    },
+    {
+      "test": {
+        "classname": "tests.integration.test_backup_restore",
+        "name": "test_restore_over_an_open_warehouse_reports_the_real_blocker",
+        "time": "0.000"
+      },
+      "reason": {
+        "type": "pytest.skip",
+        "message": "Win32 open-handle rename semantics; writer-lock refusal tested separately"
+      }
+    }
+  ],
+  "migration_v2_packaged": true,
+  "qt_and_zstandard_absent": true,
+  "ci": {
+    "run_id": 42080908185,
+    "url": "https://github.com/SjrEVE/Harvest/actions/runs/42080908185",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "build",
+        "conclusion": "success"
+      },
+      {
+        "name": "install-test (ubuntu:24.04, ubuntu-24.04)",
+        "conclusion": "success"
+      },
+      {
+        "name": "install-test (ubuntu:22.04, ubuntu-22.04)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "artifact": {
+    "id": 13440368320,
+    "url": "https://github.com/SjrEVE/Harvest/actions/runs/42080908185/artifacts/13440368320",
+    "expires_at_utc": "2026-12-05T18:14:36Z"
+  },
+  "portable_windows": {
+    "passed": 465,
+    "skipped_linux_specific": 5,
+    "seconds": 63.85,
+    "saved_public_payload_tests_enabled": true
+  },
+  "packaged_deep_acceptance": {
+    "evidence_class": "SYNTHETIC_OFFLINE",
+    "captures": 9,
+    "history": 9,
+    "lots": 3,
+    "goods": 67,
+    "unallotted_goods": 39,
+    "offerors": 5,
+    "document_references": 3,
+    "relations": 3,
+    "first_synthetic_fetches": 9,
+    "rerun_fetches": 0,
+    "network_requests": 0,
+    "serving_created": false
+  },
+  "scope_limits": [
+    "Live E-GP from Linux/Linode not tested",
+    "No deployment or reboot on target server",
+    "Documents remain REFERENCE_ONLY, no download bytes",
+    "Only public CGTTRG deep lanes verified",
+    "Author self-review; no independent reviewer",
+    "Package upgrade smoke reinstalls RC3-3; old schema upgrade tested separately"
+  ]
+}

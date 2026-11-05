@@ -4,8 +4,41 @@
 
 Đã nối shared public CGTTRG collector và tự động chạy bù vào runtime Linux.
 Thêm deep-config, deep-status và self-test-deep; migration v2 giữ kho cũ.
-Đang nghiệm thu gói mới; kết quả RC3-2 bên dưới không được dùng thay cho RC3-3.
-Không có triển khai hoặc kiểm thử trên server Linode đích trong lượt này.
+
+- Source build: `c76d015ea9151c664abf257aed6a1a8f3ab65b3b`, working tree sạch khi build.
+- [CI 42080908185](https://github.com/SjrEVE/Harvest/actions/runs/42080908185): cả ba job thành công.
+- [Tải bộ cài RC3-3](https://github.com/SjrEVE/Harvest/actions/runs/42080908185/artifacts/13440368320).
+  Artifact cần đăng nhập GitHub, giữ 30 ngày. Bản local:
+  `D:/Harvest/releases/SanThau-Collector-RC3-3-Linux-c76d015/`.
+- [Hướng dẫn cài/nâng cấp và bật chạy bù](docs/linux-collector.md).
+- [Bằng chứng kiểm chứng JSON](docs/releases/linux-rc3-3-verification.json).
+
+| Gói | Byte | SHA256 |
+|---|---:|---|
+| `santhau-collector_0.0.1~rc3-3_amd64.deb` | 22.424.976 | `8670d85949f960a4ad621ec4f457371ad1114b750713b5e2b122e2dd87e53763` |
+| `santhau-collector-0.0.1-RC3-3-linux-x86_64.tar.gz` | 29.524.175 | `088378c83ce214db2bf620ea142d7718bacb63a232443da9d7fc8486f1bb9f53` |
+
+File chương trình sau cài: **76.019.238 byte (~76 MB)**, chưa tính kho dữ liệu.
+Không kèm Qt, serving snapshot, dữ liệu thật hoặc credentials. So với RC3-2,
+thêm khoảng 0,49 MB file chương trình để có deep collector và bài self-test.
+
+| Hạng mục | Kết quả và phạm vi |
+|---|---|
+| Hồi quy Linux | **466 passed, 4 skipped**, 37,48s. Skip: 1 hành vi khóa/rename riêng Windows và 3 payload thật nằm ngoài Git. |
+| Portable trên Windows | 465 passed, 5 Linux-specific skipped; bật cả 3 contract payload thật đã lưu. Không thay thế kết quả Linux. |
+| Deep binary trên Ubuntu 22.04/24.04 | PASS synthetic offline: 9 captures/history, 3 lô, 67 hàng (39 không lô), 5 OFFEROR, 3 tham chiếu tài liệu và 3 quan hệ. Chạy lại 0 lượt fetch mới. |
+| Bật/tắt, checkpoint, lỗi | PASS lệnh deep-config/deep-status; từ chối sửa cấu hình khi có writer; kho synthetic không thể dùng đường live. |
+| Migration v1 → v2 | PASS kho v1 có record được nâng cấp không đổi record, không lỗi FK; SQL v2 có trong binary bundle. |
+| Deb/tar cài, chạy, cài đè và gỡ | PASS trên Ubuntu 22.04/24.04 sạch, không Python/Qt, mạng tắt; hash kho danh sách và kho deep trước/sau giống nhau. Cài đè dùng cùng RC3-3; chưa thử binary mọi bản cũ. |
+| systemd user service | PASS enable/start/status/restart/stop trên cả hai Ubuntu VM với kho deep synthetic; 9 FETCHED, không tạo serving, dữ liệu được giữ. |
+| Gói tải về | PASS: SHA256 hai artifact, 113 đầu vào nguồn và 692 file standalone khớp manifest; bản build đúng c76d015, không có source chưa commit. |
+| Lint/secret gate | PASS; review do tác giả tự thực hiện, không có reviewer độc lập. |
+| Live từ Linux/Linode, reboot server đích | NOT_TESTED. Shared endpoints đã kiểm trên Windows; không suy ra IP Linode truy cập được nguồn từ test offline. |
+| Tệp tài liệu tải về, KQLCNT_FULL, BOQ, ngoài CGTTRG | PARTIAL/UNVERIFIED: documents chỉ REFERENCE_ONLY, chưa tải bytes; không mở lane chưa xác minh. |
+
+Đã push nguồn Windows `2a47b16` và nhánh Linux. Các commit chỉ cập nhật tài liệu sau
+build không thay input chương trình. Không triển khai lên server Linode của user.
+Lịch sử dưới đây được giữ để đối chiếu, không thay thế bằng chứng RC3-3.
 
 ## RC3-2 — nghiệm thu hoàn tất ngày 05/11/2026
 
