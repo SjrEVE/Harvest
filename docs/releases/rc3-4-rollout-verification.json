@@ -1,0 +1,124 @@
+{
+  "release": "0.0.1-RC3-4",
+  "binary_source_commit": "1b70185bb63ef90c4a7c3d876e7d1ae0f62fdf1f",
+  "authorization": "Owner explicitly requested reinstall on their Windows machine and VPS.",
+  "linux_ci": "https://github.com/SjrEVE/Harvest/actions/runs/42155539338",
+  "tests": {
+    "windows": {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "9",
+      "tests": "780",
+      "time": "355.591",
+      "timestamp": "2026-11-06T10:17:04.939758+07:00",
+      "hostname": "SjrEVE"
+    },
+    "linux": {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "4",
+      "tests": "534",
+      "time": "44.129",
+      "timestamp": "2026-11-06T03:17:12.857723+00:00",
+      "hostname": "runnervmlby3q"
+    },
+    "packaged_windows": {
+      "evidence_class": "PACKAGED_SYNTHETIC_OFFLINE",
+      "source_records": 216,
+      "schema": 5,
+      "worker_exit": 0,
+      "gui_exit": 0,
+      "warehouse_quick_check": "ok",
+      "serving_quick_check": "ok",
+      "network_requests": 0
+    }
+  },
+  "artifacts": {
+    "SanThau-Data-Studio-Setup-0.0.1-RC3-4.exe": {
+      "bytes": 49711197,
+      "sha256": "7149a44b13b27b9cfb86bd2afbd83c0db602ff0eccc41957ef47df625ad21540"
+    },
+    "santhau-collector_0.0.1~rc3-4_amd64.deb": {
+      "bytes": 22655588,
+      "sha256": "bd62d0f81e5071c7a747508cf350c1310db560140c4fc79a694caa178cf4c7b6"
+    },
+    "santhau-collector-0.0.1-RC3-4-linux-x86_64.tar.gz": {
+      "bytes": 29814617,
+      "sha256": "e5ec36f430f0b986113eea011ddb1ef7b96865d12bec6d9e4b72fc7900bcef4c"
+    }
+  },
+  "windows": {
+    "installed_version": "0.0.1.4",
+    "installed_files_verified": 2536,
+    "schema": 5,
+    "install_exit": 0,
+    "gui_smoke_exit": 0,
+    "gui_reopened": true,
+    "pre_replay_counts_preserved": true,
+    "queue_documents_preserved": 24,
+    "replayed_hsmt": 36,
+    "new_goods_rows": 640,
+    "new_lots": 22,
+    "new_document_references": 36,
+    "replay_rerun_applied": 0,
+    "replay_http_requests": 0,
+    "scope": {
+      "from": "2022-01-01",
+      "to": "2026-11-06"
+    },
+    "coverage_at_resume": {
+      "proved": 390,
+      "partial_uncovered": 502,
+      "never_attempted": 9734,
+      "active": 0,
+      "queued": 0,
+      "day_family_windows": 10626
+    },
+    "continuation_job": "rc3-4-update-ff3ed1627b05",
+    "runtime_observed": "DEEP_COLLECTING with successful source HTTP, followed by PUBLISHING_SNAPSHOT",
+    "backup": "D:\\Harvest\\backups\\rc3-4-before-20261106-1b70185",
+    "backup_bytes": 1983129985
+  },
+  "linode": {
+    "platform": "Ubuntu 24.04 x86_64",
+    "installed_package": "0.0.1~rc3-4",
+    "installed_files_verified": 695,
+    "schema": 5,
+    "pre_replay_counts_preserved": true,
+    "queue_preserved": true,
+    "replayed_hsmt": 160,
+    "structured": 143,
+    "document_only": 14,
+    "unverified_form": 1,
+    "identity_quarantine": 2,
+    "replay_rerun_applied": 0,
+    "replay_http_requests": 0,
+    "raw_response_hashes_preserved": true,
+    "scope": {
+      "from": "2026-09-01",
+      "to": "2026-09-30"
+    },
+    "stored_proof_day_family_windows": 180,
+    "reconcile_completed": 2,
+    "reconcile_gaps_detected": 0,
+    "reconcile_waiting_quota": 178,
+    "known_unsupported": {
+      "packages": 1,
+      "lane_tasks": 3
+    },
+    "service_active": true,
+    "live_http_observed": true,
+    "backup": "/home/santhau/backups/rc3-4-before-20261106-1b70185",
+    "backup_bytes": 1370385936
+  },
+  "boundaries": [
+    "No forced termination of the original Windows writer; awaited snapshot completion.",
+    "Separate data roots and date scopes retained; no cross-machine data sync.",
+    "No old Linode historical backup or independent Box touched.",
+    "Installed does not mean historical collection is complete. Windows backfill continues; list proof is distinct from deep capability.",
+    "Document-only references are not downloaded/OCRed items; unsupported adapters and identity mismatches remain explicit.",
+    "Source/publication files and private backup manifests stay local; this report contains aggregate evidence only."
+  ]
+}
