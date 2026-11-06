@@ -169,3 +169,16 @@ def test_host_lease_wait_respects_deadline_without_sending(tmp_path, monkeypatch
         request_lane.post({})
     time.sleep(0.1)  # The cancelled lease waiter must not send after the holder exits.
     assert not calls
+
+
+def test_user_stop_during_failure_prevents_backoff_and_next_http_attempt():
+    stopped, calls, waits = [], [], []
+    def transport(_request):
+        calls.append(1)
+        stopped.append(True)
+        raise httpx.ConnectTimeout("synthetic interrupted request")
+    budget = RequestBudget(5, 90, stop_requested=lambda: bool(stopped))
+    with httpx.Client(transport=httpx.MockTransport(transport)) as client, pytest.raises(FetchFailed, match="STOP_REQUESTED"):
+        FetchLane(url=URL, source_key="egp_home", client=client, budget=budget,
+                  sleeper=waits.append, pacing_sleeper=lambda _s: None).post({})
+    assert calls == [1] and waits == []

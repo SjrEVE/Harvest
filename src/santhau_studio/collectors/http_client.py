@@ -191,6 +191,7 @@ class FetchLane:
         self.close()
 
     def _post_bounded(self, body):
+        self._request_started = False
         remaining = self.budget.remaining_seconds if self.budget else None
         timeout = request_timeout(self.connect_timeout_seconds, remaining)
 
@@ -201,14 +202,22 @@ class FetchLane:
                 if self.budget:
                     self.budget.consume()
                 network_event(self.host, "REQUEST", source_key=self.source_key)
+                self._request_started = True
                 return self._client.post(self.url, json=body, timeout=timeout)
             if self._own_client:
                 network_event(self.host, "HOST_WAIT")
                 gate_options = {"budget": self.budget} if self.budget is not None else {}
                 with HostRequestGate(self.host, max(self.limiter.floor, self._min_interval), **gate_options) as gate:
-                    response = post()
+                    try:
+                        response = post()
+                    except httpx.HTTPError as exc:
+                        if transport_category(exc)[1] and self.retry.exhausted(self._attempt_no):
+                            gate.defer(60)
+                        raise
                     if response.status_code == 429:
                         gate.defer(parse_retry_after(response.headers.get("Retry-After")))
+                    elif response.status_code >= 500 and self.retry.exhausted(self._attempt_no):
+                        gate.defer(60)
                     return response
             return post()
 
@@ -223,6 +232,7 @@ class FetchLane:
         last_error: str | None = None
         last_verdict: Verdict | None = None
         for attempt_no in range(1, self.retry.max_attempts + 1):
+            self._attempt_no = attempt_no
             if self.budget:
                 self.budget.check()
             record = Attempt(attempt_no=attempt_no, started_at_utc=_now_utc())
@@ -234,11 +244,12 @@ class FetchLane:
                 self._min_interval = min_interval or 0.0
                 response = self._post_bounded(body)
             except (RequestDeadlineExceeded, FetchFailed) as exc:
-                record.outcome, record.error_kind = "ERROR", "REQUEST_DEADLINE_EXCEEDED" if "DEADLINE" in str(exc) else "REQUEST_BUDGET_EXHAUSTED"
+                record.outcome, record.error_kind = "ERROR", ("STOP_REQUESTED" if "STOP_REQUESTED" in str(exc) else ("REQUEST_DEADLINE_EXCEEDED" if "DEADLINE" in str(exc) else "REQUEST_BUDGET_EXHAUSTED"))
                 record.elapsed_seconds = self._clock() - started
                 record.finished_at_utc = _now_utc()
                 network_event(self.host, "DEADLINE", error_category=record.error_kind)
-                attempts.append(record)
+                if self._request_started:
+                    attempts.append(record)
                 raise FetchFailed(str(exc), attempt_log=attempts) from exc
             except httpx.HTTPError as exc:
                 # Transport failure: bounded retry, but the message is scrubbed before it can
@@ -254,6 +265,8 @@ class FetchLane:
                     raise FetchFailed(f"{self.source_key}: {record.error_kind}",
                         verdict=Verdict("BLOCKED", record.error_kind), attempt_log=attempts) from exc
                 if self.retry.exhausted(attempt_no):
+                    if self._own_client:
+                        self.limiter.penalize(60)
                     raise FetchFailed(
                         f"{self.source_key}: {self.retry.max_attempts} attempts failed, last {last_error}",
                         verdict=last_verdict,

@@ -42,6 +42,26 @@ def task_state(
     )
 
 
+def write_documents(conn, record_id, documents, evidence):
+    for doc in documents:
+        name = doc["name"]
+        old = conn.execute(
+            "SELECT object_sha,json_extract(provenance_json,'$.source_file_id') file_id FROM documents WHERE source_record_id=? AND document_kind=? AND name=?",
+            (record_id, doc["document_kind"], name),
+        ).fetchone()
+        if old and old["file_id"] and old["file_id"] != doc.get("source_file_id"):
+            name = name + " [" + doc["source_file_id"] + "]"
+            old = conn.execute("SELECT object_sha FROM documents WHERE source_record_id=? AND document_kind=? AND name=?",
+                (record_id, doc["document_kind"], name)).fetchone()
+        if old and old["object_sha"]:
+            raise ValueError("DOWNLOADED_DOCUMENT_REFRESH_REQUIRES_VERIFIED_DOWNLOAD")
+        conn.execute(
+            "INSERT INTO documents(source_record_id,document_kind,name,provenance_json) VALUES(?,?,?,?) "
+            "ON CONFLICT(source_record_id,document_kind,name) DO UPDATE SET provenance_json=excluded.provenance_json",
+            (record_id, doc["document_kind"], name, evidence(doc)),
+        )
+
+
 def write_projection(conn, writer, record_id, spec, parsed, capture_id, seq, response_sha):
     provenance = {
         "lane": spec.lane,
@@ -51,6 +71,7 @@ def write_projection(conn, writer, record_id, spec, parsed, capture_id, seq, res
         "response_object_sha": response_sha,
         "source_version_json": parsed.source_version_json,
         "problems": list(parsed.problems),
+        "warnings": list(parsed.warnings), "capability": parsed.capability, "parser_version": spec.parser_version,
     }
 
     def evidence(extra=None):
@@ -58,6 +79,7 @@ def write_projection(conn, writer, record_id, spec, parsed, capture_id, seq, res
 
     owner = (record_id, spec.lane, spec.endpoint_kind)
     clause = "source_record_id=? AND json_extract(provenance_json,'$.lane')=? AND json_extract(provenance_json,'$.endpoint_kind')=?"
+    write_documents(conn, record_id, parsed.documents, evidence)
     if spec.parser_kind == "HSMT":
         conn.execute("DELETE FROM goods_rows WHERE " + clause, owner)
         conn.execute("DELETE FROM lots WHERE " + clause, owner)
@@ -139,19 +161,6 @@ def write_projection(conn, writer, record_id, spec, parsed, capture_id, seq, res
                         evidence({"raw": member.raw}),
                     ),
                 )
-        for doc in parsed.documents:
-            old = conn.execute(
-                "SELECT object_sha FROM documents WHERE source_record_id=? AND document_kind=? AND name=?",
-                (record_id, doc["document_kind"], doc["name"]),
-            ).fetchone()
-            if old and old["object_sha"]:
-                raise ValueError("DOWNLOADED_DOCUMENT_REFRESH_REQUIRES_VERIFIED_DOWNLOAD")
-            # Never manufacture a file object from a file id or filename.
-            conn.execute(
-                "INSERT INTO documents(source_record_id,document_kind,name,provenance_json) VALUES(?,?,?,?) "
-                "ON CONFLICT(source_record_id,document_kind,name) DO UPDATE SET provenance_json=excluded.provenance_json",
-                (record_id, doc["document_kind"], doc["name"], evidence(doc)),
-            )
         record = conn.execute(
             "SELECT source_key,family,natural_key FROM source_records WHERE id=?", (record_id,)
         ).fetchone()

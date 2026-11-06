@@ -347,7 +347,8 @@ class Runner:
             outcome.blockers = (f"ACCESS_BLOCKED:{type(exc).__name__}",)
         else:
             outcome.status = "PARTIAL"
-            outcome.blockers = (f"REQUEST_UNRECOVERED:{_reason(exc)}",)
+            category = attempts[-1].error_kind if attempts else None
+            outcome.blockers = (f"REQUEST_UNRECOVERED:{category or _reason(exc)}",)
         return outcome
 
     def _write_attempts(self, page: Page, interval: Interval, run_id: str, response_ref) -> int:
@@ -460,6 +461,15 @@ class Runner:
             source_key=self.source_key, family=self.family,
             interval=outcome.interval, granularity=outcome.granularity,
         )
+        if status == "COMPLETE":
+            # This fresh complete response supersedes older drift for the span it
+            # actually proved. Preserve the finding and every historical interval.
+            self.conn.execute(
+                "UPDATE reconcile_gaps SET acknowledged_at_utc=? WHERE source_key=? AND family=? "
+                "AND kind IN ('HASH_DRIFT','COUNT_DRIFT','GRANULARITY_DRIFT') AND acknowledged_at_utc IS NULL "
+                "AND interval_from_utc>=? AND interval_to_utc<=? AND run_id<>?",
+                (_iso(checked_at), self.source_key, self.family, _iso(outcome.interval.from_utc),
+                 _iso(outcome.interval.to_utc), run_id))
         self.conn.execute("INSERT INTO settings(key,value_json,updated_at_utc) VALUES(?,?,?)",
             (f"coverage:evidence:{outcome.interval_id}",
              _json({"interval_id":outcome.interval_id,"family":self.family,"from":_iso(outcome.interval.from_utc),
@@ -488,7 +498,7 @@ class Runner:
             for interval in parts:
                 outcome = self.run_interval(interval, interval_granularity(interval), run_id, order=order)
                 outcomes.append(outcome)
-                if _budget_exhausted(outcome):
+                if _budget_exhausted(outcome) or outcome.unrecovered_requests or outcome.status == "BLOCKED":
                     return outcomes
             if self.stop_requested():
                 break
@@ -523,9 +533,10 @@ class Runner:
         """§4.4: re-scan proven intervals and write findings. A record is never deleted here."""
         gaps: list[dict[str, Any]] = []
         self.reconcile_outcomes = []
-        resolution = coverage.resolve(self.conn, self.source_key, self.family, span.from_utc, span.to_utc)
+        resolution = self.resolve(span)
         for proven in resolution.proven:
             before = _stored_identities(self.conn, self.source_key, self.family, proven)
+            hashes = _stored_hashes(self.conn, self.source_key, self.family, proven)
             outcome = self.fetch_interval(proven, interval_granularity(proven), run_id)
             self._record(outcome, run_id)
             self.reconcile_outcomes.append(outcome)
@@ -540,15 +551,27 @@ class Runner:
                 gap = {"kind": "COUNT_DRIFT", "identity_hashes": extra[:20], "extra_count": len(extra)}
                 self._record_gap(run_id, proven, gap)
                 gaps.append(gap)
+            after_hashes = _stored_hashes(self.conn, self.source_key, self.family, proven)
+            changed = sorted(key for key in before & outcome.identity_keys if hashes.get(key) != after_hashes.get(key))
+            if changed:
+                gap = {"kind": "HASH_DRIFT", "identity_hashes": changed[:20], "changed_count": len(changed)}
+                self._record_gap(run_id, proven, gap)
+                gaps.append(gap)
         return gaps
 
     # ------------------------------------------------------------------ helpers
 
     def _unproven_parts(self, day: Interval) -> list[Interval]:
-        resolution = coverage.resolve(self.conn, self.source_key, self.family, day.from_utc, day.to_utc)
+        resolution = self.resolve(day)
         if resolution.can_skip:
             return []
         return list(resolution.gaps) or [day]
+
+    def resolve(self, span):
+        from santhau_studio.storage.coverage_contract import current
+        context = current(self.conn, self.source_key, self.family, endpoint=self.endpoint, adapter_sha=self.adapter_sha)
+        return coverage.resolve(self.conn, self.source_key, self.family, span.from_utc, span.to_utc,
+                                context=context or {"signature": "INVALID"})
 
     def _record_gap(self, run_id: str, interval: Interval, gap: dict[str, Any]) -> None:
         payload = {k: v for k, v in gap.items() if k != "interval"}
@@ -649,6 +672,16 @@ def _stored_identities(conn, source_key: str, family: str, interval: Interval) -
         (source_key, family, _iso(interval.to_utc), _iso(interval.from_utc)),
     )
     return {row[0] for row in rows}
+
+
+def _stored_hashes(conn, source_key, family, interval):
+    rows = conn.execute(
+        "SELECT DISTINCT sr.family || '|' || sr.natural_key || '|' || sr.version_state || '|' || COALESCE(sr.version_raw,''), sr.current_content_hash "
+        "FROM observations o JOIN fetch_attempts fa ON fa.id=o.attempt_id JOIN fetch_requests fr ON fr.id=fa.request_id "
+        "JOIN source_records sr ON sr.identity_key=substr(o.observation_key,4) "
+        "WHERE sr.source_key=? AND sr.family=? AND fr.interval_from_utc<? AND fr.interval_to_utc>?",
+        (source_key, family, _iso(interval.to_utc), _iso(interval.from_utc)))
+    return dict(rows)
 
 
 def _reason(exc: Exception) -> str:

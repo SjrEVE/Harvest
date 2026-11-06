@@ -221,6 +221,25 @@ def parser():
     deep.add_argument("--batch-requests", type=int, default=30)
     sub.add_parser("deep-status", parents=[common], help="Đọc checkpoint và lỗi thu thập chi tiết")
     sub.add_parser("self-test-deep", parents=[common], help="Thử deep collector ngoại tuyến trên thư mục mới")
+    replay = sub.add_parser("replay-deep", parents=[common], help="Parse lại raw bằng phiên bản mới; mặc định chỉ xem trước, không HTTP")
+    replay_choice = replay.add_mutually_exclusive_group()
+    replay_choice.add_argument("--execute", action="store_true")
+    replay_choice.add_argument("--dry-run", action="store_true")
+    replay.add_argument("--record", type=int, action="append", dest="record_ids")
+    replay.add_argument("--limit", type=int, default=100)
+    scope = sub.add_parser("configure-scope", parents=[common], help="Phạm vi riêng của kho; không tự gọi nguồn")
+    scope.add_argument("--from", dest="first", required=True)
+    scope.add_argument("--to", dest="last", required=True)
+    scope.add_argument("--family", choices=(*FAMILY_ORDER, "ALL"), default="ALL")
+    scope.add_argument("--enable-repair", action="store_true")
+    scope.add_argument("--enable-reconcile", action="store_true")
+    scope.add_argument("--quota-per-day", type=int, default=24)
+    scope.add_argument("--reconcile-quota-per-day", type=int, default=2)
+    sub.add_parser("coverage-status", parents=[common], help="Độ phủ toàn phạm vi; không sửa dữ liệu")
+    repair = sub.add_parser("repair-gaps", parents=[common], help="Xem khoảng thiếu; mặc định dry-run, execute chỉ ghi lịch")
+    mode = repair.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true")
+    mode.add_argument("--execute", action="store_true")
     enqueue = sub.add_parser(
         "enqueue", parents=[common], help="Xếp hàng; tất cả sáu loại mặc định chia theo tuần"
     )
@@ -260,6 +279,23 @@ def main(argv=None):
         os.umask(0o077)
     root = args.data_root.expanduser().resolve()
     try:
+        if args.command in ("configure-scope", "coverage-status", "repair-gaps"):
+            from santhau_studio.linux.repair import configure_scope, coverage_report, repair_gaps
+            if args.command == "configure-scope":
+                result = configure_scope(root, first=args.first, last=args.last,
+                    families=FAMILY_ORDER if args.family == "ALL" else (args.family,),
+                    policy={"repair_enabled": args.enable_repair, "reconcile_enabled": args.enable_reconcile,
+                            "quota_per_day": args.quota_per_day, "reconcile_quota_per_day": args.reconcile_quota_per_day})
+            elif args.command == "coverage-status":
+                result = coverage_report(root)
+            else:
+                result = repair_gaps(root, execute=args.execute)
+            output(result)
+            return 0
+        if args.command == "replay-deep":
+            from santhau_studio.workers.deep_replay import replay
+            output(replay(root, execute=args.execute, record_ids=args.record_ids, limit=args.limit))
+            return 0
         if args.command == "deep-config":
             from santhau_studio.linux.deep import configure_deep
             output(configure_deep(root, enabled=args.enable, batch_requests=args.batch_requests))

@@ -26,7 +26,7 @@ class HostRequestGate:
             self.lock.acquire(retries=1200, retry_delay_seconds=0.05)
         else:
             for attempt in range(1201):
-                self.budget.check_time()
+                self.budget.check()
                 try:
                     self.lock.acquire()
                     break

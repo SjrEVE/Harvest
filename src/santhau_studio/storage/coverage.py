@@ -90,13 +90,18 @@ def load_rows(
     source_key: str,
     family: str,
     window: Interval,
+    context=None,
 ) -> tuple[CoverageRow, ...]:
     """Interval rows overlapping `window`, with proof version and drift flags attached."""
     from santhau_studio.collectors.source_registry import query_contract_matches
+    from santhau_studio.storage.coverage_contract import compatible, current
+    if context is None:
+        context = current(conn, source_key, family)
 
     sql = (
         " SELECT ci.id, ci.interval_from_utc, ci.interval_to_utc, ci.granularity, ci.status,"
-        "        ci.proof_id, cp.proof_version, br.conversion_params,"
+        "        ci.proof_id, cp.proof_version, cp.boundary_rule_id,br.conversion_params,"
+        "        cp.source_key proof_source,cp.family proof_family,cp.interval_from_utc proof_from,cp.interval_to_utc proof_to,"
         "        EXISTS (SELECT 1 FROM reconcile_gaps g"
         "                WHERE g.source_key = ci.source_key AND g.family = ci.family"
         "                  AND g.kind IN ({})"
@@ -111,6 +116,15 @@ def load_rows(
         "  ORDER BY ci.interval_from_utc".format(",".join("?" for _ in DRIFT_KINDS))
     )
     rows = conn.execute(sql, (*DRIFT_KINDS, source_key, family, _iso(window.to_utc), _iso(window.from_utc)))
+    compatibility={}
+    def matches(row):
+        if row['proof_id'] is None:
+            return False
+        key=row['boundary_rule_id']
+        if key not in compatibility:
+            compatibility[key]=compatible(conn,key,context)
+        return (row['proof_version']==1 and row['proof_source']==source_key and row['proof_family']==family
+            and _parse(row['proof_from']) <= _parse(row['interval_from_utc']) and _parse(row['proof_to']) >= _parse(row['interval_to_utc']) and compatibility[key])
     return tuple(
         CoverageRow(
             id=int(row["id"]),
@@ -121,7 +135,8 @@ def load_rows(
             granularity=row["granularity"],
             proof_id=row["proof_id"],
             proof_version=row["proof_version"],
-            data_revised_after_proof=bool(row["drifted"]) or not query_contract_matches(family, row["conversion_params"]),
+            data_revised_after_proof=bool(row["drifted"]) or not query_contract_matches(family, row["conversion_params"]) or (row['proof_version'] is not None and not matches(row)),
+            compatible_context=matches(row),
         )
         for row in rows
     )
@@ -133,14 +148,18 @@ def resolve(
     family: str,
     from_utc: datetime,
     to_utc: datetime,
+    *, context=None,
 ) -> CoverageResolution:
     """The single resolver every consumer calls (§4.5). No caller joins coverage_intervals."""
     window = Interval(_as_utc(from_utc), _as_utc(to_utc))
+    if context is None:
+        from santhau_studio.storage.coverage_contract import current
+        context=current(conn,source_key,family)
     return resolve_coverage(
         source_key=source_key,
         family=family,
         requested=window,
-        rows=load_rows(conn, source_key, family, window),
+        rows=load_rows(conn, source_key, family, window, context=context),
     )
 
 

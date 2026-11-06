@@ -70,6 +70,8 @@ Write-Host '--- building SanThauCollector.exe (headless worker) ---'
     --include-data-files=docs/ddl/g0_b_proposed.sql=docs/ddl/g0_b_proposed.sql `
     --include-data-files=docs/ddl/002_public_deep.sql=docs/ddl/002_public_deep.sql `
     --include-data-files=docs/ddl/003_attempt_telemetry.sql=docs/ddl/003_attempt_telemetry.sql `
+    --include-data-files=docs/ddl/004_deep_parser_metadata.sql=docs/ddl/004_deep_parser_metadata.sql `
+    --include-data-files=docs/ddl/005_scoped_maintenance.sql=docs/ddl/005_scoped_maintenance.sql `
     --output-dir=$Out `
     --output-filename=SanThauCollector.exe `
     --remove-output `

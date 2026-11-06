@@ -2,6 +2,8 @@
 
 from contextlib import closing
 
+from santhau_studio.storage.deep_metadata import package_counts, state_counts
+from santhau_studio.storage.deep_metadata import present as has_metadata
 from santhau_studio.storage.warehouse import WarehouseWriter, connect_read_only
 from santhau_studio.workers.auto_deep import configuration, configure, validated_configuration
 
@@ -25,9 +27,12 @@ def deep_status(root):
             "ok": True,
             "configuration": configuration(conn),
             "checkpoint_schema_available": present,
-            "states": dict(conn.execute("SELECT state,COUNT(*) FROM deep_tasks GROUP BY state"))
-            if present
-            else {},
+            "states": state_counts(conn),
+            "packages_by_state": package_counts(conn),
+            "capabilities": dict(conn.execute("SELECT m.capability,COUNT(*) FROM deep_task_metadata m JOIN deep_tasks t "
+                "ON t.source_record_id=m.source_record_id AND t.lane=m.lane AND t.updated_at_utc=m.task_updated_at_utc GROUP BY m.capability")) if has_metadata(conn,"deep_task_metadata") else {},
+            "unsupported": dict(zip(("packages","lane_tasks"), conn.execute("SELECT COUNT(DISTINCT m.source_record_id),COUNT(*) FROM deep_task_metadata m JOIN deep_tasks t "
+                "ON t.source_record_id=m.source_record_id AND t.lane=m.lane AND t.updated_at_utc=m.task_updated_at_utc WHERE m.capability LIKE 'UNSUPPORTED%'").fetchone(), strict=True)) if has_metadata(conn,"deep_task_metadata") else {"packages":0,"lane_tasks":0},
             "recent_errors": [
                 dict(r)
                 for r in conn.execute(

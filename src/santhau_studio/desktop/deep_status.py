@@ -42,6 +42,11 @@ def states(conn, record_id):
             ):
                 row["state"] = "STALE"
         row["provenance"] = json.loads(row.get("provenance_json") or "{}")
+        from santhau_studio.storage.deep_metadata import task_metadata
+        metadata = task_metadata(conn, record_id, lane)
+        row.update(capability=metadata["capability"], warnings=metadata["warnings"], parser_version=metadata["parser_version"])
+        if metadata["capability"].startswith("UNSUPPORTED"):
+            row["state"] = "UNSUPPORTED"
     return list(rows.values())
 
 
@@ -83,6 +88,10 @@ def queue(conn):
     else:
         attempted = 0
     summary["NOT_COLLECTED"] = max(0, eligible * len(LANES) - attempted)
+    from santhau_studio.storage.deep_metadata import state_counts
+    display_counts = state_counts(conn)
+    summary["UNSUPPORTED"] = display_counts.get("UNSUPPORTED", 0)
+    summary["BLOCKED"] = display_counts.get("BLOCKED", 0)
     # Preserve visibility of pre-migration captures, which have no operational task row.
     for legacy in conn.execute(
         "SELECT c.*,s.family,s.natural_key FROM deep_captures c JOIN source_records s ON s.id=c.source_record_id"

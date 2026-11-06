@@ -93,6 +93,7 @@ class CoverageRow:
     proof_id: int | None = None
     proof_version: int | None = None
     data_revised_after_proof: bool = False
+    compatible_context: bool = True
 
     @property
     def is_verified_complete(self) -> bool:
@@ -101,6 +102,7 @@ class CoverageRow:
             self.status == "COMPLETE"
             and self.proof_id is not None
             and self.proof_version is not None
+            and self.compatible_context
         )
 
     @property
@@ -243,6 +245,8 @@ def resolve_coverage(
     )
 
     reasons: list[str] = []
+    if any(row.proof_version is not None and not row.compatible_context for row in scoped):
+        reasons.append("PROOF_CONTEXT_INCOMPATIBLE")
     if legacy_intervals:
         reasons.append(
             "LEGACY_COMPLETE_UNVERIFIED: COMPLETE rows lack proof_version and are not skippable"

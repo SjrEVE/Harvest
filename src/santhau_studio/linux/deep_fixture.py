@@ -71,7 +71,7 @@ def hsmt(index):
         "bidoInvBiddingDTO": [
             {
                 **source,
-                "formCode": "goods",
+                "formCode": "BD.DT.02.1960" if index == 0 else "BD.DT.02.1957",
                 "formContent": '[{"columnName":"extra"}]',
                 "formValue": json.dumps({"Table": rows}),
             }

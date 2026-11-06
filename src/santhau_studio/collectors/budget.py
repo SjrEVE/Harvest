@@ -4,11 +4,12 @@ import time
 
 
 class RequestBudget:
-    def __init__(self, requests: int, seconds: int, *, clock=time.monotonic):
+    def __init__(self, requests: int, seconds: int, *, clock=time.monotonic, stop_requested=None):
         if type(requests) is not int or requests < 1 or type(seconds) is not int or seconds < 1:
             raise ValueError("Positive integer request/time budgets are required")
         self.limit, self.used, self.clock = requests, 0, clock
         self.deadline = clock() + seconds
+        self.stop_requested = stop_requested
 
     @property
     def remaining_seconds(self):
@@ -20,6 +21,9 @@ class RequestBudget:
             raise FetchFailed("REQUEST_DEADLINE_EXCEEDED")
 
     def check(self, delay=0):
+        if self.stop_requested and self.stop_requested():
+            from santhau_studio.collectors.http_client import FetchFailed
+            raise FetchFailed("STOP_REQUESTED")
         if self.used >= self.limit or self.clock() + delay >= self.deadline:
             from santhau_studio.collectors.http_client import FetchFailed
             raise FetchFailed("REQUEST_BUDGET_EXHAUSTED")
@@ -36,4 +40,12 @@ class RequestBudget:
 
     def sleep(self, seconds, sleeper):
         self.check(seconds)
-        sleeper(seconds)
+        if self.stop_requested is None:
+            sleeper(seconds)
+        else:
+            remaining = seconds
+            while remaining > 0:
+                self.check()
+                step = min(0.1, remaining)
+                sleeper(step)
+                remaining -= step

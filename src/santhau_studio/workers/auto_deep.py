@@ -44,8 +44,8 @@ def candidates(conn, limit):
     config = configuration(conn)
     if not config.get("enabled"):
         return []
-    from santhau_studio.collectors.cgttrg import ENDPOINTS, PREFIX
-    from santhau_studio.collectors.public_deep import PublicDeepFetcher
+    from santhau_studio.collectors.cgttrg import ENDPOINTS, PARSER_VERSION, PREFIX
+    from santhau_studio.collectors.public_deep import ADAPTER_VERSION, PublicDeepFetcher
 
     lanes = [
         lane
@@ -62,7 +62,14 @@ def candidates(conn, limit):
       CROSS JOIN (LANES_SQL) lane
       LEFT JOIN deep_tasks t ON t.source_record_id=r.id AND t.lane=lane.lane
       LEFT JOIN deep_captures c ON c.id=t.capture_id
+      LEFT JOIN deep_task_metadata m ON m.source_record_id=t.source_record_id AND m.lane=t.lane AND m.task_updated_at_utc=t.updated_at_utc
+      LEFT JOIN deep_capture_parse_metadata pm ON pm.deep_capture_id=c.id AND pm.capture_seq=c.latest_capture_seq
       WHERE r.source_key='egp_home' AND r.family='TBMT' AND json_extract(v.normalized_json,'$.bidForm')='CGTTRG'
+      AND COALESCE(m.capability,'') NOT IN ('IDENTITY_QUARANTINE','UNVERIFIED_LISTING')
+      AND NOT (COALESCE(m.capability,'') LIKE 'UNSUPPORTED%' AND COALESCE(m.adapter_version,0)=? AND COALESCE(m.parser_version,0)=?
+               AND COALESCE(t.listing_object_sha,'')=r.current_record_object_sha)
+      AND NOT (COALESCE(t.state,'')='PARSE_ERROR' AND t.response_object_sha IS NOT NULL AND
+               (COALESCE(pm.parser_version,1)<? OR COALESCE(t.listing_object_sha,'')=r.current_record_object_sha))
       AND (t.source_record_id IS NULL
         OR (t.state IN ('FETCHED','SOURCE_EMPTY') AND
             (t.listing_object_sha<>r.current_record_object_sha OR c.stale=1 OR c.refresh_due_at_utc<?))
@@ -76,6 +83,7 @@ def candidates(conn, limit):
             query,
             (
                 *lanes,
+                ADAPTER_VERSION, PARSER_VERSION, PARSER_VERSION,
                 now.isoformat().replace("+00:00", "Z"),
                 cutoff,
                 min(limit, config["batch_requests"]),

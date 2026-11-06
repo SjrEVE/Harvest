@@ -69,7 +69,7 @@ Item {
         Label { Layout.fillWidth: true; wrapMode: Text.Wrap; color: "#526477"; text: page.state.record ? T.label(page.state.record.source_key) + " · phiên bản: " + T.label(page.state.record.version_state) + " " + (page.state.record.version_raw || "") + " · số lần ghi nhận: " + page.state.observations + " · " + T.label(page.state.record.integrity_status) : T.message(page.state.error) }
         Label { visible: !!page.state.legacy_unverified; color: "#965a08"; text: "Lịch sử nhập từ kho cũ, chưa có bằng chứng thu thập mới để xác minh." }
         Label { visible:page.state.present && !(page.state.deep_captures||[]).length;Layout.fillWidth:true;wrapMode:Text.Wrap;color:"#965a08";text:"Hồ sơ này mới có dữ liệu danh mục. Chưa có bằng chứng thu thập chi tiết, hồ sơ mời thầu hoặc bảng hàng hóa." }
-        Label { Layout.fillWidth:true;wrapMode:Text.Wrap;visible:page.state.present;text:(page.state.deep_states||[]).map(function(s){return T.label(s.lane)+": "+T.label(s.state)+(s.error?" ("+s.error+")":"")}).join(" · ");color:"#526477" }
+        Label { Layout.fillWidth:true;wrapMode:Text.Wrap;visible:page.state.present;text:(page.state.deep_states||[]).map(function(s){return T.label(s.lane)+": "+T.label(s.state)+(s.capability?" · "+T.label(s.capability):"")+(s.warnings&&s.warnings.length?" · "+s.warnings.length+" cảnh báo":"")+(s.error?" ("+s.error+")":"")}).join(" · ");color:"#526477" }
         RowLayout {
             visible:page.state.present
             StudioButton {text:"Lấy hàng hóa HSMT";enabled:!page.busy;onClicked:page.bridge.requestRead("deepAction","enqueue_deep",JSON.stringify({record_id:page.recordId,lane:"HSMT"}))}
