@@ -29,7 +29,9 @@ paged DTOs consumed by asynchronous bridge; runtime/canary status feeds UI; rele
 - Ruling: legacy channels use `legacy:<original source>` to avoid replacing newer live records. Original
   source/run/version metadata is retained in raw catalog chunks and receipts; these chunks survive backup/restore.
   Legacy coverage remains in explicit legacy claims and never receives a modern proof.
-- Tasks 2–6: PENDING.
+- Tasks 2–6: **đã đính chính 04/11** — mốc "PENDING" (01:07) không còn đúng; 17 commit tiếp theo
+  tới `1e65962` đã hoàn tất thu thập sáu loại, UI, đóng gói Windows/Linux và nghiệm thu offline.
+  Xem "RC3 completion checkpoint" cuối file.
 
 ## External gates
 
@@ -47,6 +49,8 @@ paged DTOs consumed by asynchronous bridge; runtime/canary status feeds UI; rele
 - Import overlap test now covers importing newer archive before older history without moving current backwards: 9 importer tests pass. Manual identity link/merge/split/undo is audited with actual Windows SID and preserves source rows.
 - UI filters/history/import/budgets/proof/source ladder/legacy claims/logs/license controls implemented; actual UI acceptance, large maintenance, deep canary tooling and release engineering remain open.
 - Interim full suite before last fixes: 534 pass, 2 fail (failure-attempt missing response=None, fixed), 1 scheduler skip. Do not cite interim as release PASS.
+- Full suite chạy lại 04/11 tại HEAD `3eb0f6a`: **636 passed / 1 skipped / 0 failed**, 196,89s
+  (`build/RC3-final-1e65962/tests.xml`). Đây là kết quả thật, không phải interim.
 ## Native acceptance findings / release work
 
 - Core suite: 538 PASS / 1 scheduler skip (core-tests.xml), before latest recovery and observability fixes.
@@ -59,4 +63,26 @@ paged DTOs consumed by asynchronous bridge; runtime/canary status feeds UI; rele
 - Bandit source scan: 0 HIGH, 16 MEDIUM (15 parameterized/allowlisted dynamic SQL and one trusted scheduler XML helper); adjudication pending. Locked-runtime pip-audit: no known vulnerabilities found.
 - Official Qt v6.12.0 license texts and runtime wheel license texts copied into LICENSES. LGPL/commercial and bundled-module legal clearance still OWNER BLOCKED; docs/RC3-SIGNING.md prepared, no certificate/signing performed.
 - Prepackage suite had 537 PASS, 1 FAIL, 1 skip: shutdown marker freshness rejected a tiny future NTFS timestamp. Fixed with 5s bounded tolerance; isolated regression passed. Final whole-suite run still required.
-- Last committed core: f74d402. Working tree contains the latest acceptance fixes, licenses and release prep; commit before package capture.
+- Last committed core: f74d402 — mốc cũ, đã bị 16 commit vượt qua; working tree hiện SẠCH.
+  "Commit before package capture" đã hoàn tất: build 17:14 ghi `base_commit=1e65962`.
+
+## RC3 completion checkpoint (04/11/2026, ~18:00 +0700)
+
+| Hạng mục | Trạng thái | Bằng chứng |
+|---|---|---|
+| 17 commit trên `master`, HEAD `1e65962` đã push | PASS | `git log master..HEAD`; HEAD == `origin/codex/rc3-completion` |
+| CI Linux collector | PASS | `gh run 41811721185` success 10:04Z |
+| Build Windows vá "tuần mới → cũ" 17:12–17:14 | PASS | `build/stage/SanThauCollector.exe`, `build/inno/…Setup…RC3.exe` |
+| Đối chiếu 127 source input + 2 artifact | PASS | `tools/verify_release_evidence.py` → `build/RC3-final-1e65962/verifier-output.json`, `SHA256SUMS` (2 OK) |
+| Full suite | PASS | 636 passed / 1 skipped / 0 failed, `tests.xml` |
+| `ruff check src tests tools` | PASS | All checks passed |
+| Dữ liệu thật | READ-ONLY | 70.234 records, 734 intervals (145 COMPLETE / 589 PARTIAL), job `job-cef1bf50a525` PAUSED |
+| Thay bản đang cài (`ac20d595` → `1e65962`) | **PASS 18:21** | gỡ exit 0, cài exit 0; installed `SanThauCollector.exe` = `63728d90…` khớp stage; backup 655 MB; 2 sqlite MATCH hash; smoke PASS |
+| Resume cào tuần 29/10–03/11 | NOT_RUN | `writer.lock` pid 16192; TBMT 8 PARTIAL, KHLCNT 1 PARTIAL, KQLCNT/YCBG mỗi loại 1 COMPLETE |
+| Canary E-GP thật | BLOCKED | owner approval + `SANTHAU_CANARY_APPROVED` (`release-checklist.md` §5) |
+| Authenticode / Qt LGPL-commercial / VM sạch | BLOCKED / NOT_TESTED | `release-checklist.md` §2–§4 |
+
+Không tick mục nào thiếu bằng chứng. `build/RC3-final/` (bản cũ 10:28, `ac20d595`)
+giữ nguyên làm rollback evidence. **Đã thay bản lúc 18:21** (`ac20d595` → `1e65962`),
+dữ liệu thật đối chiếu MATCH hash, smoke PASS; vẫn **chưa resume** thu thập,
+chưa canary thật, chưa tạo PR / merge / GitHub Release.

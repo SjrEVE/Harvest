@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import "UiText.js" as T
+import "CollectionState.js" as S
 
 Item {
     id: page
@@ -12,11 +13,34 @@ Item {
     property bool submitting: false
     property bool synthetic: false
     property string selectedJobId: ""
+    property string actionResult: ""
+    property bool actionPending: false
+    property real nowMs: Date.now()
+    property real lastReplyMs: 0
+    property string overviewSnapshotAt: ""
+    property bool statusFresh: lastReplyMs > 0 && nowMs-lastReplyMs < 10000 && !state.error
+    property var statusView: S.describe(state, statusFresh)
+    property var selectedEntry: (state.active||[]).find(function(j){return j.job_id===page.selectedJob()}) || {}
+    onStateChanged: {
+        lastReplyMs=Date.now()
+        var snapshot=state.snapshot||{}
+        var totals=snapshot.row_counts||{}
+        var revision=JSON.stringify([snapshot.built_at,snapshot.stale,totals.source_records,totals.observations])
+        if (snapshot.built_at && revision!==overviewSnapshotAt) {
+            overviewSnapshotAt=revision
+            backend.requestRead("collectionOverview","collection_overview","{}")
+        }
+    }
+    function command(name) {
+        actionPending=true
+        actionResult="Đang gửi yêu cầu…"
+        backend.requestRead("jobAction","worker_command",JSON.stringify({command:name,job_id:page.selectedJob()}))
+    }
     function selectedJob() { return target.currentValue || ((state.active||[]).length ? state.active[0].job_id : "") }
     signal selectDataRootRequested()
     function reload() {
         backend.requestRead("page4","jobs","{}")
-        backend.requestRead("collectionOverview","collection_overview","{}")
+
     }
     function preset(first,last) { mode.currentIndex=0; from.text=first; to.text=last; enqueueResult="" }
     function submit() {
@@ -28,15 +52,45 @@ Item {
         submitting=true; enqueueResult=""
         backend.requestRead("collectionAction","start_collection",JSON.stringify(request))
     }
-    Component.onCompleted: reload()
+    Component.onCompleted: { reload(); backend.requestRead("collectionOverview","collection_overview","{}") }
     onVisibleChanged: if (visible) reload()
-    Timer { interval:2000; running:page.visible; repeat:true; onTriggered:page.reload() }
+    Timer { interval:2000; running:true; repeat:true; onTriggered:{page.nowMs=Date.now();page.reload()} }
+    Timer { interval:30000; running:page.visible; repeat:true; onTriggered:backend.requestRead("collectionOverview","collection_overview","{}") }
     ScrollView {
         anchors.fill:parent; anchors.margins:24; contentWidth:availableWidth; clip:true
         ColumnLayout {
             width:parent.width; spacing:16
             Label { text:"Thu thập dữ liệu"; color:"#172b3a"; font.pixelSize:24; font.weight:Font.DemiBold }
             Label { Layout.fillWidth:true; wrapMode:Text.Wrap; text:"Chọn khoảng thời gian một lần. Các loại hồ sơ được xử lý tuần tự, ngày đã có đủ bằng chứng sẽ được bỏ qua."; color:"#526477" }
+            CollectionStatus { Layout.fillWidth:true; view:page.statusView; snapshot:page.state.snapshot||{}; checkedAt:page.state.checked_at||""; snapshotError:((page.state.worker||{}).runtime||{}).snapshot_error||""; phaseSince:((page.state.worker||{}).runtime||{}).phase_since||""; nowMs:page.nowMs }
+            RowLayout {
+                Label { text:"Tác vụ và điều khiển"; font.pixelSize:18;font.weight:Font.DemiBold;color:"#172b3a";Layout.fillWidth:true }
+                Label { text:{var c=page.state.counts||{};return (c.running||0)+" đang chạy · "+(c.paused||0)+" tạm dừng · "+(c.queued||0)+" chờ"+(c.unknown?" · "+c.unknown+" chưa xác nhận":"")} color:"#526477" }
+            }
+            StudioComboBox {
+                id:target;objectName:"collectionTarget";Layout.fillWidth:true
+                visible:(page.state.active||[]).length>0
+                textRole:"label";valueRole:"value"
+                model:(page.state.active||[]).map(function(j){return {label:(j.families||[]).map(T.familyShort).join(", ")+" · "+j.job_id,value:j.job_id}})
+                Accessible.name:"Chọn tác vụ để tạm dừng, tiếp tục hoặc dừng"
+                onActivated:page.selectedJobId=currentValue
+                onModelChanged:{var at=model.findIndex(function(j){return j.value===page.selectedJobId});if(at>=0)currentIndex=at}
+            }
+            Label { Layout.fillWidth:true;wrapMode:Text.Wrap;visible:!!page.actionResult;text:page.actionResult;color:"#526477" }
+            Flow {
+                Layout.fillWidth:true; spacing:8
+                StudioButton { objectName:"collectionPause";text:"Tạm dừng"; enabled:page.statusFresh && !page.actionPending && !!page.selectedEntry.can_pause; onClicked:page.command("PAUSE") }
+                StudioButton { objectName:"collectionResume";text:"Tiếp tục";enabled:page.statusFresh && !page.actionPending && !!page.selectedEntry.can_resume;onClicked:page.command("RESUME") }
+                StudioButton { objectName:"collectionStop";text:"Dừng tác vụ";danger:true;enabled:page.statusFresh && !page.actionPending && !!page.selectedEntry.can_stop;onClicked:page.command("STOP_GRACEFUL") }
+                StudioButton { objectName:"collectorStop";text:"Tắt bộ thu thập";enabled:page.statusFresh && !page.actionPending && !!(page.state.worker||{}).pipe_ok && (((page.state.worker||{}).runtime||{}).phase!=="STOPPING_WORKER");onClicked:page.command("FORCE_TERMINATE") }
+                StudioButton { objectName:"collectorStart";text:"Bật bộ thu thập";enabled:page.statusFresh && !page.actionPending && !(page.state.worker||{}).running;onClicked:{page.actionPending=true;backend.requestRead("jobAction","start_worker","{}")} }
+                StudioButton { text:"Kiểm tra lại trạng thái";onClicked:page.reload() }
+            }
+            Label {
+                Layout.fillWidth:true;wrapMode:Text.Wrap;color:"#526477";visible:!!text
+                text:{var s=page.state.last_status||{};var runs=s.runs||[];var last=runs.length?runs[runs.length-1]:{};var tasks=last.tasks||[];var d=tasks.length?tasks[tasks.length-1].detail||{}:{};return s.job_id?"Kết quả tác vụ trước: "+T.label(last.status)+(d.reason?". "+T.message(d.reason):""):""}
+            }
+            Label { text:"Tạo tác vụ thu thập";font.pixelSize:18;font.weight:Font.DemiBold;color:"#172b3a" }
             Rectangle {
                 Layout.fillWidth:true; implicitHeight:form.implicitHeight+32; radius:8; color:"#ffffff"
                 ColumnLayout {
@@ -78,7 +132,7 @@ Item {
                         StudioButton { objectName:"collectionStart"; primary:true; text:page.submitting ? "Đang tạo tác vụ…" : (page.synthetic ? "Chạy thử bằng dữ liệu giả lập" : "Bắt đầu thu thập"); enabled:!page.submitting && !page.state.collection_blocked_reason; onClicked:page.submit() }
                         StudioButton { text:limits.visible ? "Ẩn giới hạn" : "Giới hạn mỗi tác vụ"; onClicked:limits.visible=!limits.visible }
                         Item { Layout.fillWidth:true }
-                        Label { text:page.state.worker && page.state.worker.running ? "Bộ thu thập đang hoạt động" : "Tự bật bộ thu thập khi bắt đầu"; color:"#526477" }
+                        Label { text:"Đóng cửa sổ không tắt bộ thu thập"; color:"#526477" }
                     }
                     GridLayout {
                         id:limits; visible:false; Layout.fillWidth:true; columns:4; columnSpacing:12
@@ -99,36 +153,7 @@ Item {
                     StudioButton { visible:!!page.state.collection_blocked_reason; text:"Chọn kho dữ liệu thật"; onClicked:page.selectDataRootRequested() }
                 }
             }
-            RowLayout {
-                Label { text:"Tác vụ và tiến độ"; font.pixelSize:18;font.weight:Font.DemiBold;color:"#172b3a";Layout.fillWidth:true }
-                Label { text:(page.state.queued||[]).length+" chờ · "+(page.state.active||[]).length+" đang chạy · "+(page.state.done||[]).length+" đã kết thúc"; color:"#526477" }
-            }
-            Label {
-                Layout.fillWidth:true;wrapMode:Text.Wrap;color:"#087f75"
-                text:{var s=page.state.active_status||{};var runs=s.runs||[];var last=runs.length?runs[runs.length-1]:{};var p=s.progress||{};return s.job_id ? T.label(last.lifecycle)+" · "+T.label(last.status)+(p.week_index ? " · Tuần "+p.week_index+"/"+p.week_count+" · "+T.collectionSpan(p.week_from,p.week_to,"BACKFILL")+" · Loại "+p.family_index+"/6" : "")+(p.current_day_snapshot ? " · Hôm nay: dữ liệu hiện có, chưa chốt đủ ngày" : "")+(p.family ? " · "+T.family(p.family)+" · "+p.rows+" dòng · "+p.pages+" trang" : "") : "Chưa có tác vụ đang chạy."}
-            }
-            StudioComboBox {
-                id:target;objectName:"collectionTarget";Layout.fillWidth:true
-                visible:(page.state.active||[]).length>0
-                textRole:"label";valueRole:"value"
-                model:(page.state.active||[]).map(function(j){return {label:(j.families||[]).map(T.familyShort).join(", ")+" · "+j.job_id,value:j.job_id}})
-                Accessible.name:"Chọn tác vụ để tạm dừng, tiếp tục hoặc dừng"
-                onActivated:page.selectedJobId=currentValue
-                onModelChanged:{var at=model.findIndex(function(j){return j.value===page.selectedJobId});if(at>=0)currentIndex=at}
-            }
-            Label {
-                Layout.fillWidth:true;wrapMode:Text.Wrap;color:"#965a08";visible:!!text
-                text:{var runs=(page.state.active_status||{}).runs||[];var tasks=runs.length?runs[runs.length-1].tasks||[]:[];var detail=tasks.length?tasks[tasks.length-1].detail||{}:{};return detail.reason?T.message(detail.reason):""}
-            }
-            Flow {
-                Layout.fillWidth:true; spacing:8
-                StudioButton { objectName:"collectionPause";text:"Tạm dừng"; enabled:(page.state.active||[]).length>0; onClicked:backend.requestRead("jobAction","worker_command",JSON.stringify({command:"PAUSE",job_id:page.selectedJob()})) }
-                StudioButton { objectName:"collectionResume";text:"Tiếp tục";enabled:(page.state.active||[]).length>0;onClicked:backend.requestRead("jobAction","worker_command",JSON.stringify({command:"RESUME",job_id:page.selectedJob()})) }
-                StudioButton { text:"Dừng tác vụ";danger:true;enabled:(page.state.active||[]).length>0;onClicked:backend.requestRead("jobAction","worker_command",JSON.stringify({command:"STOP_GRACEFUL",job_id:page.selectedJob()})) }
-                StudioButton { text:"Tắt bộ thu thập";onClicked:backend.requestRead("jobAction","worker_command",JSON.stringify({command:"FORCE_TERMINATE"})) }
-                StudioButton { text:"Bật bộ thu thập";onClicked:backend.requestRead("jobAction","start_worker","{}") }
-                StudioButton { text:"Tải lại";onClicked:page.reload() }
-            }
+            Label { text:"Hàng đợi và kết quả";font.pixelSize:18;font.weight:Font.DemiBold;color:"#172b3a" }
             Repeater {
                 model:(page.state.active||[]).concat(page.state.queued||[]).concat((page.state.done||[]).slice(-12).reverse())
                 delegate:Rectangle {
@@ -142,7 +167,7 @@ Item {
                             Label { Layout.fillWidth:true;elide:Text.ElideRight;text:T.collectionSpan((modelData.scope||{}).from,(modelData.scope||{}).to,modelData.job_kind);color:"#172b3a" }
                             Label { text:modelData.job_id||"";font.pixelSize:12;color:"#526477" }
                         }
-                        Label { text:modelData.queue_state==="queued"?"Đang chờ":T.label(modelData.status||modelData.lifecycle);color:modelData.status==="COMPLETED"?"#087f75":"#965a08" }
+                        Label { text:S.jobLabel(modelData);color:modelData.status==="COMPLETED"?"#087f75":"#965a08" }
                     }
                 }
             }

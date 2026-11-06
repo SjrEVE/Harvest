@@ -45,7 +45,7 @@ from santhau_studio.workers.jobs import JOB_KINDS, JobError, JobRequest, enqueue
 
 DISK_SCAN_LIMIT = 50_000
 SEARCH_LIMIT_MAX = 200
-APP_VERSION = "0.0.1-RC3"
+APP_VERSION = "0.0.1-RC3-4"
 _PROBE_LOCK = threading.Lock()
 
 _TITLE_KEYS = ("title", "bidName", "planName", "projectName", "contractName", "name")
@@ -191,6 +191,7 @@ class StudioBackend:
                     reply = client.request({"op": "ping"})
                     payload["pipe_ok"] = bool(reply.get("ok"))
                     payload["capabilities"] = reply.get("capabilities", [])
+                    payload["runtime"] = reply.get("runtime", {})
                 finally:
                     client.close()
             except (PipeTransportError, PipeClosedError, OSError, json.JSONDecodeError) as exc:
@@ -255,8 +256,10 @@ class StudioBackend:
                     for entry in payload[state]:
                         entry.update(latest.get(entry.get("job_id"), {}))
                         entry["queue_state"] = state
-        if selected_job and payload["worker"].get("pipe_ok"):
-            payload["active_status"] = self.job_status(str(selected_job["job_id"]))
+        from santhau_studio.desktop.collection_status import apply_live_status
+        apply_live_status(self, payload, selected_job)
+        payload["snapshot"] = serving_state(self.serving_path)
+        payload["checked_at"] = _now()
         return payload
 
     def job_status(self, job_id: str) -> dict[str, Any]:

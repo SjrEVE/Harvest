@@ -36,7 +36,7 @@ var words = {
     CLOSED_LOCAL:"Gồm cả hai mốc, theo giờ nguồn", CLOSED_UTC:"Gồm cả hai mốc, theo giờ quốc tế",
     HALF_OPEN_UTC:"Gồm mốc đầu, không gồm mốc cuối", OPEN_UTC:"Không gồm hai mốc",
     EMPTY_PAGE:"Trang rỗng kết thúc kết quả", SHORT_PAGE:"Trang cuối ít kết quả hơn giới hạn",
-    NO_PROOF:"Chưa có bằng chứng đầy đủ", TOTAL_UNTRUSTED:"Chưa xác minh tổng số kết quả", NO_TOTAL_OBSERVED:"Nguồn chưa cung cấp tổng số kết quả",
+    NO_PROOF:"Chưa có bằng chứng đầy đủ", ACCESSED_WITHOUT_COMPLETE_PROOF:"Đã truy cập, chưa có bằng chứng đầy đủ", TOTAL_UNTRUSTED:"Chưa xác minh tổng số kết quả", NO_TOTAL_OBSERVED:"Nguồn chưa cung cấp tổng số kết quả",
     INTERVAL_NOT_CLOSED:"Khoảng thời gian chưa kết thúc; dữ liệu đã lấy vẫn được lưu nhưng chưa thể xác nhận đầy đủ.",
     NO_TERMINAL_EVIDENCE:"Chưa xác nhận đã đọc hết các trang", COMPLETE_WITHOUT_PROOF:"Trạng thái đầy đủ thiếu bằng chứng, cần kiểm tra",
     STOP_REQUESTED:"Đã nhận yêu cầu dừng", SPLIT_INCOMPLETE:"Một số khoảng thời gian chưa thu thập đủ",
@@ -52,6 +52,7 @@ var words = {
     CANARY_FAILED:"Lần kiểm tra nguồn chưa đạt", POLICY:"Bị chặn bởi quy định truy cập", NO_TARGETS:"Không có hồ sơ cần xử lý",
     JOB_TARGET_NOT_RUNNING:"Tác vụ được chọn không còn chạy. Hãy chọn lại tác vụ đang chạy.",
     JOB_TARGET_NOT_PAUSED:"Tác vụ được chọn chưa ở trạng thái tạm dừng.",
+    JOB_COMMAND_PENDING:"Yêu cầu trước đang được xử lý. Chờ trạng thái cập nhật trước khi thao tác tiếp.",
     READ_FAILED:"Không đọc được dữ liệu. Hãy thử tải lại hoặc kiểm tra dữ liệu.",
     EMPTY_QUERY:"Nhập nội dung hoặc chọn bộ lọc để tìm hồ sơ.", NO_MATCH:"Không có hồ sơ phù hợp.",
     NO_SNAPSHOT:"Chưa có dữ liệu hiển thị. Hãy khởi tạo bộ thu thập hoặc nhập kho cũ.",
@@ -229,7 +230,7 @@ function result(value) {
     if (value.job_id && value.ok) return "Đã xếp hàng tác vụ " + value.job_id + ".";
     if (value.queued) return "Đã gửi yêu cầu. Trạng thái sẽ cập nhật khi bộ thu thập xử lý xong trang hiện tại.";
     if (value.spawned) return "Đang khởi động bộ thu thập.";
-    if (value.attached) return "Bộ thu thập đang chạy và đã được kết nối.";
+    if (value.attached) return "Đã kết nối bộ thu thập. Xem trạng thái hiện tại ở phía trên.";
     if (value.running) return "Đang thực hiện: " + label(value.action) + "…";
     if (value.status) return label(value.status) + (value.seen !== undefined ? " · Đã đọc " + value.seen + " mục; đã nhập " + value.imported + "; trùng " + value.duplicates + "; cần kiểm tra " + value.rejected + "." : "");
     if (value.action_id) return "Đã ghi nhận thao tác. Mã nhật ký: " + value.action_id + ".";

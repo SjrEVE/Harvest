@@ -12,8 +12,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "build/linux"
-VERSION = "0.0.1~rc3-3"
-BUNDLE_VERSION = "0.0.1-RC3-3"
+VERSION = "0.0.1~rc3-4"
+BUNDLE_VERSION = "0.0.1-RC3-4"
 
 
 def run(*args):

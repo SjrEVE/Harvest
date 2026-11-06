@@ -1,41 +1,87 @@
-# RC3 — trạng thái source trước khi đưa lên GitHub
+# RC3 — trạng thái source và bản cài ngày 05/11/2026
 
-Ngày đối chiếu: 04/11/2026. Đây là trạng thái có bằng chứng, không phải tuyên bố toàn bộ
-Master Spec đã hoàn thành. Kho thật, bản sao lưu, log và dữ liệu phản hồi nguồn nằm ngoài Git.
+Đây là báo cáo theo bằng chứng, không phải xác nhận toàn bộ Master Spec đã hoàn thành.
+User yêu cầu hoàn thiện phần có thể thực hiện và push lên GitHub; source được chốt
+trên nhánh `codex/rc3-completion`, từ base `68fa8279845575deb7221c6fad62a9bd40d9baca`.
+Kho thật, phản hồi nguồn, tệp hàng đợi và installer nằm ngoài Git.
 
-## Source và bộ cài
+## Những phần đã hoàn thiện
 
-Bộ cài RC3 đã nâng cấp thực tế được build từ commit
-`35c982b4dda995c42ec3088845e267d217df28db`.
-SHA256 installer: `1b964843e537559c1752d3bbc1e1be205b3370a823419db84e6dddcfe1a25e52`.
-Đã đối chiếu 2.530 tệp cài với stage và giữ nguyên toàn bộ số lượng/hash dữ liệu trước/sau nâng cấp.
+- Tác vụ tuần lấy lại ngày vừa khép nếu lượt lịch sử kéo dài qua nửa đêm; chỉ chốt
+  COMPLETE khi lượt lấy mới đủ bằng chứng. PARTIAL không còn hiển thị như chưa truy cập.
+- Gom việc dựng bản tra cứu sau mỗi nhóm tối đa sáu lượt con và khi kết thúc tác vụ.
+  Giữ publish nguyên tử, kiểm tra integrity/đối soát và dấu dữ liệu chưa cập nhật.
+- Chia khoảng sớm khi tổng nguồn bão hòa hoặc hạn mức không đủ. Lượt sau chỉ bỏ qua
+  khoảng có proof; bộ đếm giữ cả yêu cầu thăm dò khoảng cha, các lần retry và dòng nhận.
+- Trạng thái trực tiếp phân biệt khởi động, kiểm tra kho, thu thập, dựng bản tra cứu,
+  đang dừng, đã dừng và mất kết nối. Nút điều khiển phụ thuộc phản hồi mới của worker.
+- Sửa polling chậm bị bỏ phản hồi và lỗi trang Kho dữ liệu giữ trạng thái/số hàng đợi
+  cũ từ lúc mở app. README/hướng dẫn vận hành đã khớp thứ tự mới nhất trước và cơ chế
+  cập nhật bản tra cứu theo nhóm.
 
-Source hiện tại có thêm hai sửa lỗi sau bản cài đó: đánh dấu dữ liệu hiển thị đang cũ
-trước mỗi lượt của tác vụ tuần; lấy trạng thái của tác vụ chính độc lập với số lượng
-lượt chạy con. Các sửa source này chưa được đóng gói/cài đè trong lần review GitHub.
+## Source khác bản cài ở đâu
 
-## Kết quả và phần còn thiếu
+Bản RC3 trạng thái đã cài khoảng 09:49 ngày 05/11 gồm các sửa ngày, snapshot,
+hạn mức và trạng thái thu thập. Installer:
+`SanThau-Data-Studio-Setup-0.0.1-RC3.exe` trong thư mục local
+`D:/Harvest/releases/SanThau-RC3-status-20261105/`.
 
-| Hạng mục | Trạng thái | Phạm vi |
-|---|---|---|
-| Thu thập tuần đủ sáu loại, bỏ qua ngày có bằng chứng | PASS | Kiểm thử offline và thao tác trên GUI đã cài; một lượt tuần nguồn thật đã khởi động. Không khẳng định đã cào đủ cả khoảng lịch sử. |
-| Tạm dừng, tiếp tục, khôi phục sau khi chết tiến trình | PASS | Có kiểm thử process thật bị ngắt và khôi phục dữ liệu đã hoàn thành. |
-| Tổng đã lưu/nguồn/thiếu theo tháng, tuần, ngày | PASS trong phạm vi snapshot | Giữ ngày riêng của từng loại, không cộng trùng cửa sổ, thiếu tổng thì chưa biết. |
-| Nhập legacy, sao lưu/khôi phục, CSV, integrity | PASS kiểm thử | Không đồng nghĩa mọi kho legacy ngoài tập được hỗ trợ đều nhập được. |
-| Nâng cấp installer RC3 tại máy hiện có | PASS | Dữ liệu được sao lưu và đối chiếu trước/sau; hàng đợi cũ được lưu riêng khi chuyển sang tuần. |
-| GUI/worker compiled và tỷ lệ Qt 100/125/150% | PASS trong phạm vi đã chạy | Hai màn thay đổi có bằng chứng; chưa phải kiểm DPI hệ điều hành cho mọi màn. |
-| Thống kê toàn nguồn từ 2022 | PARTIAL | Lượt owner duyệt dùng đúng 60 yêu cầu; chưa đủ chốt tổng cuối cùng. Không đánh dấu coverage COMPLETE bằng phép đếm nguồn. |
-| Hồi quy source trước push | PASS | 626 bài đạt, 1 bài lịch Windows bỏ qua trong suite mặc định và được chạy riêng. Hai lỗi phát hiện trong review có bài kiểm tra tái hiện trước khi sửa. |
-| Secret scan source và lịch sử nhánh | PASS trong phạm vi scanner | Quét blob của lịch sử reachable trước push; dữ liệu thật và binary không thuộc commit. |
-| Độ phủ nhỏ hơn một giây | FAIL còn tồn tại | Lưu độ phủ vẫn chuẩn hóa về giây; không tuyên bố đã sửa. |
-| HSMT, hàng hóa và chi tiết tổng quát toàn kho | BLOCKED/chưa đủ bằng chứng | Chưa xác nhận thu thập đủ mọi lane và mọi trường trên nguồn thật. |
-| Authenticode và lựa chọn Qt LGPL/commercial | BLOCKED | Cần chứng chỉ và quyết định của owner; không tự ký. |
-| Windows 10/11 sạch, toàn bộ nghiệm thu DPI hệ thống | NOT_TESTED | Chưa có môi trường và bằng chứng tương ứng. |
+SHA256: `a5f912ce9e1aa18c7c17143e21a3eba1eb254eaca34026b00e8daa2dfd834765`.
+Manifest được tạo khi working tree còn sửa đổi, nên base SHA không tự đại diện
+cho input build; dùng các hash file trong manifest để đối chiếu.
 
-Fixture hiệu năng một triệu hồ sơ dùng chung một raw object, không chứng minh một triệu
-raw object độc lập. Benchmark SQL không phải UI end-to-end. Truy vấn sort ngày trên
-fixture lớn từng khoảng 2,2 giây; chưa xác nhận khắc phục trong lần review này.
+Đối chiếu sau cài ghi nhận giữ nguyên 181.733 records, 181.735 versions, 198.969
+observations, 237 proofs, 199.524 raw objects và cả 18 tài liệu hàng đợi. Lần kiểm
+tra 13:41 đối chiếu hai executable đang cài vẫn khớp hash manifest.
 
-Bằng chứng local: `_evidence/rc3/weekly/`, `_evidence/rc3/weekly-install/` và
-`_evidence/rc3/github-review/`. README và hướng dẫn sử dụng áp dụng RC3; báo cáo RC2/G0/G1
-được giữ làm lịch sử.
+**Source lần chốt này có thêm sửa `desktop/qml/Main.qml` cho trang Kho dữ liệu.**
+Đây là input runtime duy nhất khác gói lúc 09:49. Chưa build/cài đè phần bổ sung
+này vào ứng dụng đang hoạt động. Không dùng kết quả nghiệm thu binary cũ để xác
+nhận sửa QML mới; sửa mới được kiểm thử Qt và render ngoại tuyến riêng.
+
+## Kiểm chứng
+
+Kết quả toàn suite cuối, lint và hash bằng chứng được ghi tại
+[`docs/evidence/rc3-20261105/verification.json`](docs/evidence/rc3-20261105/verification.json).
+Log/XML đầy đủ nằm local ở `_evidence/rc3/completion-push-20261105/`.
+
+Hồi quy toàn bộ trên source cuối: **669 passed, 1 skipped, 0 failed/errors**, 187,05s.
+Bài skipped tạo Scheduled Task đã chạy riêng và đạt. Ruff trên các file Python
+sửa/thêm và `git diff --check` đạt.
+
+| Hạng mục | Kết quả và phạm vi |
+|---|---|
+| Lỗi trạng thái trang Kho dữ liệu | RED tái hiện lỗi trước sửa; 6 bài Qt/polling liên quan đạt sau sửa. Đã render và xem ảnh 1080×620 và 1380×900. |
+| Scheduled Task thật trên Windows | Bài tạo–đọc–xóa chạy riêng với cờ opt-in: 1 passed; kiểm tra xác nhận tác vụ thử đã bị xóa. Suite mặc định vẫn bỏ qua bài này. |
+| GUI đã cài | Quan sát khoảng 13:38: trang Thu thập có tiến độ trực tiếp, thời điểm nhận trang, cảnh báo bản tra cứu cũ và nút điều khiển phù hợp. Không bấm dừng/tạm dừng tác vụ thật. |
+| Binary đã đóng gói lúc 09:49 | Bằng chứng trước đó: worker thật chạy nguồn giả 6 loại/1 ngày, 216 records, FINISHED/COMPLETED, warehouse/serving quick_check=ok. Không phải nguồn thật. |
+| Snapshot theo nhóm | Fixture 2.000 bản ghi nền + 48 mới: 13 build xuống 2, 5,477s xuống 1,090s thời gian dựng; mỗi phía một phép đo. Không suy rộng thành tăng tốc tương ứng trên kho thật. |
+| Review | Tự rà source/diff và kiểm thử; không có reviewer độc lập trong lượt chốt này. |
+
+## Kho đang chạy — chỉ đọc, không thay đổi dữ liệu
+
+Lúc 13:41 ngày 05/11 theo giờ Việt Nam: worker trả ping, COLLECTING; 1 tác vụ active,
+2 queued, 15 done. Kho có 219.465 records, 219.467 versions, 241.879 observations,
+281 proofs. Tác vụ 01–18/10 đang xử lý KHLCNT trong tuần 08–14/10. Các số này là
+ảnh chụp tại thời điểm kiểm tra, sẽ tiếp tục thay đổi.
+
+Ngày 04/11 vẫn PARTIAL cho sáu loại. `deep_captures`, `documents`, `lots`, `goods_rows`
+đều bằng 0. Hai tác vụ chờ có cùng phạm vi 01/01/2022–04/11/2026; giữ nguyên các
+tác vụ do người dùng tạo. Lượt chốt này không phát sinh canary, job live, tăng page
+size/nhịp, thay kho hay khởi động lại worker.
+
+## Giới hạn còn lại
+
+- **Chưa sửa:** persistence độ phủ chuẩn hóa thời gian về giây; chưa hỗ trợ an toàn
+  các khoảng nhỏ hơn một giây. Runner mặc định dừng chia ở MINUTE, không phải MILLISECOND.
+- **BLOCKED/chưa có bằng chứng:** deep live, HSMT, hàng hóa và dữ liệu chi tiết
+  tổng quát; thử endpoint/canary mới cần phạm vi và hạn mức riêng.
+- **BLOCKED:** chứng chỉ Authenticode và quyết định giấy phép Qt/PySide6 của owner.
+- **NOT_TESTED:** Windows sạch, mọi màn ở DPI hệ thống, tốc độ toàn kho sau tối ưu,
+  bản cài chứa sửa QML bổ sung của lượt chốt này.
+- Snapshot vẫn dựng toàn bộ kho. Gom nhóm giảm số lần dựng; dữ liệu tra cứu có thể
+  cũ trong lúc một nhóm đang chạy. Benchmark backend không chứng minh UI end-to-end.
+
+Chi tiết hai đợt sửa: [tiếp tục RC3](docs/RC3-CONTINUATION-20261105.md),
+[trạng thái và nâng cấp cục bộ](docs/RC3-STATUS-CLARITY-20261105.md).
+Báo cáo RC2/G0/G1 và các kết quả ngày 04/11 là lịch sử, không thay thế báo cáo này.

@@ -64,7 +64,7 @@ Window {
             if (pages[key]) pages[key].state = root.parse(text)
             if (key === "integrityRaw") { evidenceText.text=T.rawPreview(root.parse(text)); evidenceDialog.open() }
             if (key === "proof") { evidenceText.text = T.pretty(root.parse(text)); evidenceDialog.open() }
-            if (key === "jobAction") { page4.enqueueResult = T.result(root.parse(text)); page4.reload() }
+            if (key === "jobAction") { page4.actionPending=false; page4.actionResult=T.result(root.parse(text)); page4.reload() }
             if (key === "collectionOverview") page4.overview = root.parse(text)
             if (key === "collectionAction") {
                 page4.submitting = false
@@ -147,6 +147,7 @@ Window {
                         Label {text:root.workspace.synthetic?"KHÔNG PHẢI DỮ LIỆU THẬT — KHO THỬ NGOẠI TUYẾN":root.navItems[root.pageIndex];font.pixelSize:18;font.weight:Font.DemiBold;color:root.workspace.synthetic?"#943b0c":"#172b3a"}
                         Label {Layout.fillWidth:true;elide:Text.ElideMiddle;text:root.workspace.data_root||backend.dataRootPath();color:"#526477";font.pixelSize: 13}
                     }
+                    Label { Layout.maximumWidth:360;wrapMode:Text.Wrap;text:page4.statusView.title||"Đang đọc trạng thái";color:page4.statusView.tone==="warning"?"#965a08":"#172b3a";font.weight:Font.DemiBold;visible:root.pageIndex!==3 }
                     StudioButton {text:"Chọn kho dữ liệu";onClicked:root.pageIndex=0}
                 }
             }
@@ -161,6 +162,7 @@ Window {
                     id: page1
                     property var state: ({})
                     Component.onCompleted: reload()
+                    onVisibleChanged: if (visible) reload()
                     function reload() { backend.requestRead("page1", "onboarding", "{}") }
 
                     ScrollView {
@@ -208,14 +210,17 @@ Window {
                         Text {
                             text: "Kho dữ liệu: " + (page1.state.warehouse_present ? "có" : "chưa")
                                   + "   ·   Dữ liệu hiển thị: " + (page1.state.serving_present ? "có" : "chưa")
-                                  + "   ·   Tác vụ đang chờ: " + (page1.state.queued_jobs || 0)
+                                  + "   ·   Tác vụ đang chờ: " + (page4.statusFresh && !page4.state.error
+                                      ? (page4.state.queued || []).length : "Chưa xác nhận")
                             color: "#334d60"
                             font.pixelSize: 13
                         }
                         Text {
-                            text: "Bộ thu thập: " + (page1.state.worker && page1.state.worker.running
-                                  ? ("đang chạy · mã tiến trình " + page1.state.worker.pid) : "không chạy")
-                            color: page1.state.worker && page1.state.worker.running ? "#087f75" : "#965a08"
+                            Layout.fillWidth: true
+                            wrapMode: Text.Wrap
+                            text: "Bộ thu thập: " + (page4.statusView.title || "Đang đọc trạng thái")
+                            color: page4.statusView.tone === "error" ? "#b42336"
+                                   : page4.statusView.tone === "warning" ? "#965a08" : "#172b3a"
                             font.pixelSize: 13
                         }
                         Text { text: T.message(page1.state.policy_note); color: "#526477"; font.pixelSize: 13 }

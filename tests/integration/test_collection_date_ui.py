@@ -34,6 +34,17 @@ def spin(app, predicate, seconds=15):
 
 def click(window, item):
     assert isinstance(item, QQuickItem)
+    # The collection form can be below live status and controls. Scroll its
+    # Flickable into view before sending a real mouse click.
+    parent = item.parentItem()
+    while parent is not None:
+        if parent.metaObject().indexOfProperty("contentY") >= 0:
+            point = item.mapToItem(parent, QPointF(0, 0))
+            if point.y() < 0 or point.y()+item.height() > parent.height():
+                parent.setProperty("contentY", max(0, parent.property("contentY")+point.y()-40))
+                QTest.qWait(30)
+            break
+        parent = parent.parentItem()
     point = item.mapToScene(QPointF(item.width()/2, item.height()/2))
     QTest.mouseClick(window, Qt.LeftButton, pos=QPoint(round(point.x()), round(point.y())))
     QTest.qWait(80)

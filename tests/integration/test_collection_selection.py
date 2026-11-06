@@ -15,9 +15,9 @@ def test_pause_resume_targets_selected_job(tmp_path):
     app = _qt_app()
     backend = StudioBackend(tmp_path)
     backend.jobs = lambda: {"active":[
-        {"job_id":"paused-first","families":["TBMT"],"lifecycle":"PAUSED"},
-        {"job_id":"running-second","families":["KHLCNT"],"lifecycle":"RUNNING"}],
-        "queued":[],"done":[],"worker":{"running":True}}
+        {"job_id":"paused-first","families":["TBMT"],"lifecycle":"PAUSED","can_pause":False,"can_resume":True,"can_stop":True},
+        {"job_id":"running-second","families":["KHLCNT"],"lifecycle":"RUNNING","can_pause":True,"can_resume":False,"can_stop":True}],
+        "queued":[],"done":[],"worker":{"running":True,"pipe_ok":True}}
     commands=[]
     backend.worker_command = lambda command,job_id=None: commands.append((command,job_id)) or {"ok":True}
     bridge=BackendBridge(backend)

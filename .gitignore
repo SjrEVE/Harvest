@@ -5,7 +5,10 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
-build/
+build/*
+# RC3 release evidence is a deliverable, not regenerated build junk.
+!build/RC3-final-1e65962/
+!build/RC3-final-1e65962/*
 dist/
 *.egg-info/
 
