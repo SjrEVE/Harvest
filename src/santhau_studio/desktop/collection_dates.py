@@ -41,6 +41,10 @@ def collection_scope(payload: dict, kind: str) -> dict[str, str]:
         # Same request envelope as the scheduler. Runner.incremental resolves the actual
         # watermark/overlap at execution time; the UI explicitly labels this automatic.
         now = datetime.now(UTC)
-        return {"from": (now - timedelta(days=3)).isoformat(), "to": now.isoformat()}
+        scope = {"from": (now - timedelta(days=3)).isoformat(), "to": now.isoformat()}
+        # Only an explicit boolean opts into re-reading days that already have proof.
+        if payload.get("refresh_recent") is True:
+            scope["refresh_recent"] = True
+        return scope
     # Preserve precise timestamp callers and the worker's immutable request contract.
     return {"from": str(payload["from"]), "to": str(payload["to"])}

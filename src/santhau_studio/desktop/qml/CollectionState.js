@@ -21,7 +21,7 @@ function describe(state, fresh) {
         DEEP_COLLECTING:["Đang lấy bù dữ liệu chi tiết","Tự lấy HSMT, hàng hóa và chi tiết chào giá thuộc nguồn CGTTRG đã xác minh. Sau đợt này sẽ tiếp tục danh mục đang dở.","busy"],
         PAUSING:["Đang tạm dừng","Đã nhận yêu cầu. Chờ xử lý và lưu xong bước hiện tại; chưa tạm dừng hoàn toàn.","warning"],
         STOPPING_JOB:["Đang dừng tác vụ","Đã nhận yêu cầu. Chờ lưu xong bước hiện tại. Bộ thu thập có thể tiếp tục tác vụ khác trong hàng đợi.","warning"],
-        STOPPING_WORKER:["Đang tắt bộ thu thập","Chờ lưu xong bước hiện tại. Khi tắt xong, hàng đợi sẽ ngừng xử lý; ứng dụng vẫn mở.","warning"],
+        STOPPING_WORKER:["Đang tắt bộ thu thập","Chờ lưu xong bước hiện tại rồi tắt tiến trình. Tác vụ đang chạy được xếp lại; hàng đợi không bị xóa. Lần bật sau tiếp tục. Lệnh Linux stop làm cùng việc.","warning"],
         FAILED:["Bộ thu thập gặp lỗi","Chưa thể tiếp tục. Xem thông báo lỗi và kiểm tra lại bộ thu thập.","error"],
         STOPPED:["Đã tắt bộ thu thập","Không thu thập dữ liệu mới.","neutral"]
     };

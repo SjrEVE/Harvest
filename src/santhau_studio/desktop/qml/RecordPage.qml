@@ -101,7 +101,9 @@ Item {
     }
     Menu {
         id:moreMenu
-        MenuItem { text:"Thu thập lại chi tiết hồ sơ"; enabled:page.supported && !page.actionPending; onTriggered:page.collect("DETAIL",true) }
+        MenuItem { objectName:"refreshDetail"; text:"Làm mới chi tiết hồ sơ"; enabled:page.supported && !page.actionPending; onTriggered:page.collect("DETAIL",true) }
+        MenuItem { objectName:"refreshHsmt"; text:"Làm mới hàng hóa HSMT"; enabled:page.supported && !page.actionPending; onTriggered:page.collect("HSMT",true) }
+        MenuItem { objectName:"refreshReoffer"; text:"Làm mới thông tin chào giá"; enabled:page.supported && !page.actionPending; onTriggered:page.collect("REOFFER",true) }
         MenuItem { text:"Liên kết / tách / hoàn tác…"; enabled:page.recordId>0; onTriggered:identityDialog.open() }
         MenuItem { text:"Thông tin nguồn và liên kết"; enabled:!!page.state.present; onTriggered:page.preview=T.pretty({record:page.state.record,notice_groups:page.state.notice_groups,aliases:page.state.aliases,entity_links:page.state.entity_links,relation_edges:page.state.relation_edges,deep_captures:page.state.deep_captures}) }
         MenuItem { text:"Nhật ký liên kết"; enabled:!!page.state.present; onTriggered:page.preview=T.pretty(page.state.identity_audit || []) }
@@ -127,8 +129,8 @@ Item {
                 model:page.state.deep_states || []
                 delegate:Label {
                     required property var modelData
-                    font.pixelSize:13; color:modelData.state==="FETCHED"?"#087f75":modelData.state==="FAILED" || modelData.state==="PARSE_ERROR"?"#b42336":"#526477"
-                    text:T.label(modelData.lane)+": "+T.label(modelData.state)
+                    font.pixelSize:13; color:modelData.state==="FETCHED"?"#087f75":modelData.state==="PARTIAL"?"#965a08":modelData.state==="FAILED" || modelData.state==="PARSE_ERROR"?"#b42336":"#526477"
+                    text:T.label(modelData.lane)+": "+T.label(modelData.state)+(modelData.refresh_due_elapsed && (page.state.refresh_policy||{}).refresh_expired!==true?" · hạn đã qua, không tự lấy lại":"")
                     ToolTip.visible:hover.hovered && !!modelData.error
                     ToolTip.text:T.message(modelData.error || "")
                     HoverHandler { id:hover }
@@ -139,7 +141,7 @@ Item {
             visible:!!page.state.present; spacing:10
             StudioButton { objectName:"collectHsmt"; text:"Lấy hàng hóa HSMT"; enabled:page.supported && !page.busy && !page.actionPending; onClicked:page.collect("HSMT",false) }
             StudioButton { objectName:"collectReoffer"; text:"Lấy thông tin chào giá"; enabled:page.supported && !page.busy && !page.actionPending; onClicked:page.collect("REOFFER",false) }
-            Label { Layout.fillWidth:true; wrapMode:Text.Wrap; text:page.hasFailedRefresh?"Có lần lấy gặp lỗi. Nội dung đã lưu trước đó vẫn được giữ để đối chiếu.":page.supported?"Nguồn công khai đã xác minh cho loại hồ sơ này.":"Chưa hỗ trợ thu thập chi tiết cho loại hồ sơ này."; color:page.hasFailedRefresh?"#965a08":"#526477"; font.pixelSize:13 }
+            Label { Layout.fillWidth:true; wrapMode:Text.Wrap; text:page.hasFailedRefresh?"Có lần lấy gặp lỗi. Nội dung đã lưu trước đó vẫn được giữ để đối chiếu.":(page.state.deep_states||[]).some(function(s){return s.state==="PARTIAL"})?"Đã giữ dòng đọc được và ghi lại dòng lỗi. Nút Lấy không gọi lại nguồn khi đã có bản lưu. Làm mới HSMT, chào giá hoặc chi tiết nằm trong Thao tác khác.":page.supported?"Nút Lấy chỉ chạy khi chưa có bản lưu hoặc danh sách đã đổi. Hạn làm mới không tự gọi lại nguồn. Làm mới chủ động nằm trong Thao tác khác.":"Chưa hỗ trợ thu thập chi tiết cho loại hồ sơ này."; color:page.hasFailedRefresh || (page.state.deep_states||[]).some(function(s){return s.state==="PARTIAL"})?"#965a08":"#526477"; font.pixelSize:13 }
         }
         Label { visible:!!page.actionMessage; Layout.fillWidth:true; wrapMode:Text.Wrap; text:page.actionMessage; color:"#526477"; font.pixelSize:13 }
         RowLayout {

@@ -11,7 +11,7 @@ from santhau_studio.collectors.public_deep import (
     UnsupportedAdapter,
     identity_problem,
 )
-from santhau_studio.storage.deep import record_deep_capture
+from santhau_studio.storage.deep import offeror_row_problems, record_deep_capture
 from santhau_studio.storage.deep_metadata import capture_metadata, write_task
 from santhau_studio.storage.public_deep import task_state
 from santhau_studio.workers.deep_reuse import reusable_capture
@@ -52,6 +52,13 @@ def collect_public(writer, run_id, lane, scope, fetcher, spec, records, clock, s
             and previous["listing_object_sha"] == record["current_record_object_sha"]
             and (not scope.get("refresh_expired") or previous["fresh"])
         ):
+            due_held = (
+                previous["refresh_due_at_utc"]
+                and not previous["fresh"]
+                and not scope.get("refresh_expired")
+            )
+            reason = "skipped_refresh_held" if due_held else "skipped_current"
+            counts[reason] = counts.get(reason, 0) + 1
             counts["skipped"] += 1
             counts["after_record_id"] = rid
             continue
@@ -141,8 +148,14 @@ def collect_public(writer, run_id, lane, scope, fetcher, spec, records, clock, s
             response_payload=payload,
             detail=detail,
             now=reused.observed_at if reused else clock(),
+            retained_stale_reason=reused.stale_reason if reused else None,
         )
-        state = "PARSE_ERROR" if problems or capture.stale else "FETCHED"
+        # A saved offeror list with a bad row is a partial capture, not a failed parse.
+        # deep_tasks.state has no PARTIAL value; completeness carries it and the UI labels it.
+        # A fetch-needed stale flag stays on the capture. The task stays FETCHED so the
+        # queue can show STALE from that flag instead of pretending the parse failed.
+        row_only = offeror_row_problems(problems) and capture.projection_applied and not capture.stale
+        state = "FETCHED" if row_only or not problems else "PARSE_ERROR"
         if reused:
             conn.execute("UPDATE deep_captures SET refresh_due_at_utc=? WHERE id=?", (reused.refresh_due, capture.capture_id))
         if parsed:

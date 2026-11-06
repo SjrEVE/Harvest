@@ -45,6 +45,12 @@ def configuration(conn):
 
 
 def candidates(conn, limit):
+    """Missing captures, listing changes, and real stale rows.
+
+    A newer parser does not put the saved corpus back on this queue. That replay is
+    ``replay-deep``: offline, dry-run by default, and limited. Expired captures are
+    included only when refresh_expired is explicitly true.
+    """
     config = configuration(conn)
     if not config.get("enabled"):
         return []
@@ -67,18 +73,20 @@ def candidates(conn, limit):
       LEFT JOIN deep_tasks t ON t.source_record_id=r.id AND t.lane=lane.lane
       LEFT JOIN deep_captures c ON c.id=t.capture_id
       LEFT JOIN deep_task_metadata m ON m.source_record_id=t.source_record_id AND m.lane=t.lane AND m.task_updated_at_utc=t.updated_at_utc
-      LEFT JOIN deep_capture_parse_metadata pm ON pm.deep_capture_id=c.id AND pm.capture_seq=c.latest_capture_seq
       WHERE r.source_key='egp_home' AND r.family='TBMT' AND json_extract(v.normalized_json,'$.bidForm')='CGTTRG'
       AND COALESCE(m.capability,'') NOT IN ('IDENTITY_QUARANTINE','UNVERIFIED_LISTING')
       AND NOT (COALESCE(m.capability,'') LIKE 'UNSUPPORTED%' AND COALESCE(m.adapter_version,0)=? AND COALESCE(m.parser_version,0)=?
                AND COALESCE(t.listing_object_sha,'')=r.current_record_object_sha)
       AND NOT (COALESCE(t.state,'')='PARSE_ERROR' AND t.response_object_sha IS NOT NULL AND
-               COALESCE(pm.parser_version,1)>=? AND COALESCE(t.listing_object_sha,'')=r.current_record_object_sha)
+               COALESCE(t.listing_object_sha,'')=r.current_record_object_sha)
       AND (t.source_record_id IS NULL
         OR (t.state IN ('FETCHED','SOURCE_EMPTY') AND
-            (c.id IS NULL OR t.listing_object_sha IS NOT r.current_record_object_sha OR c.stale=1 OR COALESCE(pm.parser_version,1)<?
+            (c.id IS NULL OR t.listing_object_sha IS NOT r.current_record_object_sha OR c.stale=1
               OR (? AND c.refresh_due_at_utc IS NOT NULL AND COALESCE(julianday(c.refresh_due_at_utc),0)<=julianday(?))))
-        OR (t.state NOT IN ('FETCHED','SOURCE_EMPTY') AND julianday(t.updated_at_utc)<=julianday(?)))
+        OR (t.state NOT IN ('FETCHED','SOURCE_EMPTY')
+            AND NOT (t.state='PARSE_ERROR' AND t.response_object_sha IS NOT NULL
+                     AND COALESCE(t.listing_object_sha,'')=r.current_record_object_sha)
+            AND julianday(t.updated_at_utc)<=julianday(?)))
       ORDER BY r.id,CASE lane.lane WHEN 'HSMT' THEN 0 WHEN 'REOFFER' THEN 1 ELSE 2 END LIMIT ?""".replace(
         "LANES_SQL", placeholders
     )
@@ -88,7 +96,7 @@ def candidates(conn, limit):
             query,
             (
                 *lanes,
-                ADAPTER_VERSION, PARSER_VERSION, PARSER_VERSION, PARSER_VERSION,
+                ADAPTER_VERSION, PARSER_VERSION,
                 int(config.get("refresh_expired", False)),
                 now.isoformat().replace("+00:00", "Z"),
                 cutoff,

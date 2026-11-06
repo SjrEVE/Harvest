@@ -27,6 +27,28 @@ def test_cli_deep_configuration_is_explicit_bounded_and_persistent(tmp_path):
     ]
 
 
+def test_refresh_expired_is_visible_and_not_cleared_by_a_later_enable(tmp_path):
+    root = tmp_path / "policy"
+    assert command("init", "--data-root", root).returncode == 0
+    enabled = command("deep-config", "--enable", "--refresh-expired", "--data-root", root)
+    assert enabled.returncode == 0, enabled.stdout
+    status = json.loads(command("deep-status", "--data-root", root).stdout)
+    assert status["configuration"]["refresh_expired"] is True
+    assert status["policy"]["refresh_expired"] is True
+    assert "không tự" not in status["policy"]["notice_vi"]
+    assert status["parser_replay"]["automatic"] is False
+    assert status["parser_replay"]["network_requests"] == 0
+    again = command("deep-config", "--enable", "--batch-requests", 4, "--data-root", root)
+    assert again.returncode == 0, again.stdout
+    kept = json.loads(command("deep-status", "--data-root", root).stdout)
+    assert kept["configuration"]["refresh_expired"] is True
+    assert kept["configuration"]["batch_requests"] == 4
+    disabled = command("deep-config", "--enable", "--no-refresh-expired", "--data-root", root)
+    assert disabled.returncode == 0
+    assert json.loads(command("deep-status", "--data-root", root).stdout)["policy"]["notice_vi"]
+    assert "không tự lấy lại" in json.loads(command("deep-status", "--data-root", root).stdout)["policy"]["notice_vi"]
+
+
 def test_compiled_compatible_deep_self_test_preserves_lanes_and_checkpoints(tmp_path):
     root = tmp_path / "deep"
     result = command("self-test-deep", "--data-root", root)

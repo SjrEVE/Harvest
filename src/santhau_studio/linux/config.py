@@ -113,14 +113,18 @@ def initialize(root, profile=None):
         writer.conn.commit()
 
 
-def make_jobs(root, *, mode="BACKFILL", family="ALL", first=None, last=None, limits=None):
+def make_jobs(root, *, mode="BACKFILL", family="ALL", first=None, last=None, limits=None, refresh_recent=False):
     if family not in (*FAMILY_ORDER, "ALL") or mode not in ("BACKFILL", "INCREMENTAL", "RECONCILE"):
         raise ValueError("Loại hoặc chế độ thu thập không hợp lệ.")
+    if refresh_recent and mode != "INCREMENTAL":
+        raise ValueError("--refresh-recent chỉ dùng với --mode INCREMENTAL.")
     if mode == "INCREMENTAL":
         if first or last:
             raise ValueError("Cập nhật tự động dùng mốc đã lưu, không dùng khoảng ngày.")
         now = datetime.now(UTC)
         scope = {"from": (now - timedelta(days=3)).isoformat(), "to": now.isoformat()}
+        if refresh_recent:
+            scope["refresh_recent"] = True
     else:
         a, b = date.fromisoformat(first or ""), date.fromisoformat(last or "")
         from zoneinfo import ZoneInfo

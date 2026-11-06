@@ -45,6 +45,9 @@ LANE_READINESS = {
     "DETAIL": "TESTED_OFFLINE",
     "HSMT": "TESTED_OFFLINE",
     "REOFFER": "TESTED_OFFLINE",
+    # Item winning prices need POST contractor-input-result/get. This tree only has
+    # listing fixtures that carry inputResultId, not a recorded response for that
+    # endpoint, so the lane stays closed. Do not invent the call.
     "KQLCNT_FULL": "BLOCKED",
     "BOQ": "BLOCKED",
 }

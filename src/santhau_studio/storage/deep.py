@@ -15,6 +15,7 @@ forever.
 from __future__ import annotations
 
 import contextlib
+import re
 import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -36,6 +37,21 @@ STALE_SOURCE_VERSION_CHANGED = "SOURCE_VERSION_CHANGED"
 STALE_REFRESH_INTERVAL_ELAPSED = "REFRESH_INTERVAL_ELAPSED"
 STALE_RECONCILE_MISMATCH = "RECONCILE_MISMATCH"
 STALE_QUARANTINED_MEMBER = "QUARANTINED_MEMBER"
+# Re-reading saved bytes cannot cure these. A parser upgrade must leave them set.
+FETCH_STALE_REASONS = (
+    STALE_SOURCE_VERSION_CHANGED,
+    STALE_REFRESH_INTERVAL_ELAPSED,
+    STALE_RECONCILE_MISMATCH,
+)
+_OFFEROR_ROW = re.compile(r"OFFEROR_\d+_INVALID\Z")
+
+
+def offeror_row_problems(problems) -> bool:
+    """True when every problem is one bad offeror row, not a broken payload."""
+    return bool(problems) and all(
+        problem == "OFFEROR_NAME_MISSING" or _OFFEROR_ROW.fullmatch(str(problem))
+        for problem in problems
+    )
 
 
 @dataclass(frozen=True)
@@ -51,6 +67,49 @@ class DeepCaptureResult:
     problems: tuple[str, ...] = ()
 
 
+def _saved_projection_matches(conn, record_id, capture_id, parsed) -> bool:
+    """True when the rows this capture already owns match the new parse."""
+
+    def saved(sql):
+        return [tuple(row) for row in conn.execute(sql, (record_id, capture_id))]
+
+    members = saved(
+        "SELECT party_name, role FROM contractor_memberships WHERE source_record_id=? "
+        "AND json_extract(provenance_json,'$.capture_id')=? ORDER BY party_name, role"
+    )
+    expected_members = sorted((member.party_name, member.role) for member in parsed.members)
+    goods = saved(
+        "SELECT COALESCE(name,''), COALESCE(unit,''), COALESCE(quantity_presence,''), COALESCE(quantity_raw,'') "
+        "FROM goods_rows WHERE source_record_id=? AND json_extract(provenance_json,'$.capture_id')=? "
+        "ORDER BY 1, 2, 3, 4"
+    )
+    expected_goods = sorted(
+        (row.name or "", row.unit or "", row.quantity_presence or "", row.quantity_raw or "")
+        for lot in (*parsed.lots, None)
+        for row in (lot.goods if lot is not None else parsed.unallotted_goods)
+    )
+    lots = saved(
+        "SELECT lot_no_raw, COALESCE(lot_label,''), goods_count FROM lots WHERE source_record_id=? "
+        "AND json_extract(provenance_json,'$.capture_id')=? ORDER BY lot_no_raw, lot_label"
+    )
+    expected_lots = sorted(
+        (lot.lot_no_raw, lot.lot_label or "", len(lot.goods)) for lot in parsed.lots
+    )
+    documents = saved(
+        "SELECT document_kind, name FROM documents WHERE source_record_id=? "
+        "AND json_extract(provenance_json,'$.capture_id')=? ORDER BY document_kind, name"
+    )
+    expected_documents = sorted(
+        (document.get("document_kind"), document.get("name")) for document in parsed.documents
+    )
+    return (
+        members == expected_members
+        and goods == expected_goods
+        and lots == expected_lots
+        and documents == expected_documents
+    )
+
+
 def record_deep_capture(
     writer: WarehouseWriter,
     *,
@@ -64,6 +123,7 @@ def record_deep_capture(
     lane_status: str = "FULL",
     refresh_after_days: int | None = None,
     parse_error: str | None = None,
+    retained_stale_reason: str | None = None,
 ) -> DeepCaptureResult:
     """Persist one deep capture atomically: objects, latest row, history, derived rows.
 
@@ -87,11 +147,30 @@ def record_deep_capture(
         parsed = ParsedDetail("{}", {}, (), (), (str(exc),))
     if parsed.problems:
         completeness = "PARTIAL"
-        if spec.parser_kind in ("DETAIL", "REOFFER") or any('TABLE_MISSING_OR_INVALID' in p or 'INVALID_JSON' in p for p in parsed.problems):
+        # One bad offeror row must not discard the offerors that did parse.
+        # Shape failures still arrive as exceptions above. A broken goods table stays fatal.
+        fatal = any(
+            "TABLE_MISSING_OR_INVALID" in problem or "INVALID_JSON" in problem
+            for problem in parsed.problems
+        )
+        if fatal:
             parse_failed = True
         lane_status = "FAILED" if parse_failed else "PARTIAL"
     if parsed.capability in ("DOCUMENT_ONLY", "STRUCTURED_ITEMS_UNAVAILABLE", "UNVERIFIED_FORM"):
         completeness, lane_status = "PARTIAL", "PARTIAL"
+    row_only = spec.parser_kind in ("DETAIL", "REOFFER") and offeror_row_problems(parsed.problems)
+    if row_only and not parsed.members:
+        # A payload with no usable offeror must not replace a previously good list.
+        parse_failed = True
+        lane_status = "PARTIAL"
+    keep_reason = retained_stale_reason if retained_stale_reason in FETCH_STALE_REASONS else None
+    if keep_reason:
+        # Same bytes from a sibling or a parser replay. The source still needs a fetch.
+        stored_stale, stored_reason = 1, keep_reason
+    elif parsed.problems and not row_only:
+        stored_stale, stored_reason = 1, STALE_QUARANTINED_MEMBER
+    else:
+        stored_stale, stored_reason = 0, None
     conn = writer.conn
     days = spec.refresh_after_days if refresh_after_days is None else refresh_after_days
     due = _iso(now + timedelta(days=days)) if days is not None else None
@@ -122,6 +201,41 @@ def record_deep_capture(
                 conn.execute("UPDATE deep_captures SET captured_at_utc=?,refresh_due_at_utc=? WHERE id=?", (_iso(now),due,existing["id"]))
                 conn.execute("COMMIT")
                 return DeepCaptureResult(existing["id"],existing["latest_capture_seq"],existing["completeness"],0,None,response_ref.sha256,detail_ref.sha256,True,())
+        same_bytes = (
+            existing is not None
+            and existing["response_object_sha"] == response_ref.sha256
+            and existing["record_object_sha"] == detail_ref.sha256
+        )
+        if (
+            spec.parser_kind
+            and not parse_failed
+            and not parsed.problems
+            and same_bytes
+            and "deep_capture_id" in previous_parse
+            and previous_parse.get("parser_version") != spec.parser_version
+            and previous_parse.get("capability") == parsed.capability
+            and tuple(previous_parse.get("warnings") or ()) == tuple(parsed.warnings)
+            and existing["completeness"] == completeness
+            and _saved_projection_matches(conn, source_record_id, int(existing["id"]), parsed)
+        ):
+            # Same bytes, same projection: record the parser version without another history row.
+            conn.execute(
+                "UPDATE deep_capture_parse_metadata SET parser_version=?, parsed_at_utc=? "
+                "WHERE deep_capture_id=? AND capture_seq=?",
+                (spec.parser_version, _iso(now), existing["id"], existing["latest_capture_seq"]),
+            )
+            stale_out, reason_out = int(existing["stale"] or 0), existing["stale_reason"]
+            if reason_out == STALE_QUARANTINED_MEMBER:
+                stale_out, reason_out = 0, None
+                conn.execute(
+                    "UPDATE deep_captures SET stale=0, stale_reason=NULL WHERE id=?",
+                    (existing["id"],),
+                )
+            conn.execute("COMMIT")
+            return DeepCaptureResult(
+                existing["id"], existing["latest_capture_seq"], existing["completeness"],
+                stale_out, reason_out, response_ref.sha256, detail_ref.sha256, True, (),
+            )
         if existing is None:
             cur = conn.execute(
                 "INSERT INTO deep_captures (source_record_id, lane, endpoint_kind, latest_capture_seq,"
@@ -130,7 +244,7 @@ def record_deep_capture(
                 " VALUES (?,?,?,1,?,?,?,?,?,?,?,?,?,?)",
                 (
                     source_record_id, spec.lane, spec.endpoint_kind, completeness, _iso(now), due,
-                    0, None, parsed.source_version_json, response_ref.sha256, detail_ref.sha256,
+                    stored_stale, stored_reason, parsed.source_version_json, response_ref.sha256, detail_ref.sha256,
                     content_hash(detail), lane_status,
                 ),
             )
@@ -139,10 +253,10 @@ def record_deep_capture(
             capture_id, seq = int(existing["id"]), int(existing["latest_capture_seq"]) + 1
             conn.execute(
                 "UPDATE deep_captures SET latest_capture_seq=?, completeness=?, captured_at_utc=?,"
-                " refresh_due_at_utc=?, stale=0, stale_reason=NULL, source_version_json=?,"
+                " refresh_due_at_utc=?, stale=?, stale_reason=?, source_version_json=?,"
                 " response_object_sha=?, record_object_sha=?, content_hash=?, lane_status=? WHERE id=?",
                 (
-                    seq, completeness, _iso(now), due, parsed.source_version_json,
+                    seq, completeness, _iso(now), due, stored_stale, stored_reason, parsed.source_version_json,
                     response_ref.sha256, detail_ref.sha256, content_hash(detail), lane_status, capture_id,
                 ),
             )
@@ -174,19 +288,15 @@ def record_deep_capture(
             projection_applied = True
         if spec.parser_kind:
             write_capture(conn, capture_id, seq, spec.parser_version, parsed)
-        stale, stale_reason = 0, None
-        if parsed.problems:
-            stale, stale_reason = 1, STALE_QUARANTINED_MEMBER
-            conn.execute(
-                "UPDATE deep_captures SET stale=1, stale_reason=? WHERE id=?",
-                (stale_reason, capture_id),
-            )
         conn.execute("COMMIT")
     except BaseException:
         with contextlib.suppress(sqlite3.Error):
             conn.execute("ROLLBACK")
         raise
-    return DeepCaptureResult(capture_id, seq, completeness, stale, stale_reason, response_ref.sha256, detail_ref.sha256, projection_applied, parsed.problems)
+    return DeepCaptureResult(
+        capture_id, seq, completeness, stored_stale, stored_reason,
+        response_ref.sha256, detail_ref.sha256, projection_applied, parsed.problems,
+    )
 
 
 def _write_derived(

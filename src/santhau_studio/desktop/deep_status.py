@@ -7,10 +7,19 @@ from datetime import UTC, datetime
 from santhau_studio.collectors.cgttrg import ENDPOINTS
 
 LANES = ("DETAIL", "HSMT", "REOFFER")
-STATES = ("FETCHED", "SOURCE_EMPTY", "PARSE_ERROR", "BLOCKED", "FAILED", "STALE", "NOT_COLLECTED")
+STATES = (
+    "FETCHED",
+    "SOURCE_EMPTY",
+    "PARTIAL",
+    "PARSE_ERROR",
+    "BLOCKED",
+    "FAILED",
+    "STALE",
+    "NOT_COLLECTED",
+)
 
 
-def _model(conn, record_id=None):
+def _model(conn, record_id=None, *, honor_refresh_due=None):
     exists = conn.execute("SELECT 1 FROM sqlite_master WHERE name='deep_tasks'").fetchone()
     tasks = (
         "SELECT * FROM deep_tasks"
@@ -53,16 +62,20 @@ def _model(conn, record_id=None):
         CASE WHEN t.state IN ('FETCHED','SOURCE_EMPTY') AND
           (c.id IS NULL OR t.listing_object_sha IS NOT p.current_record_object_sha
            OR c.stale=1  -- PARTIAL/DOCUMENT_ONLY is valid v5, not stale
-           OR (c.refresh_due_at_utc IS NOT NULL AND
+           OR (:honor_refresh_due=1 AND c.refresh_due_at_utc IS NOT NULL AND
                COALESCE(julianday(c.refresh_due_at_utc),0)<=julianday('now'))) THEN 'STALE'
+          WHEN t.state IN ('FETCHED','SOURCE_EMPTY') AND c.completeness='PARTIAL'
+            AND COALESCE(t.error,'') NOT IN ('','[]','null') THEN 'PARTIAL'
           WHEN t.state IS NOT NULL THEN t.state
           WHEN c.id IS NOT NULL THEN CASE WHEN c.stale=1 OR
-            (c.refresh_due_at_utc IS NOT NULL AND COALESCE(julianday(c.refresh_due_at_utc),0)<=julianday('now'))
+            (:honor_refresh_due=1 AND c.refresh_due_at_utc IS NOT NULL AND COALESCE(julianday(c.refresh_due_at_utc),0)<=julianday('now'))
             THEN 'STALE' WHEN c.completeness='FULL' THEN 'FETCHED' ELSE 'PARSE_ERROR' END
           WHEN p.supported=1 THEN 'NOT_COLLECTED' ELSE 'UNSUPPORTED' END state,
         c.id capture_id,c.completeness,c.captured_at_utc,c.refresh_due_at_utc,c.stale_reason,
         COALESCE(t.updated_at_utc,c.captured_at_utc) updated_at_utc,t.error,
-        COALESCE(t.provenance_json,'{{}}') provenance_json
+        COALESCE(t.provenance_json,'{{}}') provenance_json,
+        CASE WHEN c.refresh_due_at_utc IS NOT NULL AND COALESCE(julianday(c.refresh_due_at_utc),0)<=julianday('now')
+          THEN 1 ELSE 0 END refresh_due_elapsed
       FROM pairs p LEFT JOIN tasks t ON t.source_record_id=p.id AND t.lane=p.lane
       LEFT JOIN deep_captures c ON c.source_record_id=p.id AND c.lane=p.lane AND
         ((t.source_record_id IS NOT NULL AND c.id=t.capture_id) OR
@@ -70,21 +83,48 @@ def _model(conn, record_id=None):
     ), legacy AS (
       SELECT r.id source_record_id,r.family,r.natural_key,c.lane,0 supported,1 legacy,
         'capture:'||c.id row_key,
-        CASE WHEN c.stale=1 OR (c.refresh_due_at_utc IS NOT NULL AND
+        CASE WHEN c.stale=1 OR (:honor_refresh_due=1 AND c.refresh_due_at_utc IS NOT NULL AND
           COALESCE(julianday(c.refresh_due_at_utc),0)<=julianday('now')) THEN 'STALE'
           WHEN c.completeness='FULL' THEN 'FETCHED' ELSE 'PARSE_ERROR' END state,
         c.id capture_id,c.completeness,c.captured_at_utc,c.refresh_due_at_utc,c.stale_reason,
-        c.captured_at_utc updated_at_utc,NULL error,'{{}}' provenance_json
+        c.captured_at_utc updated_at_utc,NULL error,'{{}}' provenance_json,
+        CASE WHEN c.refresh_due_at_utc IS NOT NULL AND COALESCE(julianday(c.refresh_due_at_utc),0)<=julianday('now')
+          THEN 1 ELSE 0 END refresh_due_elapsed
       FROM deep_captures c JOIN records r ON r.id=c.source_record_id
       WHERE NOT EXISTS (SELECT 1 FROM current q WHERE q.capture_id=c.id)
         AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.source_record_id=c.source_record_id AND t.lane=c.lane)
     ), entries AS (SELECT * FROM current UNION ALL SELECT * FROM legacy)
     """
     # One instant for counts and page rows, including captures expiring during the read.
+    if honor_refresh_due is None:
+        honor_refresh_due = _refresh_expired(conn)
     return sql.replace("julianday('now')", "julianday(:now)"), {
         "record_id": record_id,
         "now": datetime.now(UTC).isoformat(),
+        "honor_refresh_due": 1 if honor_refresh_due else 0,
     }
+
+
+def _policy(conn):
+    from santhau_studio.storage.policy_notice import policy_notice
+
+    return policy_notice(conn)
+
+
+def _refresh_expired(conn):
+    try:
+        row = conn.execute(
+            "SELECT value_json FROM settings WHERE key='automatic_public_deep'"
+        ).fetchone()
+    except sqlite3.Error:
+        return False
+    if not row or not row[0]:
+        return False
+    try:
+        value = json.loads(row[0])
+    except (TypeError, json.JSONDecodeError):
+        return False
+    return isinstance(value, dict) and value.get("refresh_expired") is True
 
 
 def _row(row):
@@ -125,11 +165,12 @@ def queue(conn, payload=None):
             "error_code": "INVALID_FILTER",
             "error": "Bộ lọc không hợp lệ. Hãy chọn lại trạng thái và loại nội dung.",
         }
-    sql, args = _model(conn)
+    policy = _policy(conn)
+    sql, args = _model(conn, honor_refresh_due=policy["refresh_expired"])
     args.update(lane=lane, state=state, text=text, limit=limit, offset=offset)
     where = "WHERE (:lane='' OR lane=:lane) AND (:state='' OR state=:state) AND (:text='' OR instr(lower(natural_key),lower(:text))>0)"
     summary = dict.fromkeys(STATES, 0)
-    summary.update(FULL=0, PARTIAL=0, stale=0, UNSUPPORTED=0)
+    summary.update(FULL=0, PARTIAL=0, stale=0, UNSUPPORTED=0, partial_saved=0)
     # v5 capability authority is applied per record in states(); the queue
     # summary uses the same single CTE read, with no extra SQL round-trips.
     legacy_count = 0
@@ -143,7 +184,10 @@ def queue(conn, payload=None):
                 summary[row["completeness"]] += row["n"]
             if row["state"] == "STALE":
                 summary["stale"] += row["n"]
-            if row["state"] in ("UNSUPPORTED", "BLOCKED") or (row["supported"] and not row["legacy"]):
+            if row["state"] == "PARTIAL":
+                # completeness PARTIAL already uses summary["PARTIAL"]. Keep the display count apart.
+                summary["partial_saved"] += row["n"]
+            elif row["state"] in ("UNSUPPORTED", "BLOCKED") or (row["supported"] and not row["legacy"]):
                 summary[row["state"]] += row["n"]
             else:
                 legacy_count += row["n"]
@@ -177,9 +221,10 @@ def queue(conn, payload=None):
         "offset": offset,
         "limit": limit,
         "has_more": offset + len(rows) < total,
-        "eligible_total": sum(summary[s] for s in STATES),
+        "eligible_total": sum(summary[s] for s in STATES if s != "PARTIAL") + summary.get("partial_saved", 0),
         "legacy_count": legacy_count,
         "scope": "TBMT chào giá trực tuyến rút gọn · mỗi hồ sơ có 3 nội dung cần lấy",
         "lanes": [{"lane": lane, "state": "PUBLIC_CGTTRG"} for lane in LANES]
         + [{"lane": lane, "state": "BLOCKED"} for lane in ("BOQ", "KQLCNT_FULL")],
+        "refresh_policy": policy,
     }

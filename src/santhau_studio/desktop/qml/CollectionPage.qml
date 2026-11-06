@@ -47,8 +47,10 @@ Item {
         var request={job_kind:mode.currentValue,family:family.currentValue,
             request_limits:{max_pages:pages.value,max_requests:requests.value,max_seconds:seconds.value,pacing_seconds:pacing.value}}
         if (mode.currentValue === "BACKFILL" && family.currentValue === "ALL") request.cadence=cadence.currentValue
-        if (mode.currentValue === "INCREMENTAL") request.auto_range=true
-        else {request.date_from=from.text;request.date_to=to.text}
+        if (mode.currentValue === "INCREMENTAL") {
+            request.auto_range=true
+            if (refreshRecent.checked) request.refresh_recent=true
+        } else {request.date_from=from.text;request.date_to=to.text}
         submitting=true; enqueueResult=""
         backend.requestRead("collectionAction","start_collection",JSON.stringify(request))
     }
@@ -85,6 +87,11 @@ Item {
                 StudioButton { objectName:"collectorStop";text:"Tắt bộ thu thập";enabled:page.statusFresh && !page.actionPending && !!(page.state.worker||{}).pipe_ok && (((page.state.worker||{}).runtime||{}).phase!=="STOPPING_WORKER");onClicked:page.command("FORCE_TERMINATE") }
                 StudioButton { objectName:"collectorStart";text:"Bật bộ thu thập";enabled:page.statusFresh && !page.actionPending && !(page.state.worker||{}).running;onClicked:{page.actionPending=true;backend.requestRead("jobAction","start_worker","{}")} }
                 StudioButton { text:"Kiểm tra lại trạng thái";onClicked:page.reload() }
+            }
+            Label {
+                objectName:"collectorStopNote"
+                Layout.fillWidth:true;wrapMode:Text.Wrap;color:"#526477"
+                text:"Tắt bộ thu thập chỉ dừng tiến trình. Việc đang chạy được xếp lại và hàng đợi được giữ, giống lệnh Linux stop. Muốn dừng một tác vụ, dùng Dừng tác vụ."
             }
             Label {
                 Layout.fillWidth:true;wrapMode:Text.Wrap;color:"#526477";visible:!!text
@@ -127,7 +134,19 @@ Item {
                         StudioButton { objectName:"collectionYesterday"; text:"Hôm qua"; onClicked:page.preset(T.vietnamDay(-1),T.vietnamDay(-1)) }
                         StudioButton { text:"Tháng trước"; onClicked:{var n=new Date();var a=new Date(n.getFullYear(),n.getMonth()-1,1);var b=new Date(n.getFullYear(),n.getMonth(),0);page.preset(Qt.formatDate(a,"dd/MM/yyyy"),Qt.formatDate(b,"dd/MM/yyyy"))} }
                     }
-                    Label { Layout.fillWidth:true; wrapMode:Text.Wrap; color:"#526477"; text:mode.currentValue==="INCREMENTAL" ? "Cập nhật theo mốc đã thu thập, kiểm tra lại các ngày gần nhất. Lịch chạy hằng ngày được bật riêng trong Cài đặt." : "Bao gồm cả ngày bắt đầu và ngày kết thúc, theo giờ Việt Nam." }
+                    Label {
+                        objectName:"collectionPolicyNote"
+                        Layout.fillWidth:true; wrapMode:Text.Wrap; color:"#526477"
+                        text:(page.state.collection_policy && page.state.collection_policy.notice_vi) || "Chính sách đang dùng: chỉ lấy phần còn thiếu. Bản hết hạn và đối chiếu tự động không chạy trừ khi được bật."
+                    }
+                    CheckBox {
+                        id:refreshRecent
+                        objectName:"collectionRefreshRecent"
+                        visible:mode.currentValue==="INCREMENTAL"
+                        text:"Đọc lại ngày đã chứng minh (gia hạn, hủy, đính chính)"
+                        Accessible.name:text
+                    }
+                    Label { Layout.fillWidth:true; wrapMode:Text.Wrap; color:"#526477"; text:mode.currentValue==="INCREMENTAL" ? "Chỉ lấy khoảng chưa đủ bằng chứng. Ngày đã chứng minh được bỏ qua, nên sửa đổi muộn không tự vào kho trừ khi chọn ô phía trên. Lịch hằng ngày bật riêng trong Cài đặt." : mode.currentValue==="RECONCILE" ? "Đối chiếu một lượt các ngày đã chứng minh trong khoảng đã chọn. Lịch đối chiếu tự động không chạy theo chính sách thiếu-only; lượt này chỉ chạy vì bạn bấm bắt đầu." : "Bao gồm cả ngày bắt đầu và ngày kết thúc, theo giờ Việt Nam." }
                     RowLayout {
                         StudioButton { objectName:"collectionStart"; primary:true; text:page.submitting ? "Đang tạo tác vụ…" : (page.synthetic ? "Chạy thử bằng dữ liệu giả lập" : "Bắt đầu thu thập"); enabled:!page.submitting && !page.state.collection_blocked_reason; onClicked:page.submit() }
                         StudioButton { text:limits.visible ? "Ẩn giới hạn" : "Giới hạn mỗi tác vụ"; onClicked:limits.visible=!limits.visible }

@@ -202,7 +202,14 @@ def report(conn, root, scope=None):
         },
         "network_requests": 0,
         "coverage_is_queue_independent": True,
+        "policy_notice": _notice(conn),
     }
+
+
+def _notice(conn):
+    from santhau_studio.storage.policy_notice import policy_notice
+
+    return policy_notice(conn)
 
 
 def serialize(span):
