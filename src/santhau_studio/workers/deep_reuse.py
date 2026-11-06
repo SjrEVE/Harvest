@@ -6,6 +6,7 @@ from datetime import datetime
 
 from santhau_studio.collectors.deep import DeepResponse
 from santhau_studio.collectors.public_deep import identity_problem
+from santhau_studio.storage.deep import FETCH_STALE_REASONS
 from santhau_studio.storage.deep_metadata import capture_metadata
 from santhau_studio.storage.rawstore import ObjectCorruptError
 
@@ -16,6 +17,7 @@ class ReusedCapture:
     observed_at: datetime
     refresh_due: str | None
     receipt: dict
+    stale_reason: str | None = None
 
 
 def reusable_capture(writer, record, spec, now, *, refresh_expired=False):
@@ -29,11 +31,18 @@ def reusable_capture(writer, record, spec, now, *, refresh_expired=False):
     for row in rows:
         metadata = capture_metadata(writer.conn, row["id"], row["latest_capture_seq"])
         parser_upgrade = metadata["parser_version"] < spec.parser_version
-        if row["state"] not in ("FETCHED", "SOURCE_EMPTY") and not (row["state"] == "PARSE_ERROR" and parser_upgrade):
-            continue
-        if row["stale"] and not parser_upgrade:
+        sibling = row["lane"] != spec.lane
+        # A saved response for the shared DETAIL/REOFFER endpoint is the same page.
+        # Reuse it, including a row-level or shape PARSE_ERROR, instead of fetching twice.
+        # A version change, reconcile mismatch, or elapsed refresh still needs a real fetch
+        # unless this pass is only replaying a newer parser — and that replay must not
+        # clear the stale reason.
+        if row["stale"] and row["stale_reason"] in FETCH_STALE_REASONS and not parser_upgrade:
             continue
         if row["lane"] == spec.lane and not parser_upgrade:
+            continue
+        saved_problem = row["state"] == "PARSE_ERROR" and (parser_upgrade or sibling)
+        if row["state"] not in ("FETCHED", "SOURCE_EMPTY") and not saved_problem:
             continue
         try:
             due = datetime.fromisoformat(row["refresh_due_at_utc"]) if row["refresh_due_at_utc"] else None
@@ -52,7 +61,10 @@ def reusable_capture(writer, record, spec, now, *, refresh_expired=False):
                              "lane": row["lane"], "observed_at": row["captured_at_utc"],
                              "response_object_sha": row["response_object_sha"]},
             )
-            return ReusedCapture(DeepResponse(response, detail), datetime.fromisoformat(row["captured_at_utc"]), row["refresh_due_at_utc"], receipt)
+            return ReusedCapture(
+                DeepResponse(response, detail), datetime.fromisoformat(row["captured_at_utc"]),
+                row["refresh_due_at_utc"], receipt, row["stale_reason"],
+            )
         except (ValueError, TypeError, OSError, ObjectCorruptError):
             # A damaged/unreadable cache never authorizes projecting guessed content.
             continue

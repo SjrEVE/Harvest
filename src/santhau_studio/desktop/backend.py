@@ -219,6 +219,7 @@ class StudioBackend:
         """UI-04: the queue as documents on disk, plus the worker's answer for the active job."""
         payload: dict[str, Any] = {"worker": self.worker_status(), "queued": [], "active": [], "done": []}
         payload["collection_blocked_reason"] = self._collection_blocker()
+        payload["collection_policy"] = self._collection_policy()
         active_job = None
         for state in ("queued", "active", "done"):
             for path in sorted((self._jobs_dir() / state).glob("*.json")):
@@ -354,6 +355,15 @@ class StudioBackend:
             return overview(self)
         except sqlite3.Error as exc:
             return {"families": [], "error": f"Không đọc được mức độ thu thập: {exc}"}
+
+    def _collection_policy(self) -> dict[str, Any]:
+        from santhau_studio.storage.policy_notice import policy_notice
+
+        conn = self._serving()
+        if conn is None:
+            return policy_notice(None)
+        with closing(conn):
+            return policy_notice(conn)
 
     def _collection_blocker(self) -> str | None:
         from santhau_studio.collectors.offline_acceptance import enabled
@@ -754,7 +764,10 @@ class StudioBackend:
                     "SELECT id,action,target_ref,actor_sid,reason,undo_action_id,acted_at_utc FROM identity_audit_actions ORDER BY id DESC LIMIT 50")]
                 detail["legacy_unverified"] = record["source_key"].startswith("legacy:")
                 from santhau_studio.desktop.deep_status import states
+                from santhau_studio.storage.policy_notice import policy_notice
+
                 detail["deep_states"] = states(conn, record_id)
+                detail["refresh_policy"] = policy_notice(conn)
                 detail["relation_edges"] = [dict(row) for row in conn.execute(
                     "SELECT DISTINCT e.* FROM relation_edges e JOIN entity_source_links l "
                     "ON l.entity_id=e.from_entity OR l.entity_id=e.to_entity WHERE l.source_record_id=?", (record_id,))]
@@ -823,10 +836,8 @@ class StudioBackend:
                 }
             except sqlite3.Error as exc:
                 return {"present": True, "error": str(exc), "rows": [], "summary": {}}
-        now = _now()
         for row in rows:
-            due = row["refresh_due_at_utc"]
-            row["needs_refresh"] = bool(row["stale"]) or row["completeness"] != "FULL" or (due is not None and due <= now)
+            row["needs_refresh"] = bool(row["stale"]) or row["completeness"] != "FULL"
         return {
             "present": True,
             "rows": rows,

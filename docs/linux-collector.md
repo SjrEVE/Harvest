@@ -101,15 +101,19 @@ santhau-collector deep-status --data-root "$HOME/SanThauData"
 
 Worker xử lý tối đa 30 cặp hồ sơ/lane mỗi đợt, xen giữa các lượt danh sách và khi rảnh,
 giữ nhịp tối thiểu 3 giây/request toàn host. Tác vụ được pause thì tự động cũng dừng.
-Capture còn mới được bỏ qua; listing thay đổi hoặc hết hạn 30 ngày thì làm mới và giữ
-lịch sử. FAILED/PARSE_ERROR có cooldown ít nhất 60 phút; endpoint bị chặn dừng trong
-worker hiện tại. `deep-status` phân biệt FETCHED, SOURCE_EMPTY, PARSE_ERROR, BLOCKED,
-FAILED; không coi phản hồi lỗi là không có dữ liệu.
+Capture còn mới được bỏ qua. Listing thay đổi thì làm mới và giữ lịch sử. Hết hạn 30 ngày
+**không** tự lấy lại, trừ khi bật `deep-config --refresh-expired`. FAILED có cooldown ít nhất
+60 phút. PARSE_ERROR đã lưu raw không bị xếp lại như một lần cào mới; đọc lại bằng
+`replay-deep` (xem trước, không HTTP). Endpoint bị chặn dừng trong worker hiện tại.
+`deep-status` nêu rõ chính sách thiếu-only và số capture đang dùng parser cũ.
 
 Chỉ hỗ trợ các đường CGTTRG đã xác minh. Documents hiện là REFERENCE_ONLY, chưa tải
-file đính kèm. KQLCNT_FULL, BOQ và HSMT ngoài CGTTRG vẫn chưa xác minh. Không suy
-OFFEROR thành người trúng/liên danh/mã số thuế. `enqueue --to` là ngày kết thúc cố định;
-không tự tạo lịch ngày mới. Sau đó có thể enqueue INCREMENTAL để cập nhật danh sách.
+file đính kèm. KQLCNT_FULL vẫn khóa: kho này không có fixture phản hồi
+`contractor-input-result/get`, chỉ có `inputResultId` trên danh sách, nên không mở lane.
+BOQ và HSMT ngoài CGTTRG vẫn chưa xác minh. Không suy OFFEROR thành người trúng/liên danh/mã số thuế.
+`enqueue --to` là ngày kết thúc cố định; không tự tạo lịch ngày mới. `enqueue --mode INCREMENTAL`
+bỏ qua ngày đã đủ bằng chứng. Thêm `--refresh-recent` khi cần đọc lại những ngày đó
+(gia hạn, hủy, đính chính). `stop` tắt tiến trình và xếp lại việc đang chạy; không xóa hàng đợi.
 
 ```sh
 santhau-collector enqueue --mode INCREMENTAL --data-root "$HOME/SanThauData"

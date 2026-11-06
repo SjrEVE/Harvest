@@ -25,7 +25,7 @@ Item {
     function reload() { requestPage(0) }
     function tone(value) {
         if (value === "FAILED" || value === "PARSE_ERROR") return "#b42336"
-        if (value === "STALE" || value === "BLOCKED") return "#965a08"
+        if (value === "STALE" || value === "BLOCKED" || value === "PARTIAL") return "#965a08"
         return value === "FETCHED" || value === "SOURCE_EMPTY" ? "#087f75" : "#526477"
     }
     Connections {
@@ -41,7 +41,8 @@ Item {
         anchors.fill: parent; anchors.margins: 20; spacing: 12
         Label {
             Layout.fillWidth: true; wrapMode: Text.Wrap; color: "#526477"; font.pixelSize: 13
-            text: page.state.scope || "Theo dõi nội dung đã lấy và những hồ sơ cần kiểm tra lại."
+            text: (page.state.scope || "Theo dõi nội dung đã lấy và những hồ sơ cần kiểm tra lại.")
+                + ((page.state.refresh_policy && page.state.refresh_policy.notice_vi) ? " " + page.state.refresh_policy.notice_vi : "")
         }
         Flow {
             Layout.fillWidth: true; Layout.preferredHeight: childrenRect.height; spacing: 20
@@ -50,6 +51,7 @@ Item {
                     {label:"Đã lấy", count:(page.state.scope ? page.summary.FETCHED || 0 : page.summary.FULL || 0), tone:"#087f75"},
                     {label:"Chưa lấy", count:page.summary.NOT_COLLECTED || 0, tone:"#526477"},
                     {label:"Cần cập nhật", count:page.state.scope ? page.summary.STALE || 0 : page.summary.stale || 0, tone:"#965a08"},
+                    {label:"Đã giữ một phần", count:page.summary.partial_saved || 0, tone:"#965a08"},
                     {label:"Cần kiểm tra", count:(page.summary.FAILED || 0)+(page.summary.PARSE_ERROR || 0)+(page.summary.BLOCKED || 0), tone:"#b42336"},
                     {label:"Chưa có mục bổ sung", count:page.summary.SOURCE_EMPTY || 0, tone:"#526477"}
                 ]
@@ -72,7 +74,7 @@ Item {
                 textRole:"label"; valueRole:"value"; Accessible.name:"Lọc trạng thái thu thập"
                 model: [{label:"Mọi trạng thái",value:""},{label:"Lỗi lấy dữ liệu",value:"FAILED"},
                     {label:"Lỗi phân tích",value:"PARSE_ERROR"},{label:"Bị chặn",value:"BLOCKED"},
-                    {label:"Cần cập nhật",value:"STALE"},{label:"Chưa lấy",value:"NOT_COLLECTED"},
+                    {label:"Cần cập nhật",value:"STALE"},{label:"Đã giữ một phần",value:"PARTIAL"},{label:"Chưa lấy",value:"NOT_COLLECTED"},
                     {label:"Đã lấy",value:"FETCHED"},{label:"Chưa có mục bổ sung",value:"SOURCE_EMPTY"}]
                 onActivated: page.reload()
             }
@@ -126,7 +128,9 @@ Item {
                         Layout.fillWidth:true; elide:Text.ElideRight; textFormat:Text.PlainText; font.pixelSize:13; color:"#526477"
                         text: entry.modelData.error ? T.message(entry.modelData.error) : entry.modelData.legacy ? "Bằng chứng thu thập trước đây" :
                             entry.modelData.state === "NOT_COLLECTED" ? "Chưa có lần lấy nội dung này" :
-                            entry.modelData.state === "STALE" ? "Nội dung cần đối chiếu lại với nguồn" :
+                            entry.modelData.state === "STALE" ? (entry.modelData.stale ? "Nguồn đã đổi hoặc bản lưu bị đánh dấu cần lấy lại" : "Hạn làm mới đã qua và chính sách đang cho phép lấy lại") :
+                            entry.modelData.state === "PARTIAL" ? "Đã giữ dòng đọc được. Dòng lỗi được ghi lại, không xóa dữ liệu tốt." :
+                            entry.modelData.refresh_due_elapsed && entry.modelData.state === "FETCHED" ? "Đã lưu. Hạn làm mới đã qua; bộ thu thập không tự lấy lại." :
                             entry.modelData.state === "FETCHED" ? "Đã lưu phản hồi nguồn và dữ liệu chi tiết" : "Mở hồ sơ để xem bằng chứng và tình trạng từng nội dung"
                     }
                 }

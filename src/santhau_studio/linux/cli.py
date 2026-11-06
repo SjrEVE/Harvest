@@ -219,9 +219,19 @@ def parser():
     choice.add_argument("--enable", action="store_true")
     choice.add_argument("--disable", action="store_true")
     deep.add_argument("--batch-requests", type=int, default=30)
+    deep.add_argument(
+        "--refresh-expired",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Tự lấy lại bản chi tiết đã quá hạn. Bỏ qua cờ này để giữ giá trị đang lưu. Mặc định sau nâng cấp là tắt.",
+    )
     sub.add_parser("deep-status", parents=[common], help="Đọc checkpoint và lỗi thu thập chi tiết")
     sub.add_parser("self-test-deep", parents=[common], help="Thử deep collector ngoại tuyến trên thư mục mới")
-    replay = sub.add_parser("replay-deep", parents=[common], help="Parse lại raw bằng phiên bản mới; mặc định chỉ xem trước, không HTTP")
+    replay = sub.add_parser(
+        "replay-deep",
+        parents=[common],
+        help="Đọc lại raw đã lưu bằng parser hiện tại. Mặc định chỉ xem trước, không HTTP, có giới hạn. Không tự chạy khi nâng cấp.",
+    )
     replay_choice = replay.add_mutually_exclusive_group()
     replay_choice.add_argument("--execute", action="store_true")
     replay_choice.add_argument("--dry-run", action="store_true")
@@ -249,6 +259,11 @@ def parser():
     enqueue.add_argument(
         "--mode", choices=("BACKFILL", "INCREMENTAL", "RECONCILE"), default="BACKFILL"
     )
+    enqueue.add_argument(
+        "--refresh-recent",
+        action="store_true",
+        help="Chỉ với INCREMENTAL: đọc lại ngày đã đủ bằng chứng để bắt sửa đổi muộn. Mặc định bỏ qua những ngày đó.",
+    )
     enqueue.add_argument("--max-pages", type=int, default=1000)
     enqueue.add_argument("--max-requests", type=int, default=3000)
     enqueue.add_argument("--max-seconds", type=int, default=3600)
@@ -260,8 +275,15 @@ def parser():
     )
     run.add_argument("--idle-exit-seconds", type=float)
     run.add_argument("--offline-test", action="store_true", help=argparse.SUPPRESS)
+    command_help = {
+        "status": "Đọc trạng thái tiến trình",
+        "pause": "Tạm dừng tác vụ đang chạy",
+        "resume": "Tiếp tục tác vụ đã tạm dừng",
+        "cancel": "Dừng một tác vụ (STOP_GRACEFUL), không tắt tiến trình",
+        "stop": "Tắt tiến trình. Tác vụ đang chạy được xếp lại; hàng đợi không bị xóa. Lần chạy sau tiếp tục. Cùng nghĩa với nút Tắt bộ thu thập trên Windows.",
+    }
     for name in ("status", "pause", "resume", "cancel", "stop"):
-        p = sub.add_parser(name, parents=[common])
+        p = sub.add_parser(name, parents=[common], help=command_help[name])
         p.add_argument("--job")
     sub.add_parser(
         "self-test",
@@ -298,7 +320,10 @@ def main(argv=None):
             return 0
         if args.command == "deep-config":
             from santhau_studio.linux.deep import configure_deep
-            output(configure_deep(root, enabled=args.enable, batch_requests=args.batch_requests))
+            output(configure_deep(
+                root, enabled=args.enable, batch_requests=args.batch_requests,
+                refresh_expired=args.refresh_expired,
+            ))
             return 0
         if args.command == "deep-status":
             from santhau_studio.linux.deep import deep_status
@@ -327,6 +352,7 @@ def main(argv=None):
                 first=args.first,
                 last=args.last,
                 limits=limits,
+                refresh_recent=args.refresh_recent,
             )
             paths = [enqueue_job(root, job) for job in jobs]
             output(

@@ -25,8 +25,9 @@ def targets(conn, record_ids, limit):
         "SELECT r.*,t.lane,t.response_object_sha AS replay_sha,t.capture_id,t.listing_object_sha AS replay_listing_sha,"
         "t.provenance_json AS task_provenance,c.latest_capture_seq,c.captured_at_utc,c.refresh_due_at_utc "
         "FROM deep_tasks t JOIN source_records r ON r.id=t.source_record_id JOIN deep_captures c ON c.id=t.capture_id "
-        "WHERE r.source_key='egp_home' AND r.family='TBMT' AND t.lane='HSMT' AND t.state='PARSE_ERROR' "
-        "AND t.response_object_sha IS NOT NULL ORDER BY r.id"
+        "WHERE r.source_key='egp_home' AND r.family='TBMT' AND t.lane IN ('DETAIL','HSMT','REOFFER') "
+        "AND t.state IN ('FETCHED','SOURCE_EMPTY','PARSE_ERROR') AND t.response_object_sha IS NOT NULL "
+        "ORDER BY r.id, t.lane"
     ):
         if record_ids is not None and row["id"] not in record_ids:
             continue
@@ -67,6 +68,8 @@ def replay(root, *, execute=False, record_ids=None, limit=100):
         "ok": True,
         "dry_run": not execute,
         "network_requests": 0,
+        "offline": True,
+        "history_policy": "append-only-when-projection-changes",
         "eligible": 0,
         "applied": 0,
         "repaired": 0,
