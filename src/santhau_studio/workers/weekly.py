@@ -8,6 +8,13 @@ from zoneinfo import ZoneInfo
 from santhau_studio.collectors.source_registry import FAMILY_ORDER
 from santhau_studio.domain.coverage import Interval, vn_calendar_day
 from santhau_studio.storage import coverage
+from santhau_studio.storage.coverage_contract import current
+
+
+def resolve_source(conn, source, span):
+    context = current(conn, source["source_key"], source["family"], endpoint=source.get("endpoint"), adapter_sha=source.get("adapter_sha"))
+    return coverage.resolve(conn, source["source_key"], source["family"], span.from_utc, span.to_utc,
+                            context=context or {"signature": "INVALID"})
 
 CAPABILITY = "weekly-six-open-day-v3"
 
@@ -48,6 +55,8 @@ def dispatch(loop, request, parent_run):
     children_since_publish = 0
     initial_work = list(work_periods(periods, loop._clock()))
     from santhau_studio.workers.auto_deep import run_batch
+    from santhau_studio.workers.scoped_maintenance import _soft
+    from santhau_studio.workers.scoped_maintenance import run_batch as repair_batch
     if run_batch(loop,parent_run):
         loop._publish_snapshot()
 
@@ -63,8 +72,8 @@ def dispatch(loop, request, parent_run):
         for index, week, span, current_day, last_part in scheduled_work():
             for family in FAMILY_ORDER:
                 source = sources[family]
-                def resolve(source=source, family=family, span=span):
-                    return coverage.resolve(conn, source["source_key"], family, span.from_utc, span.to_utc)
+                def resolve(source=source, span=span):
+                    return resolve_source(conn, source, span)
                 for attempt in range(1, 65):
                     if loop.flag.interrupt_requested:
                         return "PARTIAL", {"weeks_completed": completed, "reason": "Đã dừng theo yêu cầu; tiến độ đã lưu."}
@@ -105,6 +114,7 @@ def dispatch(loop, request, parent_run):
                         (child_run, "BACKFILL", status, json.dumps({**detail, "parent_run": parent_run}, ensure_ascii=False)))
                     conn.commit()
                     children_since_publish += 1
+                    repair_batch(loop, parent_run)
                     run_batch(loop,parent_run)
                     after = resolve()
                     if loop.flag.interrupt_requested:
@@ -120,6 +130,11 @@ def dispatch(loop, request, parent_run):
                     blockers = detail.get("blockers", [])
                     exhausted = any("BUDGET_EXHAUSTED" in b for b in blockers)
                     recoverable = all("BUDGET_EXHAUSTED" in b or b == "TOTAL_UNTRUSTED" for b in blockers)
+                    if _soft(detail) and (not exhausted or after.proven_fraction <= before.proven_fraction):
+                        pending.append({"family": family, "from": span.from_utc.isoformat(),
+                                        "to": span.to_utc.isoformat(), "blockers": blockers, "repair_pending": True})
+                        pending_weeks.add(index)
+                        break  # durable repair owns this gap; other families still get a turn
                     # A time/request cap may continue only with new proven coverage. A source
                     # block, network fault or zero progress stops here, never skips the week.
                     if status != "PARTIAL" or not exhausted or not recoverable or after.proven_fraction <= before.proven_fraction:
@@ -133,12 +148,12 @@ def dispatch(loop, request, parent_run):
                     return "PARTIAL", {"weeks_completed": completed, "reason": "Đã chạm giới hạn tiếp tục an toàn của tuần; tiến độ đã lưu."}
             if last_part and index not in pending_weeks:
                 completed += 1
-        pending = [item for item in pending if not coverage.resolve(
-            conn, sources[item["family"]]["source_key"], item["family"],
-            datetime.fromisoformat(item["from"]),
-            datetime.fromisoformat(item["to"])).can_skip]
-        completed = sum(all(coverage.resolve(conn, sources[family]["source_key"], family,
-            week.from_utc, week.to_utc).can_skip for family in FAMILY_ORDER) for week in periods)
+        pending = [item for item in pending if not resolve_source(conn, sources[item["family"]],
+            Interval(datetime.fromisoformat(item["from"]), datetime.fromisoformat(item["to"]))).can_skip]
+        completed = sum(all(resolve_source(conn, sources[family], week).can_skip for family in FAMILY_ORDER) for week in periods)
+        if any(item.get("repair_pending") for item in pending):
+            return "PARTIAL", {"weeks_completed": completed, "weeks_total": len(periods), "pending_repairs": pending,
+                               "reason": "Còn khoảng chưa đủ bằng chứng; đã lưu việc sửa bù có giới hạn. Các họ khác tiếp tục được thu thập."}
         if pending:
             dates = ", ".join(sorted({
                 datetime.fromisoformat(item["from"]).astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%d/%m/%Y")
@@ -146,6 +161,6 @@ def dispatch(loop, request, parent_run):
             return "PARTIAL", {"weeks_completed":completed, "weeks_total":len(periods),
                 "pending_current_day":pending,
                 "reason":f"Đã lấy dữ liệu hiện có ngày {dates}. Ngày này chưa kết thúc khi lấy dữ liệu nên chưa chốt đủ ngày; cần cập nhật sau khi ngày khép để kiểm chứng phần phát sinh."}
-        return "COMPLETED", {"weeks_completed": completed, "weeks_total": len(periods)}
+        return ("COMPLETED" if completed == len(periods) else "PARTIAL"), {"weeks_completed": completed, "weeks_total": len(periods)}
     finally:
         loop._weekly_progress = {}

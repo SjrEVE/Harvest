@@ -2,6 +2,11 @@
 
 // Presentation only. Stored values, command names and original source bytes stay unchanged.
 var words = {
+    STRUCTURED_ITEMS:"Bảng hàng hóa có cấu trúc",NOTICE_METADATA:"Thông tin thông báo",
+    DOCUMENT_ONLY:"Chỉ có tài liệu · chưa có bảng hàng hóa",STRUCTURED_ITEMS_UNAVAILABLE:"Chưa có dữ liệu hàng hóa có cấu trúc",
+    UNVERIFIED_FORM:"Biểu mẫu chưa được xác minh",UNSUPPORTED_PROCESS_APPLY:"Quy trình chưa được hỗ trợ",
+    UNSUPPORTED_BID_FORM:"Hình thức chưa được hỗ trợ",UNSUPPORTED_ADAPTER:"Bộ thu thập chưa hỗ trợ",
+    UNVERIFIED_LISTING:"Định danh danh sách cần kiểm tra",IDENTITY_QUARANTINE:"Định danh không khớp · cần kiểm tra",
     PUBLIC_CGTTRG:"Nguồn công khai · chỉ CGTTRG",FETCHED:"Đã lấy",SOURCE_EMPTY:"Đã lấy · nguồn rỗng",
     PARSE_ERROR:"Lỗi phân tích dữ liệu",REFERENCE_ONLY:"Chỉ có tham chiếu file",DOWNLOADED:"Đã tải và kiểm tra file",
     TESTED_OFFLINE:"Đã kiểm tra bằng dữ liệu giả lập",

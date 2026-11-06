@@ -17,7 +17,7 @@ def hsmt(rows):
                 "notifyId": "notice-id",
                 "notifyVersion": "00",
                 "bidForm": "CGTTRG",
-                "formCode": "goods",
+                "formCode": "BD.DT.02.1957",
                 "formContent": '[{"columnName":"extra"}]',
                 "formValue": json.dumps({"Table": rows}),
             }

@@ -6,8 +6,13 @@ from dataclasses import asdict
 from santhau_studio.collectors.deep import DeepResponse, DetailShapeError, parse_detail
 from santhau_studio.collectors.http_client import AccessBlocked, FetchFailed
 from santhau_studio.collectors.network_policy import scrub_exception
-from santhau_studio.collectors.public_deep import identity_problem
+from santhau_studio.collectors.public_deep import (
+    ADAPTER_VERSION,
+    UnsupportedAdapter,
+    identity_problem,
+)
 from santhau_studio.storage.deep import record_deep_capture
+from santhau_studio.storage.deep_metadata import write_task
 from santhau_studio.storage.public_deep import task_state
 
 
@@ -21,6 +26,7 @@ def collect_public(writer, run_id, lane, scope, fetcher, spec, records, clock, s
         "failed": 0,
         "blocked": 0,
         "source_empty": 0,
+        "unsupported": 0,
     }
     conn = writer.conn
     for record in records:
@@ -50,8 +56,13 @@ def collect_public(writer, run_id, lane, scope, fetcher, spec, records, clock, s
                 else fetcher(record["family"], record["natural_key"])
             )
         except (AccessBlocked, FetchFailed, DetailShapeError, ValueError, KeyError, OSError) as exc:
+            if stop_requested() and "STOP_REQUESTED" in str(exc):
+                return DeepBatchResult("PARTIAL", {**counts, "reason": "STOP_REQUESTED",
+                    "requests_used": getattr(getattr(fetcher,"budget",None),"used",0),
+                    "interrupted_attempts": [asdict(a) for a in getattr(exc,"attempt_log",())]})
             blocked = isinstance(exc, (AccessBlocked, DetailShapeError))
-            counts["blocked" if blocked else "failed"] += 1
+            unsupported = isinstance(exc, UnsupportedAdapter)
+            counts["unsupported" if unsupported else ("blocked" if blocked else "failed")] += 1
             receipt = {
                 **getattr(fetcher, "receipt", {}),
                 "attempts": [asdict(a) for a in getattr(exc, "attempt_log", ())],
@@ -63,7 +74,10 @@ def collect_public(writer, run_id, lane, scope, fetcher, spec, records, clock, s
                 "BLOCKED" if blocked else "FAILED",
                 error=scrub_exception(exc),
                 provenance=receipt,
+                listing_sha=record["current_record_object_sha"],
             )
+            write_task(conn, rid, lane, parser_version=spec.parser_version, adapter_version=ADAPTER_VERSION,
+                       capability=exc.capability if unsupported else ("ACCESS_DENIED" if isinstance(exc, AccessBlocked) else "UNKNOWN"))
             counts["last_error"] = scrub_exception(exc)
             if isinstance(exc, (AccessBlocked, FetchFailed)) or stop_requested():
                 break  # Stop this endpoint on an access refusal or exhausted budget.
@@ -97,7 +111,10 @@ def collect_public(writer, run_id, lane, scope, fetcher, spec, records, clock, s
                 capture_id=invalid.capture_id,
                 error=issue,
                 provenance=receipt,
+                listing_sha=record["current_record_object_sha"],
             )
+            write_task(conn, rid, lane, parser_version=spec.parser_version, adapter_version=ADAPTER_VERSION,
+                       capability="IDENTITY_QUARANTINE")
             counts["failed"] += 1
             continue
         problems = []
@@ -125,8 +142,12 @@ def collect_public(writer, run_id, lane, scope, fetcher, spec, records, clock, s
                 "offerors": len(parsed.members),
                 "document_references": len(parsed.documents),
             }
-            receipt["projected"] = amounts
-            if not problems and not capture.stale and not any(amounts.values()):
+            receipt["parsed"] = amounts
+            receipt["projected"] = amounts if capture.projection_applied else dict.fromkeys(amounts, 0)
+            receipt["projection_applied"] = capture.projection_applied
+            receipt["capability"] = parsed.capability
+            receipt["warnings"] = list(parsed.warnings)
+            if not problems and not capture.stale and not any(amounts.values()) and parsed.capability not in ("DOCUMENT_ONLY", "STRUCTURED_ITEMS_UNAVAILABLE", "UNVERIFIED_FORM"):
                 state = "SOURCE_EMPTY"
                 counts["source_empty"] += 1
         task_state(
@@ -137,18 +158,20 @@ def collect_public(writer, run_id, lane, scope, fetcher, spec, records, clock, s
             listing_sha=record["current_record_object_sha"],
             response_sha=ref.sha256,
             capture_id=capture.capture_id,
-            error=json.dumps(problems) if problems else capture.stale_reason,
+            error=json.dumps(problems or capture.problems) if problems or capture.problems else capture.stale_reason,
             provenance=receipt,
         )
+        write_task(conn, rid, lane, parser_version=spec.parser_version, adapter_version=ADAPTER_VERSION,
+                   capability=parsed.capability if parsed else "UNKNOWN", warnings=parsed.warnings if parsed else ())
         counts["captured"] += 1
         counts["failed"] += int(state == "PARSE_ERROR")
         counts["after_record_id"] = rid
     counts["requests_used"] = getattr(getattr(fetcher, "budget", None), "used", 0)
     status = "COMPLETED"
-    if counts["failed"] or counts["blocked"]:
+    if counts["failed"] or counts["blocked"] or counts["unsupported"]:
         status = (
             "PARTIAL"
             if counts["captured"] or counts["skipped"]
-            else ("BLOCKED" if counts["blocked"] else "FAILED")
+            else ("BLOCKED" if counts["blocked"] or counts["unsupported"] else "FAILED")
         )
     return DeepBatchResult(status, counts)

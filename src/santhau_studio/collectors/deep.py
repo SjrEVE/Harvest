@@ -78,6 +78,7 @@ class DeepLaneSpec:
     requires_session: bool = False
     refresh_after_days: int = DEFAULT_REFRESH_DAYS
     parser_kind: str | None = None
+    parser_version: int = 1
 
 
 @dataclass(frozen=True)
@@ -124,6 +125,9 @@ class ParsedDetail:
     unallotted_goods: tuple[ParsedGoodsRow, ...] = ()
     documents: tuple[dict, ...] = ()
     relations: tuple[dict, ...] = ()
+    warnings: tuple[str, ...] = ()
+    capability: str = "UNKNOWN"
+    parser_version: int = 1
 
 
 def _scalar(value: Any) -> Any:

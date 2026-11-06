@@ -47,6 +47,9 @@ jobs:
             tests/integration/test_headless_worker.py tests/integration/test_weekly_open_day.py tests/integration/test_linux_cli.py \
             tests/integration/test_linux_control.py tests/integration/test_live_worker_builder.py \
             tests/integration/test_linux_deep.py tests/integration/test_public_deep.py tests/integration/test_auto_deep.py \
+            tests/integration/test_network_durability.py tests/integration/test_hsmt_semantics.py \
+            tests/integration/test_unsupported_adapter.py tests/integration/test_effective_scope.py tests/integration/test_scoped_maintenance.py \
+            tests/integration/test_reconcile_drift.py tests/integration/test_linode_form_fixtures.py \
             tests/integration/test_backup_restore.py tests/integration/test_fault_injection.py
       - name: Build standalone collector and packages
         env:

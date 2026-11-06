@@ -1,0 +1,9 @@
+{
+  "evidence_class": "SANITIZED_SAVED_PUBLIC_PAYLOAD_SHAPES",
+  "snapshot_at_utc": "2026-11-06T02:02:57.723917Z",
+  "scope": "Linode September 2026",
+  "source_records": 137,
+  "selected_cases": 7,
+  "cases_sha256": "fba42d045cd14813fc4568d8aeaeba0b495f063654013735a0a1519061a64a28",
+  "transformation": "All nonempty text except structural enum/form/version/quantity values pseudonymized; JSON form strings decoded and recursively sanitized; identity/parent equivalence and numeric values preserved. Representative smallest payload per form-code combination. Expected row counts derived from raw tables and lot headers, not parser output. No download URLs, original names, IDs or contact information."
+}

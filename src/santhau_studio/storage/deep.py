@@ -29,6 +29,7 @@ from santhau_studio.collectors.deep import (
 )
 from santhau_studio.domain.identity import canonical_bytes, content_hash
 from santhau_studio.domain.redaction import redact_payload
+from santhau_studio.storage.deep_metadata import capture_metadata, write_capture
 from santhau_studio.storage.warehouse import WarehouseWriter
 
 STALE_SOURCE_VERSION_CHANGED = "SOURCE_VERSION_CHANGED"
@@ -46,6 +47,8 @@ class DeepCaptureResult:
     stale_reason: str | None
     response_object_sha: str
     record_object_sha: str
+    projection_applied: bool = True
+    problems: tuple[str, ...] = ()
 
 
 def record_deep_capture(
@@ -71,6 +74,7 @@ def record_deep_capture(
     response_payload = redact_payload(response_payload)
     detail = redact_payload(detail)
     parse_failed = False
+    projection_applied = False
     try:
         if parse_error:
             raise DetailShapeError(parse_error)
@@ -83,9 +87,11 @@ def record_deep_capture(
         parsed = ParsedDetail("{}", {}, (), (), (str(exc),))
     if parsed.problems:
         completeness = "PARTIAL"
-        if any('TABLE_MISSING_OR_INVALID' in p for p in parsed.problems):
+        if any('TABLE_MISSING_OR_INVALID' in p or 'INVALID_JSON' in p for p in parsed.problems):
             parse_failed = True
         lane_status = "FAILED" if parse_failed else "PARTIAL"
+    if parsed.capability in ("DOCUMENT_ONLY", "STRUCTURED_ITEMS_UNAVAILABLE", "UNVERIFIED_FORM"):
+        completeness, lane_status = "PARTIAL", "PARTIAL"
     conn = writer.conn
     days = spec.refresh_after_days if refresh_after_days is None else refresh_after_days
     due = _iso(now + timedelta(days=days)) if days is not None else None
@@ -100,7 +106,8 @@ def record_deep_capture(
             " WHERE source_record_id=? AND lane=? AND endpoint_kind=?",
             (source_record_id, spec.lane, spec.endpoint_kind),
         ).fetchone()
-        if (spec.parser_kind and not parse_failed and not parsed.problems and existing and existing["response_object_sha"] == response_ref.sha256
+        previous_parse = capture_metadata(conn, existing["id"], existing["latest_capture_seq"]) if existing else {}
+        if (spec.parser_kind and not parse_failed and not parsed.problems and existing and previous_parse.get("parser_version") == spec.parser_version and existing["response_object_sha"] == response_ref.sha256
                 and existing["record_object_sha"] == detail_ref.sha256 and not existing["stale"]):
             conn.execute("UPDATE deep_captures SET captured_at_utc=?,refresh_due_at_utc=? WHERE id=?", (_iso(now),due,existing["id"]))
             conn.execute("COMMIT")
@@ -144,6 +151,7 @@ def record_deep_capture(
             conn.execute("SAVEPOINT deep_projection")
             try:
                 write_projection(conn, writer, source_record_id, spec, parsed, capture_id, seq, response_ref.sha256)
+                projection_applied = True
             except (ValueError, sqlite3.Error) as exc:
                 conn.execute("ROLLBACK TO deep_projection")
                 parsed = ParsedDetail(parsed.source_version_json, {}, (), (), (str(exc),))
@@ -153,6 +161,9 @@ def record_deep_capture(
             conn.execute("RELEASE deep_projection")
         elif not spec.parser_kind:
             _write_derived(conn, writer, source_record_id, spec, parsed)
+            projection_applied = True
+        if spec.parser_kind:
+            write_capture(conn, capture_id, seq, spec.parser_version, parsed)
         stale, stale_reason = 0, None
         if parsed.problems:
             stale, stale_reason = 1, STALE_QUARANTINED_MEMBER
@@ -165,7 +176,7 @@ def record_deep_capture(
         with contextlib.suppress(sqlite3.Error):
             conn.execute("ROLLBACK")
         raise
-    return DeepCaptureResult(capture_id, seq, completeness, stale, stale_reason, response_ref.sha256, detail_ref.sha256)
+    return DeepCaptureResult(capture_id, seq, completeness, stale, stale_reason, response_ref.sha256, detail_ref.sha256, projection_applied, parsed.problems)
 
 
 def _write_derived(

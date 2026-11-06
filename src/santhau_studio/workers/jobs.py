@@ -107,6 +107,14 @@ class JobRequest:
             pacing = self.request_limits["pacing_seconds"]
             if type(pacing) not in (int,float) or not 3 <= pacing <= 300:
                 raise JobError("pacing_seconds must be 3..300")
+        if "max_attempts" in self.request_limits:
+            value = self.request_limits["max_attempts"]
+            if type(value) is not int or not 1 <= value <= 5:
+                raise JobError("max_attempts must be 1..5")
+        if "connect_timeout_seconds" in self.request_limits:
+            value = self.request_limits["connect_timeout_seconds"]
+            if type(value) not in (int, float) or not 15 <= value <= 20:
+                raise JobError("connect_timeout_seconds must be 15..20")
 
     @classmethod
     def from_json(cls, text: str) -> JobRequest:
@@ -252,6 +260,14 @@ def recover_interrupted_runs(conn: sqlite3.Connection, data_root: Path) -> dict[
             _move(Path(data_root) / "jobs", path, _REJECTED_DIR)
             continue
         latest = conn.execute("SELECT lifecycle FROM runs WHERE job_id=? ORDER BY started_at_utc DESC,rowid DESC LIMIT 1", (job_id,)).fetchone()
+        command = conn.execute("SELECT command FROM job_commands WHERE job_id=? ORDER BY seq DESC LIMIT 1", (job_id,)).fetchone()
+        if command and command[0] in ("STOP_GRACEFUL", "FORCE_TERMINATE"):
+            _move(Path(data_root) / "jobs", path, _DONE_DIR)
+            continue
+        if command and command[0] == "PAUSE":
+            conn.execute("UPDATE runs SET lifecycle='PAUSED',status=NULL,finished_at_utc=NULL WHERE run_id=(SELECT run_id FROM runs WHERE job_id=? ORDER BY started_at_utc DESC,rowid DESC LIMIT 1)", (job_id,))
+            conn.commit()
+            continue
         if latest is None or latest['lifecycle'] in ('FINISHED','TERMINATED'):
             _move(Path(data_root) / "jobs", path, _QUEUE_DIR)
             requeued += 1
@@ -336,6 +352,7 @@ class WorkerLoop:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._idle_exit = idle_exit_seconds
         self._idle_since = time.monotonic()
+        self._maintenance_after = 0.0
         self._deep_fetcher = deep_fetcher
         self._deep_specs = deep_specs
         self._deep_factory = deep_factory
@@ -364,6 +381,7 @@ class WorkerLoop:
                          **value, **self._weekly_progress, "updated_at": _now()}
 
     def runtime_status(self):
+        from santhau_studio.collectors.network_status import snapshot as network_snapshot
         phase = self._phase
         current = self._current
         if phase not in ("STOPPED", "FAILED"):
@@ -378,7 +396,8 @@ class WorkerLoop:
         return {"phase": phase, "step": self._phase, "phase_since": self._phase_since,
                 "observed_at": _now(), "current_job_id": current.job_id if current else None,
                 "last_job_id": self._last_job_id, "pending_actions": pending,
-                "progress": dict(self.progress) if current else {}, "snapshot_error": self.snapshot_error}
+                "progress": dict(self.progress) if current else {}, "snapshot_error": self.snapshot_error,
+                "network": network_snapshot()}
 
     # -- called from the IPC thread
     def post_command(self, *, job_id: str | None, command: str, sid: str) -> None:
@@ -425,6 +444,8 @@ class WorkerLoop:
         try:
             self._set_phase("RECOVERING")
             recover_interrupted_runs(self._writer.conn, self.data_root)
+            from santhau_studio.workers.scoped_maintenance import recover
+            recover(self._writer.conn, now=self._clock())
             self._paused_jobs = {row[0] for row in self._writer.conn.execute(
                 "SELECT r.job_id FROM runs r WHERE r.lifecycle='PAUSED' AND r.rowid="
                 " (SELECT r2.rowid FROM runs r2 WHERE r2.job_id=r.job_id ORDER BY started_at_utc DESC,rowid DESC LIMIT 1)")}
@@ -454,6 +475,14 @@ class WorkerLoop:
                     break
                 request = claim_next_job(self.data_root)
                 if request is None:
+                    from santhau_studio.workers.scoped_maintenance import run_batch as repair_batch
+                    maintenance_due = time.monotonic() >= self._maintenance_after
+                    if maintenance_due:
+                        self._maintenance_after = time.monotonic() + 5
+                    if maintenance_due and repair_batch(self):
+                        self._publish_snapshot()
+                        self._idle_since = time.monotonic()
+                        continue
                     from santhau_studio.workers.auto_deep import enqueue_idle_batch
                     if enqueue_idle_batch(self):
                         continue
@@ -554,6 +583,9 @@ class WorkerLoop:
         except Exception as exc:
             task_status, detail = "FAILED", {"error": f"{type(exc).__name__}: {exc}"[:200]}
         if self.flag.stop_requested:
+            if not (self._resume_on_shutdown and self.flag.shutdown_requested):
+                from santhau_studio.workers.scoped_maintenance import control
+                control(conn, request.job_id, "STOP_GRACEFUL", request=request)
             task_status, detail = "INTERRUPTED", {**detail, "stopped": True}
             writer.finish_run(run_id, "INTERRUPTED")
             if self._resume_on_shutdown and self.flag.shutdown_requested:
@@ -561,6 +593,8 @@ class WorkerLoop:
             else:
                 finish_job(self.data_root, request.job_id)
         elif self.flag.interrupt_requested:
+            from santhau_studio.workers.scoped_maintenance import control
+            control(conn, request.job_id, "PAUSE", request=request)
             task_status, detail = "INTERRUPTED", {**detail, "paused": True}
             conn.execute("UPDATE runs SET lifecycle='PAUSED' WHERE run_id=?", (run_id,))
             conn.commit()
@@ -632,6 +666,9 @@ class WorkerLoop:
         page_source = self._builder(self._writer, request) if self._builder else None
         if page_source is None:
             return "BLOCKED", {"reason": "PAGE_SOURCE_UNAVAILABLE"}
+        set_stop_check = getattr(page_source, "set_stop_check", None)
+        if set_stop_check:
+            set_stop_check(lambda: self.flag.interrupt_requested)
         endpoint = str(source.get("endpoint") or SOURCES[str(source["source_key"])].endpoint)
         limits = RunLimits.for_family(family)
         limits = RunLimits(min(limits.max_pages, request.request_limits.get("max_pages", limits.max_pages)),
@@ -653,8 +690,15 @@ class WorkerLoop:
         if kind == "INCREMENTAL":
             outcomes = runner.incremental(run_id, now=self._clock())
         elif kind == "RECONCILE":
+            eligible_scope = runner.resolve(request.interval()).can_skip
             gaps = runner.reconcile(run_id, request.interval())
-            return _judge(runner.reconcile_outcomes), {"gaps": len(gaps)}
+            outcomes = runner.reconcile_outcomes
+            checked = eligible_scope and bool(outcomes) and all(o.status == "COMPLETE" for o in outcomes)
+            return (_judge(outcomes) if checked else "PARTIAL"), {
+                "gaps": len(gaps), "audit_status": "CHECKED" if checked else "NOT_CHECKED" if not outcomes else "PARTIAL",
+                "checked_intervals": sum(o.status == "COMPLETE" for o in outcomes),
+                "requests": sum(o.requests for o in outcomes), "attempts": sum(o.attempts for o in outcomes),
+                "blockers": sorted({b for o in outcomes for b in o.blockers})}
         else:
             outcomes = runner.backfill(run_id, request.interval())
         leaves = [leaf for outcome in outcomes for leaf in _leaves(outcome)]
@@ -674,6 +718,8 @@ class WorkerLoop:
                     and bool(leaf.terminal_evidence) and leaf.total_trusted
                     and not (leaf.malformed or leaf.unrecovered_requests or leaf.max_pages_hit or leaf.max_records_hit)
                 ) for leaf in leaves)
+        from santhau_studio.workers.scoped_maintenance import record_request_gaps
+        detail["durable_repairs_created"] = record_request_gaps(self, request, detail)
         return _judge(outcomes), detail
 
     # -- commands
@@ -707,6 +753,10 @@ class WorkerLoop:
         )
         writer.conn.commit()
         paused_target = command.job_id in self._paused_jobs or self._paused_job == command.job_id
+        from santhau_studio.workers.scoped_maintenance import control
+        control(writer.conn, command.job_id, command.command)
+        if command.command == "RESUME" and self._current is None and not self.flag.shutdown_requested:
+            self.flag.reset_run_flags()
         if command.command == "RESUME" and command.job_id and paused_target:
             requeue_active_job(self.data_root, command.job_id)
             self._paused_job = None
