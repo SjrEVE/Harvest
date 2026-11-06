@@ -19,6 +19,7 @@ MIGRATIONS: tuple[tuple[int, str, Path], ...] = (
     (3, "attempt_telemetry", Path("docs/ddl/003_attempt_telemetry.sql")),
     (4, "deep_parser_metadata", Path("docs/ddl/004_deep_parser_metadata.sql")),
     (5, "scoped_maintenance", Path("docs/ddl/005_scoped_maintenance.sql")),
+    (6, "missing_only_policy", Path("docs/ddl/006_missing_only_policy.sql")),
 )
 
 
@@ -30,7 +31,7 @@ class MigrationState:
 
     @property
     def up_to_date(self) -> bool:
-        return not self.pending
+        return not self.pending and self.current_version <= max(v for v, _, _ in MIGRATIONS)
 
 
 def checksum(sql: str) -> str:
@@ -62,6 +63,9 @@ def migrate(conn: sqlite3.Connection, repo_root: Path) -> MigrationState:
     # The contract file declares software_migrations itself, so the harness must not
     # pre-create it: an IF NOT EXISTS here would make the migration's own CREATE fail.
     done = applied_versions(conn)
+    supported = {v for v, _, _ in MIGRATIONS}
+    if done - supported:
+        raise RuntimeError(f"NEWER_SCHEMA: database versions {sorted(done - supported)} are not supported by this runtime; use a compatible newer build.")
     for version, name, rel in MIGRATIONS:
         path = repo_root / rel
         sql = path.read_text(encoding="utf-8").replace("\r\n", "\n")

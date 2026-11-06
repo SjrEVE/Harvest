@@ -66,7 +66,7 @@ def run_worker(root, *, offline=False, idle_exit=None):
 
     def handle(payload, uid):
         if payload.get("op") == "status" and not payload.get("job_id"):
-            runtime = loop.runtime_status()
+            runtime = controller({"op": "ping"}, uid)["runtime"]
             return {
                 "ok": True,
                 "running": True,
@@ -198,7 +198,7 @@ def parser():
         prog="santhau-collector",
         description="Bộ thu thập Linux: sáu loại, theo tuần, không giao diện/thống kê.",
     )
-    cli.add_argument("--version", action="version", version="Săn Thầu Collector 0.0.1-RC3-4 (Linux x86-64)")
+    cli.add_argument("--version", action="version", version="Săn Thầu Collector 0.0.1-RC3-5 (Linux x86-64)")
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "--data-root",

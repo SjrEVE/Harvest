@@ -45,7 +45,7 @@ from santhau_studio.workers.jobs import JOB_KINDS, JobError, JobRequest, enqueue
 
 DISK_SCAN_LIMIT = 50_000
 SEARCH_LIMIT_MAX = 200
-APP_VERSION = "0.0.1-RC3-4"
+APP_VERSION = "0.0.1-RC3-5"
 _PROBE_LOCK = threading.Lock()
 
 _TITLE_KEYS = ("title", "bidName", "planName", "projectName", "contractName", "name")
@@ -702,7 +702,7 @@ class StudioBackend:
                         dict(row)
                         for row in conn.execute(
                             "SELECT row_ordinal, name, specification, unit, quantity_presence, quantity,"
-                            "       quantity_raw FROM goods_rows WHERE source_record_id=? ORDER BY row_ordinal",
+                            "       quantity_raw FROM goods_rows WHERE source_record_id=? ORDER BY row_ordinal LIMIT 100",
                             (record_id,),
                         )
                     ],
@@ -753,54 +753,20 @@ class StudioBackend:
                 detail["identity_audit"] = [dict(r) for r in conn.execute(
                     "SELECT id,action,target_ref,actor_sid,reason,undo_action_id,acted_at_utc FROM identity_audit_actions ORDER BY id DESC LIMIT 50")]
                 detail["legacy_unverified"] = record["source_key"].startswith("legacy:")
+                from santhau_studio.desktop.deep_status import states
+                detail["deep_states"] = states(conn, record_id)
+                detail["relation_edges"] = [dict(row) for row in conn.execute(
+                    "SELECT DISTINCT e.* FROM relation_edges e JOIN entity_source_links l "
+                    "ON l.entity_id=e.from_entity OR l.entity_id=e.to_entity WHERE l.source_record_id=?", (record_id,))]
             except sqlite3.Error as exc:
                 return {"present": True, "error": f"{type(exc).__name__}: {exc}"}
         from santhau_studio.desktop.data_quality import source_fields
         detail["source_fields"] = source_fields(self.data_root, detail["record"]["current_record_object_sha"])
-        if detail.get('present'):
-            from santhau_studio.desktop.deep_status import states
-            state_conn = self._serving()
-            if state_conn is not None:
-                with closing(state_conn):
-                    detail['deep_states'] = states(state_conn, record_id)
-                    detail['relation_edges'] = [dict(row) for row in state_conn.execute(
-                        "SELECT DISTINCT e.* FROM relation_edges e JOIN entity_source_links l "
-                        "ON l.entity_id=e.from_entity OR l.entity_id=e.to_entity WHERE l.source_record_id=?",(record_id,))]
         return detail
 
     def enqueue_deep(self, payload):
-        import os
-
-        from santhau_studio.collectors.offline_acceptance import enabled
-        offline = enabled(self.data_root) and os.environ.get("SANTHAU_OFFLINE_ACCEPTANCE_ROOT") == str(self.data_root.resolve())
-        try:
-            record_id = int(payload["record_id"])
-            detail = self.record_detail(record_id)
-            if not detail.get("record"):
-                raise ValueError("Không có hồ sơ")
-            family = detail["record"]["family"]
-            lane = payload.get("lane", "DETAIL")
-            if lane not in ("DETAIL","HSMT","REOFFER"):
-                raise ValueError("Lane không hỗ trợ")
-            if not offline:
-                from santhau_studio.storage.rawstore import RawObjectStore
-                with closing(RawObjectStore(self.data_root,read_only=True)) as store:
-                    raw=json.loads(store.read(detail['record']['current_record_object_sha']))
-                if family!='TBMT' or raw.get('bidForm')!='CGTTRG':
-                    raise ValueError('Chỉ xác minh nguồn công khai cho TBMT/CGTTRG')
-                worker=self.worker_status()
-                if worker.get('running') and 'public-cgttrg-deep-v1' not in worker.get('capabilities',[]):
-                    raise ValueError('Cần cập nhật worker hỗ trợ public-cgttrg-deep-v1 trước khi chạy chi tiết')
-            rule = self._verified_rule("egp_home", family)
-            if not rule:
-                raise ValueError("Không có rule")
-            request = JobRequest(job_id="deep-"+uuid.uuid4().hex[:12],job_kind=lane,requested_by="gui",
-                sources=({**rule,"family":family},),scope={"record_ids":[record_id],"force_refresh":bool(payload.get('force_refresh'))},
-                request_limits={"max_requests":5,"max_seconds":120,"pacing_seconds":3},created_at=_now())
-            enqueue_job(self.data_root,request)
-            return {"ok":True,"job_id":request.job_id,"profile":"SYNTHETIC_OFFLINE" if offline else "PUBLIC_CGTTRG"}
-        except (KeyError,ValueError) as exc:
-            return {"ok":False,"error":str(exc)}
+        from santhau_studio.desktop.deep_actions import enqueue
+        return enqueue(self, payload)
 
     def coverage_proof(self, proof_id):
         from santhau_studio.desktop.diagnostics import proof
@@ -828,14 +794,14 @@ class StudioBackend:
 
     # ------------------------------------------------------------------ UI-08 deep queue
 
-    def deep_queue(self) -> dict[str, Any]:
+    def deep_queue(self, payload=None) -> dict[str, Any]:
         conn = self._serving()
         if conn is None:
             return {"present": False, "rows": [], "summary": {}}
         with closing(conn):
             if not self.workspace_identity()['synthetic']:
                 from santhau_studio.desktop.deep_status import queue
-                return queue(conn)
+                return {**queue(conn, payload), "snapshot": serving_state(self.serving_path)}
             try:
                 rows = [
                     dict(row)

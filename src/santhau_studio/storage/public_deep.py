@@ -4,6 +4,7 @@ import json
 from datetime import UTC, datetime
 
 from santhau_studio.domain.identity import canonical_bytes
+from santhau_studio.storage.projection_evidence import merge_evidence, retire_evidence
 
 
 def dumps(value):
@@ -46,19 +47,18 @@ def write_documents(conn, record_id, documents, evidence):
     for doc in documents:
         name = doc["name"]
         old = conn.execute(
-            "SELECT object_sha,json_extract(provenance_json,'$.source_file_id') file_id FROM documents WHERE source_record_id=? AND document_kind=? AND name=?",
+            "SELECT object_sha,provenance_json,json_extract(provenance_json,'$.source_file_id') file_id FROM documents WHERE source_record_id=? AND document_kind=? AND name=?",
             (record_id, doc["document_kind"], name),
         ).fetchone()
         if old and old["file_id"] and old["file_id"] != doc.get("source_file_id"):
-            name = name + " [" + doc["source_file_id"] + "]"
-            old = conn.execute("SELECT object_sha FROM documents WHERE source_record_id=? AND document_kind=? AND name=?",
+            name = name + " [" + str(doc["source_file_id"]) + "]"
+            old = conn.execute("SELECT object_sha,provenance_json FROM documents WHERE source_record_id=? AND document_kind=? AND name=?",
                 (record_id, doc["document_kind"], name)).fetchone()
-        if old and old["object_sha"]:
-            raise ValueError("DOWNLOADED_DOCUMENT_REFRESH_REQUIRES_VERIFIED_DOWNLOAD")
         conn.execute(
             "INSERT INTO documents(source_record_id,document_kind,name,provenance_json) VALUES(?,?,?,?) "
             "ON CONFLICT(source_record_id,document_kind,name) DO UPDATE SET provenance_json=excluded.provenance_json",
-            (record_id, doc["document_kind"], name, evidence(doc)),
+            (record_id, doc["document_kind"], name,
+             merge_evidence(old["provenance_json"] if old else None, json.loads(evidence({**doc, "reference_current": True})))),
         )
 
 
@@ -79,6 +79,7 @@ def write_projection(conn, writer, record_id, spec, parsed, capture_id, seq, res
 
     owner = (record_id, spec.lane, spec.endpoint_kind)
     clause = "source_record_id=? AND json_extract(provenance_json,'$.lane')=? AND json_extract(provenance_json,'$.endpoint_kind')=?"
+    retire_evidence(conn, record_id, capture_id)
     write_documents(conn, record_id, parsed.documents, evidence)
     if spec.parser_kind == "HSMT":
         conn.execute("DELETE FROM goods_rows WHERE " + clause, owner)
@@ -136,13 +137,12 @@ def write_projection(conn, writer, record_id, spec, parsed, capture_id, seq, res
             goods(lot.goods, lot_id)
         goods(parsed.unallotted_goods, None)
     else:
-        conn.execute("DELETE FROM contractor_memberships WHERE " + clause, owner)
         for member in parsed.members:
             ref = writer.store.put(canonical_bytes(member.raw))
             writer.register_object(ref)
             # The same offeror can be observed by DETAIL and REOFFER; preserve lane ownership.
             exists = conn.execute(
-                "SELECT id FROM contractor_memberships WHERE source_record_id=? AND party_object_sha=? AND role=?",
+                "SELECT id,provenance_json FROM contractor_memberships WHERE source_record_id=? AND party_object_sha=? AND role=?",
                 (record_id, ref.sha256, member.role),
             ).fetchone()
             if not exists:
@@ -161,6 +161,9 @@ def write_projection(conn, writer, record_id, spec, parsed, capture_id, seq, res
                         evidence({"raw": member.raw}),
                     ),
                 )
+            else:
+                conn.execute("UPDATE contractor_memberships SET provenance_json=? WHERE id=?",
+                    (merge_evidence(exists["provenance_json"], {**provenance, "raw": member.raw}), exists["id"]))
         record = conn.execute(
             "SELECT source_key,family,natural_key FROM source_records WHERE id=?", (record_id,)
         ).fetchone()
@@ -193,7 +196,7 @@ def write_projection(conn, writer, record_id, spec, parsed, capture_id, seq, res
                     ),
                 )
             existing = conn.execute(
-                "SELECT id FROM relation_edges WHERE from_entity=? AND to_entity=? AND relation=?",
+                "SELECT id,evidence_json FROM relation_edges WHERE from_entity=? AND to_entity=? AND relation=?",
                 (*ids, relation["relation"]),
             ).fetchone()
             if not existing:
@@ -204,5 +207,5 @@ def write_projection(conn, writer, record_id, spec, parsed, capture_id, seq, res
             else:
                 conn.execute(
                     "UPDATE relation_edges SET evidence_json=? WHERE id=?",
-                    (evidence(relation), existing["id"]),
+                    (merge_evidence(existing["evidence_json"], {**provenance, **relation}), existing["id"]),
                 )

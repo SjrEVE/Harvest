@@ -17,7 +17,7 @@ from santhau_studio.collectors.deep import (
 from santhau_studio.collectors.hsmt_forms import read_form
 from santhau_studio.domain.identity import record_object_sha
 
-PARSER_VERSION = 2
+PARSER_VERSION = 3
 
 PREFIX = "https://muasamcong.mof.gov.vn/o/egp-portal-contractor-selection-v2/services/"
 ENDPOINTS = {
@@ -144,7 +144,8 @@ def _reoffer(payload):
     if payload.get("bidForm") != "CGTTRG" or not payload.get("notifyNo"):
         raise DetailShapeError("UNVERIFIED_REOFFER_SHAPE")
     problems, grouped = [], {}
-    rows = payload.get("contractorsResult") or []
+    rows = payload.get("contractorsResult")
+    rows = [] if rows is None else rows
     if not isinstance(rows, list):
         raise DetailShapeError("OFFERORS_NOT_LIST")
     for i, row in enumerate(rows):
@@ -172,7 +173,10 @@ def _reoffer(payload):
                 len(members) + 1,
             )
         )
-    plan = payload.get("bidPlan") or {}
+    plan = payload.get("bidPlan")
+    plan = {} if plan is None else plan
+    if not isinstance(plan, dict):
+        raise DetailShapeError("BID_PLAN_NOT_OBJECT")
     documents, relations = [], []
     plan_no = plan.get("planNo") or payload.get("planNo")
     if plan_no:

@@ -113,7 +113,6 @@ def control(conn, parent, command, request=None):
         return
     state = {
         "STOP_GRACEFUL": "CANCELLED",
-        "FORCE_TERMINATE": "CANCELLED",
         "PAUSE": "PAUSED",
         "RESUME": "WAITING",
     }.get(command)
@@ -207,7 +206,7 @@ def recover(conn, *, now=None):
             "SELECT command FROM job_commands WHERE job_id IN (?,?) ORDER BY issued_at_utc DESC,seq DESC LIMIT 1",
             (row["parent_job_id"], "maintenance-" + row["task_key"]),
         ).fetchone()
-        if command and command[0] in ("PAUSE", "STOP_GRACEFUL", "FORCE_TERMINATE"):
+        if command and command[0] in ("PAUSE", "STOP_GRACEFUL"):
             control(conn, row["parent_job_id"] or "maintenance-" + row["task_key"], command[0])
             continue
         conn.execute(
@@ -246,7 +245,7 @@ def _schedule_audits(conn, scope, now):
     conn.commit()
 
 
-def _eligible(conn, row, scope):
+def _eligible(conn, row, scope, bounds=None, contexts=None):
     source = json.loads(row["context_json"])
     selected = next(
         (
@@ -258,25 +257,26 @@ def _eligible(conn, row, scope):
         ),
         None,
     )
-    actual = current(
-        conn,
-        row["source_key"],
-        row["family"],
-        endpoint=source["endpoint"],
-        adapter_sha=source["adapter_sha"],
-    )
+    context_key = (row["source_key"], row["family"], source["endpoint"], source["adapter_sha"])
+    if contexts is None:
+        contexts = {}
+    if context_key not in contexts:
+        contexts[context_key] = current(conn, *context_key[:2], endpoint=context_key[2], adapter_sha=context_key[3])
+    actual = contexts[context_key]
     span = Interval(
         coverage._parse(row["interval_from_utc"]), coverage._parse(row["interval_to_utc"])
     )
-    bounds = [s for _, _, s in scope_store.windows(scope)]
+    if bounds is None:
+        bounds = [s for _, _, s in scope_store.windows(scope)]
+        bounds = (min(s.from_utc for s in bounds), max(s.to_utc for s in bounds))
     return bool(
         selected
         and actual
         and actual["signature"] == source["signature"]
-        and min(s.from_utc for s in bounds)
+        and bounds[0]
         <= span.from_utc
         < span.to_utc
-        <= max(s.to_utc for s in bounds)
+        <= bounds[1]
     )
 
 
@@ -353,29 +353,30 @@ def run_batch(loop, parent_run=None):
         discover(conn, loop.data_root, execute=True, now=now)
     _schedule_audits(conn, scope, now)
     today = coverage._iso(now.replace(hour=0, minute=0, second=0, microsecond=0))
+    used = dict(conn.execute(
+        "SELECT t.kind,COUNT(*) FROM maintenance_attempts a JOIN maintenance_tasks t USING(task_key) WHERE a.started_at_utc>=? GROUP BY t.kind", (today,)))
+    allowed = [kind for kind, quota in (("BACKFILL", policy["quota_per_day"]), ("RECONCILE", policy["reconcile_quota_per_day"]))
+               if used.get(kind, 0) < quota and (kind != "RECONCILE" or policy["reconcile_enabled"])]
+    if not allowed:
+        conn.commit()
+        return False
+    windows = [span for _, _, span in scope_store.windows(scope)]
+    bounds = (min(s.from_utc for s in windows), max(s.to_utc for s in windows))
+    contexts = {}
     rows = conn.execute(
-        "SELECT * FROM maintenance_tasks WHERE approved=1 AND state='WAITING' AND next_attempt_at<=? ORDER BY kind='RECONCILE',attempts,updated_at_utc,task_key",
-        (coverage._iso(now),),
-    ).fetchall()
+        "SELECT * FROM maintenance_tasks WHERE approved=1 AND state='WAITING' AND next_attempt_at<=? AND kind IN (SELECT value FROM json_each(?)) ORDER BY kind='RECONCILE',attempts,updated_at_utc,task_key",
+        (coverage._iso(now), json.dumps(allowed)),
+    )
     queued = scope_store.queue_windows(loop.data_root)
     for row in rows:
+        if loop.flag.interrupt_requested:
+            break
         key = row["task_key"]
-        if not _eligible(conn, row, scope):
+        if not _eligible(conn, row, scope, bounds, contexts):
             conn.execute(
                 "UPDATE maintenance_tasks SET state='MANUAL_REVIEW',last_reason='SCOPE_OR_CONTEXT_CHANGED' WHERE task_key=?",
                 (key,),
             )
-            continue
-        quota = (
-            policy["reconcile_quota_per_day"]
-            if row["kind"] == "RECONCILE"
-            else policy["quota_per_day"]
-        )
-        used = conn.execute(
-            "SELECT COUNT(*) FROM maintenance_attempts a JOIN maintenance_tasks t USING(task_key) WHERE t.kind=? AND a.started_at_utc>=?",
-            (row["kind"], today),
-        ).fetchone()[0]
-        if used >= quota:
             continue
         source = json.loads(row["context_json"])
         span = Interval(

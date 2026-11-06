@@ -261,7 +261,7 @@ def recover_interrupted_runs(conn: sqlite3.Connection, data_root: Path) -> dict[
             continue
         latest = conn.execute("SELECT lifecycle FROM runs WHERE job_id=? ORDER BY started_at_utc DESC,rowid DESC LIMIT 1", (job_id,)).fetchone()
         command = conn.execute("SELECT command FROM job_commands WHERE job_id=? ORDER BY seq DESC LIMIT 1", (job_id,)).fetchone()
-        if command and command[0] in ("STOP_GRACEFUL", "FORCE_TERMINATE"):
+        if command and command[0] == "STOP_GRACEFUL":
             _move(Path(data_root) / "jobs", path, _DONE_DIR)
             continue
         if command and command[0] == "PAUSE":
@@ -326,6 +326,10 @@ class CommandFlag:
 
 
 class WorkerLoop:
+    # F10: coalesce background publication by count or elapsed time.
+    SNAPSHOT_COALESCE_COUNT = 4
+    SNAPSHOT_COALESCE_SECONDS = 30.0
+    SNAPSHOT_RETRY_SECONDS = 60.0
     """Claims queued jobs one at a time on the data-root writer lock (§2.2, §5.2)."""
 
     def __init__(
@@ -341,7 +345,7 @@ class WorkerLoop:
         deep_factory=None,
         scheduled: bool = False,
         publish_serving: bool = True,
-        resume_on_shutdown: bool = False,
+        resume_on_shutdown: bool = True,
     ) -> None:
         self.data_root = Path(data_root)
         self.flag = CommandFlag()
@@ -372,6 +376,11 @@ class WorkerLoop:
         self._pending_actions = {}
         self._action_lock = threading.Lock()
         self.snapshot_error = None
+        self.snapshot_attempts = 0
+        self._snapshot_dirty = False
+        self._snapshot_dirty_count = 0
+        self._snapshot_dirty_since = 0.0
+        self._snapshot_retry_after = 0.0
 
     def _set_phase(self, phase):
         self._phase, self._phase_since = phase, _now()
@@ -382,6 +391,7 @@ class WorkerLoop:
 
     def runtime_status(self):
         from santhau_studio.collectors.network_status import snapshot as network_snapshot
+        from santhau_studio.workers.activity import describe_job
         phase = self._phase
         current = self._current
         if phase not in ("STOPPED", "FAILED"):
@@ -397,6 +407,7 @@ class WorkerLoop:
                 "observed_at": _now(), "current_job_id": current.job_id if current else None,
                 "last_job_id": self._last_job_id, "pending_actions": pending,
                 "progress": dict(self.progress) if current else {}, "snapshot_error": self.snapshot_error,
+                "current_job": describe_job(current), "paused_jobs": sorted(self._paused_jobs),
                 "network": network_snapshot()}
 
     # -- called from the IPC thread
@@ -480,17 +491,25 @@ class WorkerLoop:
                     if maintenance_due:
                         self._maintenance_after = time.monotonic() + 5
                     if maintenance_due and repair_batch(self):
-                        self._publish_snapshot()
+                        self._mark_snapshot_dirty()
                         self._idle_since = time.monotonic()
                         continue
                     from santhau_studio.workers.auto_deep import enqueue_idle_batch
                     if enqueue_idle_batch(self):
                         continue
+                    self._maybe_publish_snapshot()
                     stop.wait(self._poll)
                     continue
                 self._idle_since = time.monotonic()
                 self._execute(request)
-                self._publish_snapshot()
+                background = request.requested_by in (
+                    "scoped-maintenance", "automatic-public-deep", "scheduler",
+                    "offline-parser-replay",
+                )
+                self._mark_snapshot_dirty()
+                if not background:
+                    # A user-visible job must see its own data before the terminal state.
+                    self._maybe_publish_snapshot(force=True)
                 self._set_phase("IDLE")
                 self._idle_since = time.monotonic()
         except Exception:
@@ -499,6 +518,8 @@ class WorkerLoop:
             if sys.stderr is not None:
                 traceback.print_exc()
         finally:
+            # Flush coalesced background work before the writer goes away.
+            self._maybe_publish_snapshot(force=True)
             if self._writer is not None:
                 self._writer.close()
                 self._writer = None
@@ -528,6 +549,7 @@ class WorkerLoop:
     def _publish_snapshot(self) -> None:
         if not self._publish_serving:
             return
+        self.snapshot_attempts += 1
         from santhau_studio.storage.serving import build_serving_db
         previous = self.progress
         previous_phase = self._phase
@@ -547,6 +569,38 @@ class WorkerLoop:
         finally:
             self.progress = previous if self._current else {}
             self._set_phase(previous_phase)
+
+    def _mark_snapshot_dirty(self) -> None:
+        """Background work changed data; defer the full serving rebuild."""
+        if not self._publish_serving:
+            return
+        now = time.monotonic()
+        if not self._snapshot_dirty:
+            self._snapshot_dirty_since = now
+            self._snapshot_dirty_count = 0
+        self._snapshot_dirty = True
+        self._snapshot_dirty_count += 1
+
+    def _maybe_publish_snapshot(self, *, force: bool = False) -> bool:
+        if not self._publish_serving or not self._snapshot_dirty:
+            return False
+        now = time.monotonic()
+        if not force:
+            if now < self._snapshot_retry_after:
+                return False
+            if (self._snapshot_dirty_count < self.SNAPSHOT_COALESCE_COUNT
+                    and now - self._snapshot_dirty_since < self.SNAPSHOT_COALESCE_SECONDS):
+                return False
+        self._publish_snapshot()
+        if self.snapshot_error:
+            # Keep the work dirty; retry on a bounded cadence, not every idle tick.
+            self._snapshot_retry_after = now + self.SNAPSHOT_RETRY_SECONDS
+            self._snapshot_dirty_since = now
+            return False
+        self._snapshot_dirty = False
+        self._snapshot_dirty_count = 0
+        self._snapshot_retry_after = 0.0
+        return True
 
     def _snapshot_needs_refresh(self) -> bool:
         if not self._publish_serving:
@@ -597,9 +651,11 @@ class WorkerLoop:
             control(conn, request.job_id, "PAUSE", request=request)
             task_status, detail = "INTERRUPTED", {**detail, "paused": True}
             conn.execute("UPDATE runs SET lifecycle='PAUSED' WHERE run_id=?", (run_id,))
-            conn.commit()
+            # Publish the paused target in memory BEFORE the row is committed:
+            # a durable PAUSED run must be immediately RESUME-able from IPC.
             self._paused_job = request.job_id
             self._paused_jobs.add(request.job_id)
+            conn.commit()
         else:
             writer.finish_run(run_id, task_status)
             finish_job(self.data_root, request.job_id)
@@ -688,7 +744,7 @@ class WorkerLoop:
             stop_requested=lambda: self.flag.interrupt_requested,
         )
         if kind == "INCREMENTAL":
-            outcomes = runner.incremental(run_id, now=self._clock())
+            outcomes = runner.incremental(run_id, now=self._clock(), refresh_recent=request.scope.get("refresh_recent") is True)
         elif kind == "RECONCILE":
             eligible_scope = runner.resolve(request.interval()).can_skip
             gaps = runner.reconcile(run_id, request.interval())
@@ -784,9 +840,15 @@ class WorkerController:
     def __call__(self, payload: dict, sid: str) -> dict:
         op = payload.get("op")
         if op == "ping":
+            from santhau_studio.workers.activity import maintenance_summary
             from santhau_studio.workers.weekly import CAPABILITY
+            runtime = self.loop.runtime_status()
+            try:
+                runtime["maintenance"] = maintenance_summary(self._read_conn())
+            except (sqlite3.Error, ValueError):
+                runtime["maintenance"] = {"present": False}
             return {"ok": True, "worker": True, "capabilities": [CAPABILITY, "runtime-status-v1"] + (["public-cgttrg-deep-v1", "automatic-public-deep-v1"] if self.loop._deep_factory else []),
-                    "runtime": self.loop.runtime_status()}
+                    "runtime": runtime}
         if op == "status":
             job_id = payload.get("job_id")
             if not isinstance(job_id, str) or not job_id:
@@ -837,7 +899,9 @@ class WorkerController:
             )
         progress = self.loop.progress
         running = bool(runs and runs[-1]["lifecycle"] not in ("FINISHED", "TERMINATED", "PAUSED"))
-        return {"runs": runs, "progress": progress if running and progress.get("job_id") == job_id else {}}
+        from santhau_studio.workers.activity import maintenance_job
+        return {"runs": runs, "progress": progress if running and progress.get("job_id") == job_id else {},
+                "request": maintenance_job(conn, job_id)}
 
     def _read_conn(self) -> sqlite3.Connection:
         if self._conn is None:

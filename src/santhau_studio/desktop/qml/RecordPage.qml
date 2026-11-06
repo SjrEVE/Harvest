@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import "UiText.js" as T
+import "RecordData.js" as R
 
 Item {
     id: page
@@ -9,33 +10,72 @@ Item {
     property int recordId: 0
     property var state: ({present:false})
     property var history: ({rows:[]})
+    property var selectedRow: null
     property string preview: ""
-    property bool sourceMode:true
+    property bool sourceMode: true
     property bool busy: false
+    property bool historyBusy: false
+    property bool actionPending: false
+    property bool modeChosen: false
+    property string actionMessage: ""
+    property int detailSerial: -1
+    property int historySerial: -1
+    property int rawSerial: -1
+    property int actionSerial: -1
+    readonly property string historyKind: section.model[section.currentIndex].value
+    readonly property bool supported: (state.deep_states || []).some(function(s){return !!s.supported})
+    readonly property bool hasFailedRefresh: (state.deep_states || []).some(function(s){return s.state==="PARSE_ERROR" || s.state==="FAILED" || s.state==="BLOCKED"})
     signal backRequested()
     signal identityRequested(string requestJson)
     onVisibleChanged: if (visible) reload()
-    onRecordIdChanged: { history = {rows:[]}; preview = ""; if (visible) reload() }
+    onRecordIdChanged: {
+        state={present:false}; history={rows:[]}; selectedRow=null; preview=""; actionMessage=""
+        detailSerial=-1; historySerial=-1; rawSerial=-1; actionSerial=-1
+        actionPending=false; modeChosen=false
+        if (visible) reload()
+    }
     function reload() {
-        if (recordId <= 0) { state = {present:false}; return }
-        busy = true
-        bridge.requestRead("detail", "record_detail", JSON.stringify({record_id:recordId}))
-        loadHistory(0)
+        if (recordId <= 0) { state={present:false}; busy=false; return }
+        busy=true
+        detailSerial=bridge.requestRead("detail", "record_detail", JSON.stringify({record_id:recordId}))
+        if (!sourceMode) loadHistory(0)
     }
     function loadHistory(before) {
-        bridge.requestRead("history", "record_history", JSON.stringify({record_id:recordId,kind:section.model[section.currentIndex].value,before:before}))
+        if (recordId<=0) return
+        selectedRow=null; preview=""; rawSerial=-1; historyBusy=true
+        historySerial=bridge.requestRead("history", "record_history", JSON.stringify({record_id:recordId,kind:historyKind,before:before}))
+    }
+    function choose(row) {
+        selectedRow=row; rawSerial=-1
+        if (sourceMode) preview=row.label+"\n\n"+(row.presence==="UNKNOWN"?"Nguồn chưa cung cấp":(typeof row.value==="object"?JSON.stringify(row.value,null,2):String(row.value)))
+        else preview=R.describe(historyKind,row)
+    }
+    function collect(lane, force) {
+        if (actionPending || busy || !supported) return
+        actionPending=true; actionMessage="Đang lưu yêu cầu thu thập…"
+        actionSerial=bridge.requestRead("deepAction", "enqueue_deep", JSON.stringify({record_id:recordId,lane:lane,force_refresh:!!force}))
     }
     Connections {
-        target: page.bridge
+        target:page.bridge
         function onReadReady(key, serial, text) {
-            var value = JSON.parse(text)
-            if (key === "detail") {
-                page.state=value;page.busy=false
-                if(page.sourceMode) page.preview=((value.source_fields||{}).fields||[]).map(function(f){return f.label+"\n"+(f.presence==="UNKNOWN"?"Nguồn chưa cung cấp":(typeof f.value==="object"?JSON.stringify(f.value,null,2):String(f.value)))}).join("\n\n")
+            var value=JSON.parse(text)
+            if (key==="detail" && serial===page.detailSerial) {
+                page.state=value; page.busy=false
+                if (!page.modeChosen) {
+                    page.modeChosen=true
+                    if (((value.history_counts || {}).goods_rows || 0)>0) { page.sourceMode=false; section.currentIndex=0; page.loadHistory(0) }
+                }
+                if (page.sourceMode && !page.selectedRow && ((value.source_fields || {}).fields || []).length) page.choose(value.source_fields.fields[0])
             }
-            if (key === "history") page.history = value
-            if (key === "deepAction") page.preview = T.result(value)
-            if (key === "raw") page.preview = T.rawPreview(value)
+            if (key==="history" && serial===page.historySerial) {
+                page.history=value; page.historyBusy=false; rows.positionViewAtBeginning()
+                if (!page.sourceMode && (value.rows || []).length) page.choose(value.rows[0])
+            }
+            if (key==="deepAction" && serial===page.actionSerial) {
+                page.actionPending=false
+                page.actionMessage=value.ok?"Đã xếp hàng. Theo dõi kết quả ở Thu thập chi tiết; dữ liệu hiển thị sẽ đổi sau khi cập nhật bản tra cứu.":T.message(value.error || value.error_code)
+            }
+            if (key==="raw" && serial===page.rawSerial) page.preview=T.rawPreview(value)
         }
     }
     Dialog {
@@ -59,68 +99,103 @@ Item {
             record_ids:identityRecords.text.split(",").filter(x=>x.trim()).map(x=>Number(x.trim())),
             entity_id:identityEntity.text,action_id:Number(identityUndo.text),reason:identityReason.text,evidence:{reference:identityEvidence.text}}))
     }
+    Menu {
+        id:moreMenu
+        MenuItem { text:"Thu thập lại chi tiết hồ sơ"; enabled:page.supported && !page.actionPending; onTriggered:page.collect("DETAIL",true) }
+        MenuItem { text:"Liên kết / tách / hoàn tác…"; enabled:page.recordId>0; onTriggered:identityDialog.open() }
+        MenuItem { text:"Thông tin nguồn và liên kết"; enabled:!!page.state.present; onTriggered:page.preview=T.pretty({record:page.state.record,notice_groups:page.state.notice_groups,aliases:page.state.aliases,entity_links:page.state.entity_links,relation_edges:page.state.relation_edges,deep_captures:page.state.deep_captures}) }
+        MenuItem { text:"Nhật ký liên kết"; enabled:!!page.state.present; onTriggered:page.preview=T.pretty(page.state.identity_audit || []) }
+    }
     ColumnLayout {
-        anchors.fill: parent; anchors.margins: 24; spacing: 14
+        anchors.fill:parent; anchors.margins:20; spacing:10
         RowLayout {
-            StudioButton { text: "← Kết quả tìm kiếm"; onClicked: page.backRequested() }
-            Label { Layout.fillWidth: true; elide: Text.ElideMiddle; color: "#172b3a"; text: page.state.record ? T.family(page.state.record.family) + " · " + page.state.record.natural_key : "Chọn hồ sơ ở màn Tra cứu hồ sơ" }
-            StudioButton { text: "Tải lại"; enabled: recordId > 0 && !busy; onClicked: reload() }
+            StudioButton { text:"Kết quả tìm kiếm"; onClicked:page.backRequested() }
+            Label { Layout.fillWidth:true; elide:Text.ElideMiddle; textFormat:Text.PlainText; font.pixelSize:16; font.weight:Font.DemiBold; color:"#172b3a"; text:page.state.record?T.family(page.state.record.family)+" · "+page.state.record.natural_key:"Chọn hồ sơ để xem chi tiết" }
+            StudioButton { text:"Tải lại"; enabled:page.recordId>0 && !page.busy; onClicked:page.reload() }
+            StudioButton { text:"Thao tác khác"; onClicked:moreMenu.popup() }
         }
-        Label { Layout.fillWidth: true; wrapMode: Text.Wrap; color: "#526477"; text: page.state.record ? T.label(page.state.record.source_key) + " · phiên bản: " + T.label(page.state.record.version_state) + " " + (page.state.record.version_raw || "") + " · số lần ghi nhận: " + page.state.observations + " · " + T.label(page.state.record.integrity_status) : T.message(page.state.error) }
-        Label { visible: !!page.state.legacy_unverified; color: "#965a08"; text: "Lịch sử nhập từ kho cũ, chưa có bằng chứng thu thập mới để xác minh." }
-        Label { visible:page.state.present && !(page.state.deep_captures||[]).length;Layout.fillWidth:true;wrapMode:Text.Wrap;color:"#965a08";text:"Hồ sơ này mới có dữ liệu danh mục. Chưa có bằng chứng thu thập chi tiết, hồ sơ mời thầu hoặc bảng hàng hóa." }
-        Label { Layout.fillWidth:true;wrapMode:Text.Wrap;visible:page.state.present;text:(page.state.deep_states||[]).map(function(s){return T.label(s.lane)+": "+T.label(s.state)+(s.capability?" · "+T.label(s.capability):"")+(s.warnings&&s.warnings.length?" · "+s.warnings.length+" cảnh báo":"")+(s.error?" ("+s.error+")":"")}).join(" · ");color:"#526477" }
-        RowLayout {
-            visible:page.state.present
-            StudioButton {text:"Lấy hàng hóa HSMT";enabled:!page.busy;onClicked:page.bridge.requestRead("deepAction","enqueue_deep",JSON.stringify({record_id:page.recordId,lane:"HSMT"}))}
-            StudioButton {text:"Lấy chi tiết chào giá";enabled:!page.busy;onClicked:page.bridge.requestRead("deepAction","enqueue_deep",JSON.stringify({record_id:page.recordId,lane:"REOFFER"}))}
+        Label {
+            Layout.fillWidth:true; wrapMode:Text.Wrap; color:page.state.error?"#b42336":"#526477"; font.pixelSize:13
+            text:page.busy?"Đang đọc hồ sơ…":page.state.error?T.message(page.state.error):page.state.record?
+                T.label(page.state.record.source_key)+" · phiên bản nguồn "+(page.state.record.version_raw || "chưa rõ")+
+                " · ghi nhận gần nhất "+T.timestampVN(page.state.record.last_seen_at_utc)+
+                (page.state.legacy_unverified?" · dữ liệu nhập cũ, chưa xác minh":""):"Mở một hồ sơ từ màn Tra cứu hồ sơ hoặc Thu thập chi tiết."
         }
-        RowLayout {
-            StudioButton {text:"Trường dữ liệu nguồn";primary:page.sourceMode;onClicked:{page.sourceMode=true;page.preview=""}}
-            StudioButton {text:"Lịch sử và tài liệu";primary:!page.sourceMode;onClicked:{page.sourceMode=false;page.preview="";page.loadHistory(0)}}
-            Label {text:((page.state.source_fields||{}).fields||[]).length+" trường nguồn được giữ nguyên";color:"#526477";Layout.fillWidth:true}
-        }
-        Label {visible:!!(page.state.source_fields||{}).error;Layout.fillWidth:true;wrapMode:Text.Wrap;text:(page.state.source_fields||{}).error||"";color:"#b42336"}
-        RowLayout {
-            visible:!page.sourceMode
-            StudioComboBox {
-                id: section; textRole: "label"; Layout.fillWidth: true; Accessible.name: "Loại lịch sử hồ sơ"
-                model: [{label:"Các phiên bản nội dung",value:"versions"},{label:"Lịch sử dữ liệu gốc",value:"raw_revisions"},
-                    {label:"Lịch sử thu thập chi tiết",value:"deep_history"},{label:"Các lô hàng",value:"lots"},
-                    {label:"Hàng hóa và khối lượng",value:"goods_rows"},{label:"Tài liệu",value:"documents"},{label:"Các nhà thầu",value:"contractor_memberships"}]
-                onActivated: page.loadHistory(0)
-            }
-            StudioButton { text: "Mới nhất"; enabled: recordId > 0; onClicked: page.loadHistory(0) }
-            StudioButton { text: "Cũ hơn"; enabled: !!history.has_more; onClicked: page.loadHistory(history.before) }
-            StudioButton { text: "Nguồn / nhóm / liên kết"; onClicked: preview=T.pretty({record:page.state.record,notice_groups:page.state.notice_groups,aliases:page.state.aliases,entity_links:page.state.entity_links,deep_captures:page.state.deep_captures,history_counts:page.state.history_counts}) }
-        }
-        Label { visible:!page.sourceMode; color: "#526477"; text: T.message(history.error) || ((history.rows || []).length + " dòng / " + ((page.state.history_counts || {})[section.model[section.currentIndex].value] || 0)) }
-        RowLayout {
-            StudioButton { text:"Thu thập lại chi tiết"; enabled:recordId>0; onClicked:bridge.requestRead("deepAction","enqueue_deep",JSON.stringify({record_id:recordId,lane:"DETAIL"})) }
-            StudioButton { text:"Liên kết / tách / hoàn tác…"; enabled:recordId>0; onClicked:identityDialog.open() }
-            StudioButton { text:"Nhật ký liên kết"; onClicked:preview=T.pretty(page.state.identity_audit || []) }
-        }
-        SplitView {
-            Layout.fillWidth: true; Layout.fillHeight: true; orientation: Qt.Horizontal
-            ListView {
-                id: rows; SplitView.preferredWidth: 300; SplitView.minimumWidth: 180; clip: true
-                model: page.sourceMode ? ((page.state.source_fields||{}).fields||[]) : (history.rows||[]); spacing: 5; ScrollBar.vertical: ScrollBar {}
-                delegate: ItemDelegate {
+        Flow {
+            Layout.fillWidth:true; Layout.preferredHeight:childrenRect.height; spacing:16
+            Repeater {
+                model:page.state.deep_states || []
+                delegate:Label {
                     required property var modelData
-                    width: rows.width; height: page.sourceMode ? 60 : 72
-                    background: Rectangle { color: parent.activeFocus ? "#e0efec" : "#ffffff"; radius: 4 }
-                    contentItem: Label { wrapMode: Text.WrapAnywhere; maximumLineCount: 3; elide: Text.ElideRight; color: "#172b3a"; text: page.sourceMode ? modelData.label+"\n"+(modelData.presence==="UNKNOWN"?"Nguồn chưa cung cấp":(typeof modelData.value==="object"?"Mở để xem cấu trúc":String(modelData.value))) : (modelData.content_version_seq || modelData.revision_no || modelData.capture_seq || modelData.id) + " · " + (modelData.name || T.label(modelData.change_kind || modelData.reason || modelData.lane)) + "\n" + (modelData.fetched_at_utc || modelData.first_observed_at_utc || modelData.captured_at_utc || "") }
-                    onClicked: {
-                        if (page.sourceMode) preview=modelData.label+"\nMã trường nguồn: "+modelData.key+"\n\n"+JSON.stringify(modelData.value,null,2)
-                        else if (section.currentIndex === 1) bridge.requestRead("raw", "raw_object", JSON.stringify({sha:modelData.record_object_sha}))
-                        else preview = modelData.normalized_json ? T.pretty(JSON.parse(modelData.normalized_json)) : T.pretty(modelData)
-                    }
+                    font.pixelSize:13; color:modelData.state==="FETCHED"?"#087f75":modelData.state==="FAILED" || modelData.state==="PARSE_ERROR"?"#b42336":"#526477"
+                    text:T.label(modelData.lane)+": "+T.label(modelData.state)
+                    ToolTip.visible:hover.hovered && !!modelData.error
+                    ToolTip.text:T.message(modelData.error || "")
+                    HoverHandler { id:hover }
                 }
             }
-            ScrollView {
-                SplitView.fillWidth: true; clip: true
-                TextArea { text: preview || "Chọn một dòng để xem nội dung chuẩn hóa, dữ liệu gốc hoặc thông tin nguồn gốc."; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere; color: "#172b3a"; font.family: page.sourceMode ? "Segoe UI" : "Consolas"; font.pixelSize: 13; Accessible.name: "Nội dung hồ sơ" }
+        }
+        RowLayout {
+            visible:!!page.state.present; spacing:10
+            StudioButton { objectName:"collectHsmt"; text:"Lấy hàng hóa HSMT"; enabled:page.supported && !page.busy && !page.actionPending; onClicked:page.collect("HSMT",false) }
+            StudioButton { objectName:"collectReoffer"; text:"Lấy thông tin chào giá"; enabled:page.supported && !page.busy && !page.actionPending; onClicked:page.collect("REOFFER",false) }
+            Label { Layout.fillWidth:true; wrapMode:Text.Wrap; text:page.hasFailedRefresh?"Có lần lấy gặp lỗi. Nội dung đã lưu trước đó vẫn được giữ để đối chiếu.":page.supported?"Nguồn công khai đã xác minh cho loại hồ sơ này.":"Chưa hỗ trợ thu thập chi tiết cho loại hồ sơ này."; color:page.hasFailedRefresh?"#965a08":"#526477"; font.pixelSize:13 }
+        }
+        Label { visible:!!page.actionMessage; Layout.fillWidth:true; wrapMode:Text.Wrap; text:page.actionMessage; color:"#526477"; font.pixelSize:13 }
+        RowLayout {
+            StudioButton { text:"Trường nguồn"; primary:page.sourceMode; onClicked:{page.modeChosen=true;page.sourceMode=true;page.selectedRow=null;page.preview="";page.rawSerial=-1;if (((page.state.source_fields || {}).fields || []).length) page.choose(page.state.source_fields.fields[0])} }
+            StudioButton { text:"Hàng hóa và tài liệu"; primary:!page.sourceMode; onClicked:{page.modeChosen=true;page.sourceMode=false;page.loadHistory(0)} }
+            StudioComboBox {
+                id:section; objectName:"recordSection"; visible:!page.sourceMode; Layout.fillWidth:true
+                textRole:"label"; Accessible.name:"Loại nội dung hồ sơ"
+                model:[{label:"Hàng hóa và khối lượng",value:"goods_rows"},{label:"Các lô hàng",value:"lots"},
+                    {label:"Tài liệu",value:"documents"},{label:"Đơn vị tham gia",value:"contractor_memberships"},
+                    {label:"Phiên bản nội dung",value:"versions"},{label:"Lịch sử dữ liệu gốc",value:"raw_revisions"},
+                    {label:"Lịch sử thu thập chi tiết",value:"deep_history"}]
+                onActivated:page.loadHistory(0)
             }
+            Label { visible:page.sourceMode; Layout.fillWidth:true; text:((page.state.source_fields || {}).fields || []).length+" trường nguồn"; color:"#526477"; font.pixelSize:13 }
+        }
+        Label {
+            objectName:"recordHistoryCount"
+            Layout.fillWidth:true; wrapMode:Text.Wrap; font.pixelSize:13
+            color:page.history.error || (page.state.source_fields || {}).error?"#b42336":"#526477"
+            text:page.sourceMode?((page.state.source_fields || {}).error || "Chọn một trường để đọc giá trị nguồn."):
+                page.historyBusy?"Đang đọc nội dung…":page.history.error ||
+                (page.history.rows || []).length+" dòng đang hiển thị / "+((page.state.history_counts || {})[page.historyKind] || 0)+" dòng đã lưu"
+        }
+        SplitView {
+            Layout.fillWidth:true; Layout.fillHeight:true; orientation:Qt.Horizontal
+            ListView {
+                id:rows; objectName:"recordRows"; SplitView.preferredWidth:300; SplitView.minimumWidth:220
+                clip:true; spacing:1; reuseItems:true; enabled:!page.busy && (page.sourceMode || !page.historyBusy)
+                model:page.sourceMode?((page.state.source_fields || {}).fields || []):(page.history.rows || [])
+                ScrollBar.vertical:ScrollBar {}
+                delegate:ItemDelegate {
+                    id:entry; required property var modelData
+                    width:rows.width; height:86
+                    background:Rectangle { color:entry.hovered || entry.activeFocus || page.selectedRow===entry.modelData?"#e0efec":"#ffffff"; border.color:entry.activeFocus?"#087f75":"transparent" }
+                    contentItem:ColumnLayout {
+                        spacing:4
+                        Label { Layout.fillWidth:true; textFormat:Text.PlainText; wrapMode:Text.Wrap; maximumLineCount:2; elide:Text.ElideRight; font.pixelSize:13; font.weight:Font.DemiBold; color:"#172b3a"; text:page.sourceMode?entry.modelData.label:R.title(page.historyKind,entry.modelData) }
+                        Label { Layout.fillWidth:true; textFormat:Text.PlainText; elide:Text.ElideRight; font.pixelSize:13; color:"#526477"; text:page.sourceMode?(entry.modelData.presence==="UNKNOWN"?"Nguồn chưa cung cấp":typeof entry.modelData.value==="object"?"Nội dung có cấu trúc":String(entry.modelData.value)):R.subtitle(page.historyKind,entry.modelData) }
+                    }
+                    onClicked:page.choose(modelData)
+                }
+                Label { anchors.centerIn:parent; width:parent.width-24; wrapMode:Text.Wrap; horizontalAlignment:Text.AlignHCenter; visible:!rows.count && !page.busy && !page.historyBusy; text:"Chưa có nội dung ở mục này. Trạng thái phía trên cho biết đã thu thập hay chưa."; color:"#526477"; font.pixelSize:13 }
+            }
+            ScrollView {
+                SplitView.fillWidth:true; SplitView.minimumWidth:220; clip:true
+                TextArea { objectName:"recordPreview"; text:page.preview || "Chọn một dòng để đọc nội dung."; readOnly:true; selectByMouse:true; wrapMode:TextEdit.WrapAnywhere; textFormat:TextEdit.PlainText; color:"#172b3a"; font.family:"Segoe UI"; font.pixelSize:14; padding:16; Accessible.name:"Nội dung hồ sơ"; background:Rectangle {color:"#ffffff"} }
+            }
+        }
+        RowLayout {
+            Layout.fillWidth:true
+            StudioButton { text:"Thông tin kỹ thuật"; enabled:!!page.selectedRow; onClicked:page.preview=T.pretty(page.selectedRow) }
+            StudioButton { text:"Đọc dữ liệu gốc"; visible:!page.sourceMode && page.historyKind==="raw_revisions"; enabled:!!page.selectedRow; onClicked:{page.preview="Đang kiểm tra và đọc dữ liệu gốc…";page.rawSerial=page.bridge.requestRead("raw","raw_object",JSON.stringify({sha:page.selectedRow.record_object_sha}))} }
+            Item { Layout.fillWidth:true }
+            StudioButton { text:"Trang đầu"; visible:!page.sourceMode; enabled:!page.historyBusy && page.recordId>0; onClicked:page.loadHistory(0) }
+            StudioButton { text:"Trang sau"; visible:!page.sourceMode; enabled:!page.historyBusy && !!page.history.has_more; onClicked:page.loadHistory(page.history.before) }
         }
     }
 }

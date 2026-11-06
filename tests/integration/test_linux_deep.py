@@ -36,7 +36,9 @@ def test_compiled_compatible_deep_self_test_preserves_lanes_and_checkpoints(tmp_
     assert value["counts"]["lots"] == 3 and value["counts"]["goods_rows"] == 67
     assert value["counts"]["contractor_memberships"] == 5
     assert value["counts"]["documents"] == 3 and value["counts"]["relation_edges"] == 3
-    assert value["first_requests"] == 9 and value["rerun_requests"] == 0
+    # Nine logical lane captures are produced from six physical responses;
+    # DETAIL and REOFFER reuse one verified response. Rerun performs no fetch.
+    assert value["first_requests"] == 6 and value["rerun_requests"] == 0
     assert not value["serving_created"] and not value["forbidden_imports"]
     assert value["evidence_class"] == "SYNTHETIC_OFFLINE" and value["network_requests"] == 0
     conn = connect_read_only(root / "warehouse.sqlite")

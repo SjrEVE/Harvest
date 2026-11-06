@@ -9,7 +9,7 @@ from santhau_studio.storage.rawstore import ObjectCorruptError, RawObjectStore
 HISTORY = {
     "versions": ("source_record_versions", "content_version_seq"),
     "raw_revisions": ("raw_revisions", "revision_no"),
-    "lots": ("lots", "id"), "goods_rows": ("goods_rows", "id"),
+    "lots": ("lots", "id"), "goods_rows": ("(SELECT g.*,l.lot_no_raw,l.lot_label FROM goods_rows g LEFT JOIN lots l ON l.id=g.lot_id)", "id"),
     "documents": ("documents", "id"), "contractor_memberships": ("contractor_memberships", "id"),
     "deep_history": ("(SELECT h.*,d.source_record_id,d.lane,d.endpoint_kind FROM deep_capture_history h JOIN deep_captures d ON d.id=h.deep_capture_id)", "id"),
 }

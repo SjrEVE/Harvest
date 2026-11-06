@@ -1,0 +1,14 @@
+.git
+.venv
+build
+dist
+_evidence
+data
+captures
+local-captures
+backups
+.env
+.env.*
+**/__pycache__
+**/*.sqlite
+**/*.raw.json

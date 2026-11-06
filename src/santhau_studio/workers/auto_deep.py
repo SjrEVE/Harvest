@@ -15,6 +15,9 @@ def validated_configuration(value):
     count = value.get("batch_requests", 30)
     if type(count) is not int or not 1 <= count <= 30:
         raise ValueError("batch_requests must be 1..30")
+    refresh_expired = value.get("refresh_expired", False)
+    if type(refresh_expired) is not bool:
+        raise ValueError("refresh_expired must be boolean")
     config = {
         "enabled": value["enabled"],
         "batch_requests": count,
@@ -22,6 +25,7 @@ def validated_configuration(value):
         "failure_cooldown_minutes": 60,
         "lanes": list(LANES),
         "pacing_seconds": 3,
+        "refresh_expired": refresh_expired,
     }
     return config
 
@@ -69,11 +73,12 @@ def candidates(conn, limit):
       AND NOT (COALESCE(m.capability,'') LIKE 'UNSUPPORTED%' AND COALESCE(m.adapter_version,0)=? AND COALESCE(m.parser_version,0)=?
                AND COALESCE(t.listing_object_sha,'')=r.current_record_object_sha)
       AND NOT (COALESCE(t.state,'')='PARSE_ERROR' AND t.response_object_sha IS NOT NULL AND
-               (COALESCE(pm.parser_version,1)<? OR COALESCE(t.listing_object_sha,'')=r.current_record_object_sha))
+               COALESCE(pm.parser_version,1)>=? AND COALESCE(t.listing_object_sha,'')=r.current_record_object_sha)
       AND (t.source_record_id IS NULL
         OR (t.state IN ('FETCHED','SOURCE_EMPTY') AND
-            (t.listing_object_sha<>r.current_record_object_sha OR c.stale=1 OR c.refresh_due_at_utc<?))
-        OR (t.state NOT IN ('FETCHED','SOURCE_EMPTY') AND t.updated_at_utc<?))
+            (c.id IS NULL OR t.listing_object_sha IS NOT r.current_record_object_sha OR c.stale=1 OR COALESCE(pm.parser_version,1)<?
+              OR (? AND c.refresh_due_at_utc IS NOT NULL AND COALESCE(julianday(c.refresh_due_at_utc),0)<=julianday(?))))
+        OR (t.state NOT IN ('FETCHED','SOURCE_EMPTY') AND julianday(t.updated_at_utc)<=julianday(?)))
       ORDER BY r.id,CASE lane.lane WHEN 'HSMT' THEN 0 WHEN 'REOFFER' THEN 1 ELSE 2 END LIMIT ?""".replace(
         "LANES_SQL", placeholders
     )
@@ -83,7 +88,8 @@ def candidates(conn, limit):
             query,
             (
                 *lanes,
-                ADAPTER_VERSION, PARSER_VERSION, PARSER_VERSION,
+                ADAPTER_VERSION, PARSER_VERSION, PARSER_VERSION, PARSER_VERSION,
+                int(config.get("refresh_expired", False)),
                 now.isoformat().replace("+00:00", "Z"),
                 cutoff,
                 min(limit, config["batch_requests"]),
@@ -114,7 +120,7 @@ def run_batch(loop, parent_run=None):
                 job_kind=target["lane"],
                 requested_by="automatic-public-deep",
                 sources=({"source_key": "egp_home", "family": "TBMT"},),
-                scope={"record_ids": [target["id"]]},
+                scope={"record_ids": [target["id"]], "refresh_expired": config.get("refresh_expired", False)},
                 request_limits={
                     "max_requests": min(4, config["batch_requests"] - requests_used),
                     "max_attempts": 4,
@@ -159,7 +165,7 @@ def run_batch(loop, parent_run=None):
                 ),
             )
             completed += 1
-            requests_used += max(1, detail.get("requests_used", 1))
+            requests_used += max(0, detail.get("requests_used", 1))
     finally:
         loop._set_phase(previous_phase)
         loop.progress = previous_progress

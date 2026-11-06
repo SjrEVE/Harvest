@@ -87,7 +87,7 @@ def record_deep_capture(
         parsed = ParsedDetail("{}", {}, (), (), (str(exc),))
     if parsed.problems:
         completeness = "PARTIAL"
-        if any('TABLE_MISSING_OR_INVALID' in p or 'INVALID_JSON' in p for p in parsed.problems):
+        if spec.parser_kind in ("DETAIL", "REOFFER") or any('TABLE_MISSING_OR_INVALID' in p or 'INVALID_JSON' in p for p in parsed.problems):
             parse_failed = True
         lane_status = "FAILED" if parse_failed else "PARTIAL"
     if parsed.capability in ("DOCUMENT_ONLY", "STRUCTURED_ITEMS_UNAVAILABLE", "UNVERIFIED_FORM"):
@@ -109,9 +109,19 @@ def record_deep_capture(
         previous_parse = capture_metadata(conn, existing["id"], existing["latest_capture_seq"]) if existing else {}
         if (spec.parser_kind and not parse_failed and not parsed.problems and existing and previous_parse.get("parser_version") == spec.parser_version and existing["response_object_sha"] == response_ref.sha256
                 and existing["record_object_sha"] == detail_ref.sha256 and not existing["stale"]):
-            conn.execute("UPDATE deep_captures SET captured_at_utc=?,refresh_due_at_utc=? WHERE id=?", (_iso(now),due,existing["id"]))
-            conn.execute("COMMIT")
-            return DeepCaptureResult(existing["id"],existing["latest_capture_seq"],existing["completeness"],0,None,response_ref.sha256,detail_ref.sha256)
+            from santhau_studio.storage.public_deep import write_projection
+            conn.execute("SAVEPOINT unchanged_projection")
+            try:
+                write_projection(conn, writer, source_record_id, spec, parsed,
+                                 existing["id"], existing["latest_capture_seq"], response_ref.sha256)
+            except (ValueError, sqlite3.Error):
+                conn.execute("ROLLBACK TO unchanged_projection")
+                conn.execute("RELEASE unchanged_projection")
+            else:
+                conn.execute("RELEASE unchanged_projection")
+                conn.execute("UPDATE deep_captures SET captured_at_utc=?,refresh_due_at_utc=? WHERE id=?", (_iso(now),due,existing["id"]))
+                conn.execute("COMMIT")
+                return DeepCaptureResult(existing["id"],existing["latest_capture_seq"],existing["completeness"],0,None,response_ref.sha256,detail_ref.sha256,True,())
         if existing is None:
             cur = conn.execute(
                 "INSERT INTO deep_captures (source_record_id, lane, endpoint_kind, latest_capture_seq,"

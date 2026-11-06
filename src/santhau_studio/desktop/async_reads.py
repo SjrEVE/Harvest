@@ -31,7 +31,7 @@ class ReadTask(QRunnable):
             else:
                 method = getattr(self.backend, self.method)
             args = ()
-            if self.method in ('search', 'coverage_range', 'record_history', 'enqueue_collection', 'start_collection', 'enqueue_deep'):
+            if self.method in ('search', 'coverage_range', 'record_history', 'enqueue_collection', 'start_collection', 'enqueue_deep', 'deep_queue'):
                 args = (self.payload,)
             elif self.method == 'worker_command':
                 args = (self.payload.get('command'), self.payload.get('job_id') or None)

@@ -191,16 +191,21 @@ def self_test(root):
             strict=True,
         )
     )
+    # Three records x three logical lanes (HSMT, DETAIL, REOFFER) still produce
+    # nine captured lane tasks. DETAIL and REOFFER share one endpoint/body, so
+    # only six physical responses are needed and the rerun adds none.
+    expected_requests = 6
     if (
         first != expected
         or second != first
-        or requests != 9
-        or OfflineDeepFetcher.calls != 9
+        or requests != expected_requests
+        or OfflineDeepFetcher.calls != expected_requests
         or forbidden
         or list(root.glob("serving*"))
     ):
         raise RuntimeError(
-            f"Deep fixture mismatch: {first}, {second}, {OfflineDeepFetcher.calls}, {forbidden}"
+            f"Deep fixture mismatch: {first}, {second}, "
+            f"{requests} first / {OfflineDeepFetcher.calls} total requests, {forbidden}"
         )
     return {
         "ok": True,

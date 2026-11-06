@@ -6,7 +6,21 @@ def apply_live_status(backend, payload, selected_job):
     runtime = worker.get("runtime") or {}
     current = runtime.get("current_job_id")
     pending = runtime.get("pending_actions") or {}
+    payload["background"] = runtime.get("maintenance") or {"present": False}
     replies = {}
+    known = {j.get("job_id") for group in ("active", "queued", "done") for j in payload[group]}
+    # Durable maintenance has no queue document. Runtime identifies the current
+    # target; its committed run and task metadata confirm controls and scope.
+    if worker.get("pipe_ok"):
+        ids = ([current] if current else []) + list(runtime.get("paused_jobs") or [])
+        for job_id in dict.fromkeys(ids):
+            if job_id in known:
+                continue
+            reply = backend.job_status(job_id)
+            replies[job_id] = reply
+            metadata = reply.get("request") or (runtime.get("current_job") if job_id == current else {}) or {}
+            payload["active"].append({"job_id": job_id, **metadata})
+            known.add(job_id)
     targets = list(payload["active"])
     last_job = runtime.get("last_job_id")
     targets.extend(j for j in payload["done"] if j.get("job_id") and j["job_id"] == last_job)
@@ -17,7 +31,7 @@ def apply_live_status(backend, payload, selected_job):
             job_id = entry.get("job_id")
             if not job_id:
                 continue
-            reply = backend.job_status(job_id)
+            reply = replies.get(job_id) or backend.job_status(job_id)
             replies[job_id] = reply
             runs = reply.get("runs") or []
             if reply.get("ok") and not reply.get("error") and runs:

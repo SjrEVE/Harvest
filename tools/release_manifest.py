@@ -18,8 +18,10 @@ def sha(path: Path) -> str:
 
 
 def inputs() -> dict[str, str]:
-    files = [ROOT / name for name in ("pyproject.toml", "uv.lock", "THIRD_PARTY_NOTICES.txt")]
-    for directory in ("src", "packaging", "tools", "LICENSES", "docs/ddl"):
+    files = [ROOT / name for name in (
+        "pyproject.toml", "uv.lock", "THIRD_PARTY_NOTICES.txt", "docs/linux-collector.md",
+    )]
+    for directory in ("src", "packaging", "tools", "LICENSES", "docs/ddl", "tests"):
         files.extend(path for path in (ROOT / directory).rglob("*") if path.is_file()
                      and "__pycache__" not in path.parts and path.suffix != ".pyc")
     return {path.relative_to(ROOT).as_posix(): sha(path) for path in sorted(files)}
@@ -37,7 +39,9 @@ def main() -> int:
         report = {"base_commit": head, "working_tree_dirty": dirty,
                   "captured_at_utc": datetime.now(UTC).isoformat(), "inputs": inputs()}
         captured.parent.mkdir(exist_ok=True)
-        captured.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        temporary = captured.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        temporary.replace(captured)
     else:
         report = json.loads(captured.read_text(encoding="utf-8"))
         if report["inputs"] != inputs():

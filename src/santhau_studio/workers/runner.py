@@ -504,12 +504,11 @@ class Runner:
                 break
         return outcomes
 
-    def incremental(self, run_id: str, *, now: datetime) -> list[IntervalOutcome]:
+    def incremental(self, run_id: str, *, now: datetime, refresh_recent: bool = False) -> list[IntervalOutcome]:
         """Watermark minus the overlap, up to now. The watermark only moves over COMPLETE days.
 
-        The overlap window is re-fetched on purpose (`skip_proven=False`): late edits inside
-        it are exactly what the overlap exists to catch, and a re-scan that comes back
-        PARTIAL simply holds the watermark where it is.
+        Proven windows are skipped by default. Explicit refresh_recent re-reads the
+        overlap for late edits; a PARTIAL result never moves the watermark over a gap.
         """
         watermark = coverage.watermark_for(self.conn, self.source_key, self.family)
         from zoneinfo import ZoneInfo
@@ -520,7 +519,7 @@ class Runner:
                  vn_calendar_day(now.astimezone(ZoneInfo(VN_TZ_NAME)).date() - timedelta(days=1)).from_utc)
         if start >= now:
             start = now - timedelta(hours=1)
-        outcomes = self.backfill(run_id, Interval(start, now), order=ORDER_OLDEST_FIRST, skip_proven=False)
+        outcomes = self.backfill(run_id, Interval(start, now), order=ORDER_OLDEST_FIRST, skip_proven=not refresh_recent)
         for outcome in outcomes:
             if outcome.status == "COMPLETE" and outcome.interval_id is not None:
                 coverage.advance_watermark(

@@ -1,128 +1,185 @@
-"""Read model for public deep states, including absence of a capture."""
+"""Bounded public-detail inspection; counts and rows share one eligibility contract."""
 
 import json
+import sqlite3
+from datetime import UTC, datetime
+
+from santhau_studio.collectors.cgttrg import ENDPOINTS
 
 LANES = ("DETAIL", "HSMT", "REOFFER")
+STATES = ("FETCHED", "SOURCE_EMPTY", "PARSE_ERROR", "BLOCKED", "FAILED", "STALE", "NOT_COLLECTED")
+
+
+def _model(conn, record_id=None):
+    exists = conn.execute("SELECT 1 FROM sqlite_master WHERE name='deep_tasks'").fetchone()
+    tasks = (
+        "SELECT * FROM deep_tasks"
+        if exists
+        else """SELECT NULL source_record_id,
+        NULL lane,NULL state,NULL capture_id,NULL listing_object_sha,NULL updated_at_utc,
+        NULL error,NULL provenance_json WHERE 0"""
+    )
+    lanes = ",".join(f"('{lane}','public-cgttrg-{ENDPOINTS[lane]}')" for lane in LANES)
+    fields = conn.execute("SELECT 1 FROM sqlite_master WHERE name='record_fields'").fetchone()
+    shortlist = (
+        "AND r.id IN (SELECT record_id FROM record_fields WHERE procurement_type='CGTTRG')"
+        if fields
+        else ""
+    )
+    restriction = "AND r.id=:record_id" if record_id is not None else ""
+    sql = f"""WITH tasks AS ({tasks}), lanes(lane,endpoint) AS (VALUES {lanes}),
+    eligible AS (
+      SELECT r.id FROM source_records r JOIN source_record_versions v
+      ON v.source_record_id=r.id AND v.content_version_seq=r.current_content_version
+      WHERE r.source_key='egp_home' AND r.family='TBMT' {restriction} {shortlist}
+        AND json_extract(v.normalized_json,'$.bidForm')='CGTTRG'
+    ), ids AS (
+      SELECT id FROM eligible UNION SELECT source_record_id FROM tasks
+      UNION SELECT source_record_id FROM deep_captures UNION SELECT :record_id WHERE :record_id IS NOT NULL
+    ),
+    records AS (
+      SELECT r.id,r.source_key,r.family,r.natural_key,r.current_record_object_sha,
+        (r.id IN (SELECT id FROM eligible)) supported
+      FROM ids JOIN source_records r ON r.id=ids.id WHERE 1=1 {restriction}
+    ), pairs AS (
+      SELECT r.*,l.lane,l.endpoint FROM records r CROSS JOIN lanes l
+      WHERE r.supported=1 OR :record_id IS NOT NULL
+      UNION ALL
+      SELECT r.*,t.lane,NULL endpoint FROM tasks t JOIN records r ON r.id=t.source_record_id
+      WHERE r.supported=0 AND :record_id IS NULL
+    ), current AS (
+      SELECT p.id source_record_id,p.family,p.natural_key,p.lane,p.supported,0 legacy,
+        'task:'||p.id||':'||p.lane row_key,
+        CASE WHEN t.state IN ('FETCHED','SOURCE_EMPTY') AND
+          (c.id IS NULL OR t.listing_object_sha IS NOT p.current_record_object_sha
+           OR c.stale=1  -- PARTIAL/DOCUMENT_ONLY is valid v5, not stale
+           OR (c.refresh_due_at_utc IS NOT NULL AND
+               COALESCE(julianday(c.refresh_due_at_utc),0)<=julianday('now'))) THEN 'STALE'
+          WHEN t.state IS NOT NULL THEN t.state
+          WHEN c.id IS NOT NULL THEN CASE WHEN c.stale=1 OR
+            (c.refresh_due_at_utc IS NOT NULL AND COALESCE(julianday(c.refresh_due_at_utc),0)<=julianday('now'))
+            THEN 'STALE' WHEN c.completeness='FULL' THEN 'FETCHED' ELSE 'PARSE_ERROR' END
+          WHEN p.supported=1 THEN 'NOT_COLLECTED' ELSE 'UNSUPPORTED' END state,
+        c.id capture_id,c.completeness,c.captured_at_utc,c.refresh_due_at_utc,c.stale_reason,
+        COALESCE(t.updated_at_utc,c.captured_at_utc) updated_at_utc,t.error,
+        COALESCE(t.provenance_json,'{{}}') provenance_json
+      FROM pairs p LEFT JOIN tasks t ON t.source_record_id=p.id AND t.lane=p.lane
+      LEFT JOIN deep_captures c ON c.source_record_id=p.id AND c.lane=p.lane AND
+        ((t.source_record_id IS NOT NULL AND c.id=t.capture_id) OR
+         (t.source_record_id IS NULL AND c.endpoint_kind=p.endpoint))
+    ), legacy AS (
+      SELECT r.id source_record_id,r.family,r.natural_key,c.lane,0 supported,1 legacy,
+        'capture:'||c.id row_key,
+        CASE WHEN c.stale=1 OR (c.refresh_due_at_utc IS NOT NULL AND
+          COALESCE(julianday(c.refresh_due_at_utc),0)<=julianday('now')) THEN 'STALE'
+          WHEN c.completeness='FULL' THEN 'FETCHED' ELSE 'PARSE_ERROR' END state,
+        c.id capture_id,c.completeness,c.captured_at_utc,c.refresh_due_at_utc,c.stale_reason,
+        c.captured_at_utc updated_at_utc,NULL error,'{{}}' provenance_json
+      FROM deep_captures c JOIN records r ON r.id=c.source_record_id
+      WHERE NOT EXISTS (SELECT 1 FROM current q WHERE q.capture_id=c.id)
+        AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.source_record_id=c.source_record_id AND t.lane=c.lane)
+    ), entries AS (SELECT * FROM current UNION ALL SELECT * FROM legacy)
+    """
+    # One instant for counts and page rows, including captures expiring during the read.
+    return sql.replace("julianday('now')", "julianday(:now)"), {
+        "record_id": record_id,
+        "now": datetime.now(UTC).isoformat(),
+    }
+
+
+def _row(row):
+    value = dict(row)
+    value["stale"] = value["state"] == "STALE"
+    value["needs_refresh"] = value["state"] in ("STALE", "FAILED", "PARSE_ERROR", "BLOCKED")
+    return value
 
 
 def states(conn, record_id):
-    present = conn.execute("SELECT 1 FROM sqlite_master WHERE name='deep_tasks'").fetchone()
-    rows = (
-        {
-            r["lane"]: dict(r)
-            for r in conn.execute("SELECT * FROM deep_tasks WHERE source_record_id=?", (record_id,))
-        }
-        if present
-        else {}
-    )
-    record = conn.execute(
-        "SELECT current_record_object_sha FROM source_records WHERE id=?", (record_id,)
-    ).fetchone()
-    for lane in LANES:
-        row = rows.setdefault(lane, {"lane": lane, "state": "NOT_COLLECTED"})
-        if row.get("capture_id") and row["state"] in ("FETCHED", "SOURCE_EMPTY"):
-            capture = conn.execute(
-                "SELECT stale,refresh_due_at_utc FROM deep_captures WHERE id=?",
-                (row["capture_id"],),
-            ).fetchone()
-            from datetime import UTC, datetime
-
-            if record and (
-                row.get("listing_object_sha") != record[0]
-                or (
-                    capture
-                    and (
-                        capture[0]
-                        or (
-                            capture[1]
-                            and capture[1] < datetime.now(UTC).isoformat().replace("+00:00", "Z")
-                        )
-                    )
-                )
-            ):
-                row["state"] = "STALE"
-        row["provenance"] = json.loads(row.get("provenance_json") or "{}")
-        from santhau_studio.storage.deep_metadata import task_metadata
-        metadata = task_metadata(conn, record_id, lane)
-        row.update(capability=metadata["capability"], warnings=metadata["warnings"], parser_version=metadata["parser_version"])
+    sql, args = _model(conn, record_id)
+    rows = [_row(r) for r in conn.execute(sql + "SELECT * FROM current ORDER BY lane", args)]
+    from santhau_studio.storage.deep_metadata import task_metadata
+    for row in rows:
+        row["provenance"] = json.loads(row["provenance_json"])
+        metadata = task_metadata(conn, record_id, row["lane"])
+        row.update(capability=metadata["capability"], warnings=metadata["warnings"],
+                   parser_version=metadata["parser_version"])
         if metadata["capability"].startswith("UNSUPPORTED"):
             row["state"] = "UNSUPPORTED"
-    return list(rows.values())
+    return rows
 
 
-def queue(conn):
-    exists = conn.execute("SELECT 1 FROM sqlite_master WHERE name='deep_tasks'").fetchone()
-    rows = []
-    if exists:
-        for r in conn.execute(
-            "SELECT t.*,s.family,s.natural_key FROM deep_tasks t JOIN source_records s ON s.id=t.source_record_id ORDER BY t.updated_at_utc DESC LIMIT 500"
+def queue(conn, payload=None):
+    payload = payload or {}
+    try:
+        lane, state = payload.get("lane", ""), payload.get("state", "")
+        if lane not in ("", *LANES) or state not in ("", *STATES):
+            raise ValueError
+        limit = min(100, max(1, int(payload.get("limit", 50))))
+        offset = max(0, int(payload.get("offset", 0)))
+        text = str(payload.get("text", "")).strip()[:200]
+    except (ValueError, TypeError, OverflowError):
+        return {
+            "present": True,
+            "rows": [],
+            "summary": {},
+            "error_code": "INVALID_FILTER",
+            "error": "Bộ lọc không hợp lệ. Hãy chọn lại trạng thái và loại nội dung.",
+        }
+    sql, args = _model(conn)
+    args.update(lane=lane, state=state, text=text, limit=limit, offset=offset)
+    where = "WHERE (:lane='' OR lane=:lane) AND (:state='' OR state=:state) AND (:text='' OR instr(lower(natural_key),lower(:text))>0)"
+    summary = dict.fromkeys(STATES, 0)
+    summary.update(FULL=0, PARTIAL=0, stale=0, UNSUPPORTED=0)
+    # v5 capability authority is applied per record in states(); the queue
+    # summary uses the same single CTE read, with no extra SQL round-trips.
+    legacy_count = 0
+    try:
+        for row in conn.execute(
+            sql
+            + "SELECT state,supported,legacy,completeness,COUNT(*) n FROM entries GROUP BY state,supported,legacy,completeness",
+            args,
         ):
-            item = dict(r)
-            item["state"] = next(
-                s["state"]
-                for s in states(conn, item["source_record_id"])
-                if s["lane"] == item["lane"]
+            if row["completeness"] in ("FULL", "PARTIAL"):
+                summary[row["completeness"]] += row["n"]
+            if row["state"] == "STALE":
+                summary["stale"] += row["n"]
+            if row["state"] in ("UNSUPPORTED", "BLOCKED") or (row["supported"] and not row["legacy"]):
+                summary[row["state"]] += row["n"]
+            else:
+                legacy_count += row["n"]
+        total = conn.execute(sql + "SELECT COUNT(*) FROM entries " + where, args).fetchone()[0]
+        rows = [
+            _row(r)
+            for r in conn.execute(
+                sql
+                + "SELECT * FROM entries "
+                + where
+                + """
+          ORDER BY CASE state WHEN 'FAILED' THEN 0 WHEN 'PARSE_ERROR' THEN 1 WHEN 'BLOCKED' THEN 2
+            WHEN 'STALE' THEN 3 WHEN 'NOT_COLLECTED' THEN 4 ELSE 5 END,
+          source_record_id,lane,row_key LIMIT :limit OFFSET :offset""",
+                args,
             )
-            item.update(
-                completeness=item["state"],
-                stale=item["state"] == "STALE",
-                captured_at_utc=item["updated_at_utc"],
-            )
-            rows.append(item)
-    eligible = conn.execute(
-        "SELECT COUNT(*) FROM source_records r JOIN source_record_versions v ON v.source_record_id=r.id AND v.content_version_seq=r.current_content_version WHERE r.family='TBMT' AND json_extract(v.normalized_json,'$.bidForm')='CGTTRG'"
-    ).fetchone()[0]
-    summary = dict.fromkeys(
-        ("FETCHED", "SOURCE_EMPTY", "PARSE_ERROR", "BLOCKED", "FAILED", "STALE", "NOT_COLLECTED"), 0
-    )
-    if exists:
-        for r in conn.execute(
-            "SELECT CASE WHEN t.state IN ('FETCHED','SOURCE_EMPTY') AND "
-            "(t.listing_object_sha<>s.current_record_object_sha OR c.stale=1 OR c.refresh_due_at_utc<strftime('%Y-%m-%dT%H:%M:%SZ','now')) "
-            "THEN 'STALE' ELSE t.state END AS display_state,COUNT(*) "
-            "FROM deep_tasks t JOIN source_records s ON s.id=t.source_record_id "
-            "LEFT JOIN deep_captures c ON c.id=t.capture_id GROUP BY display_state"
-        ):
-            summary[r[0]] = r[1]
-        attempted = conn.execute("SELECT COUNT(*) FROM deep_tasks").fetchone()[0]
-    else:
-        attempted = 0
-    summary["NOT_COLLECTED"] = max(0, eligible * len(LANES) - attempted)
-    from santhau_studio.storage.deep_metadata import state_counts
-    display_counts = state_counts(conn)
-    summary["UNSUPPORTED"] = display_counts.get("UNSUPPORTED", 0)
-    summary["BLOCKED"] = display_counts.get("BLOCKED", 0)
-    # Preserve visibility of pre-migration captures, which have no operational task row.
-    for legacy in conn.execute(
-        "SELECT c.*,s.family,s.natural_key FROM deep_captures c JOIN source_records s ON s.id=c.source_record_id"
-    ):
-        if any(
-            r["source_record_id"] == legacy["source_record_id"] and r["lane"] == legacy["lane"]
-            for r in rows
-        ):
-            continue
-        item = dict(legacy)
-        item["state"] = (
-            "STALE"
-            if item["stale"]
-            else ("FETCHED" if item["completeness"] == "FULL" else "PARSE_ERROR")
-        )
-        item["needs_refresh"] = bool(item["stale"]) or item["completeness"] != "FULL"
-        rows.append(item)
-    summary["FULL"] = conn.execute(
-        "SELECT COUNT(*) FROM deep_captures WHERE completeness='FULL'"
-    ).fetchone()[0]
-    summary["PARTIAL"] = conn.execute(
-        "SELECT COUNT(*) FROM deep_captures WHERE completeness='PARTIAL'"
-    ).fetchone()[0]
-    summary["stale"] = conn.execute("SELECT COUNT(*) FROM deep_captures WHERE stale=1").fetchone()[
-        0
-    ]
+        ]
+    except sqlite3.Error:
+        return {
+            "present": True,
+            "rows": [],
+            "summary": {},
+            "error_code": "READ_FAILED",
+            "error": "Không đọc được trạng thái thu thập. Hãy tải lại hoặc kiểm tra kho dữ liệu.",
+        }
     return {
         "present": True,
         "rows": rows,
         "summary": summary,
-        "scope": "Chỉ CGTTRG/TBMT đã xác minh; số trạng thái theo hồ sơ / lane",
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + len(rows) < total,
+        "eligible_total": sum(summary[s] for s in STATES),
+        "legacy_count": legacy_count,
+        "scope": "TBMT chào giá trực tuyến rút gọn · mỗi hồ sơ có 3 nội dung cần lấy",
         "lanes": [{"lane": lane, "state": "PUBLIC_CGTTRG"} for lane in LANES]
         + [{"lane": lane, "state": "BLOCKED"} for lane in ("BOQ", "KQLCNT_FULL")],
     }

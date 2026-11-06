@@ -25,6 +25,8 @@ def test_record_labels_and_search_pagination_use_page_data(tmp_path):
     record.setProperty("state", engine.toScriptValue({"record": {"family": "TBMT", "natural_key": "IB-BINDING"},
                                                      "history_counts": {"versions": 37}}))
     record.setProperty("history", engine.toScriptValue({"rows": [{}]}))
+    record.setProperty("sourceMode", False)
+    record.findChild(QObject, "recordSection").setProperty("currentIndex", 4)
     explorer.setProperty("state", engine.toScriptValue({"hits": [{"record_id": 1, "natural_key": "IB-BINDING", "family": "TBMT"}],
                                                        "next_cursor": "cursor-next"}))
     explorer.setProperty("busy", False)
@@ -33,7 +35,8 @@ def test_record_labels_and_search_pagination_use_page_data(tmp_path):
     next_page = next(o for o in explorer.findChildren(QObject) if o.property("text") == "Trang sau")
     try:
         assert any(isinstance(t, str) and "IB-BINDING" in t for t in labels)
-        assert "1 dòng / 37" in labels
+        count = record.findChild(QObject, "recordHistoryCount").property("text")
+        assert "1 dòng" in count and "37 dòng" in count
         assert next_page.property("enabled") is True
         assert window.findChild(QObject, "searchResults").property("count") == 1
     finally:

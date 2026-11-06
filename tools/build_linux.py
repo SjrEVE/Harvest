@@ -12,8 +12,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "build/linux"
-VERSION = "0.0.1~rc3-4"
-BUNDLE_VERSION = "0.0.1-RC3-4"
+VERSION = "0.0.1~rc3-5"
+BUNDLE_VERSION = "0.0.1-RC3-5"
 
 
 def run(*args):
@@ -25,23 +25,45 @@ def sha(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def source_inputs() -> dict[str, str]:
+    """Every source input, tracked or not; excludes caches and build outputs."""
+    paths = [ROOT / name for name in ("pyproject.toml", "uv.lock", "docs/linux-collector.md",
+                                      "tools/build_linux.py")]
+    for directory in ("src", "packaging/linux", "docs/ddl"):
+        paths.extend(
+            path for path in (ROOT / directory).rglob("*")
+            if path.is_file()
+            and "__pycache__" not in path.parts
+            and path.suffix not in (".pyc", ".pyo")
+        )
+    return {p.relative_to(ROOT).as_posix(): sha(p) for p in sorted(set(paths))}
+
+
 def main():
     if sys.platform != "linux" or os.uname().machine != "x86_64":
         raise RuntimeError("Build requires Linux x86-64")
     OUT.mkdir(parents=True, exist_ok=True)
-    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
-    dirty = bool(
-        subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip()
-    )
-    files = subprocess.check_output(
-        ["git", "ls-files", "src", "packaging/linux", "tools/build_linux.py", "docs/ddl", "docs/linux-collector.md", "pyproject.toml", "uv.lock"],
-        cwd=ROOT,
-        text=True,
-    ).splitlines()
+    # This worktree has a linked .git pointer that is invalid inside Docker. The
+    # Windows host captures the real base commit + full input set first; Linux
+    # attests against that exact manifest instead of fabricating a commit.
+    captured_path = ROOT / "build" / "source-manifest.json"
+    if not captured_path.is_file():
+        raise RuntimeError(
+            "Missing build/source-manifest.json: run tools/release_manifest.py capture on the build host first"
+        )
+    captured = json.loads(captured_path.read_text(encoding="utf-8"))
+    head = captured["base_commit"]
+    dirty = captured["working_tree_dirty"]
+    current_inputs = source_inputs()
+    missing = [name for name, digest in current_inputs.items()
+               if captured.get("inputs", {}).get(name) != digest]
+    if missing:
+        raise RuntimeError(f"Source manifest mismatch (Windows vs Linux): {missing[:5]}")
     manifest = {
         "source_commit": head,
         "working_tree_dirty": dirty,
-        "inputs": {p: sha(ROOT / p) for p in files},
+        "inputs": current_inputs,
+        "source_manifest_sha256": sha(captured_path),
         "platform": "linux-x86_64",
         "minimum_glibc": "2.35",
         "gui": False,
@@ -101,6 +123,7 @@ def main():
         "--include-data-files=docs/ddl/003_attempt_telemetry.sql=docs/ddl/003_attempt_telemetry.sql",
         "--include-data-files=docs/ddl/004_deep_parser_metadata.sql=docs/ddl/004_deep_parser_metadata.sql",
         "--include-data-files=docs/ddl/005_scoped_maintenance.sql=docs/ddl/005_scoped_maintenance.sql",
+        "--include-data-files=docs/ddl/006_missing_only_policy.sql=docs/ddl/006_missing_only_policy.sql",
         "--include-data-files=packaging/linux/config/egp-profile.json=config/egp-profile.json",
         f"--include-data-files={info}=config/build-info.json",
         *(f"--nofollow-import-to={name}" for name in excluded),
@@ -206,8 +229,12 @@ Description: San Thau collector-only service
     manifest["package_version"] = VERSION
     manifest["installed_file_bytes"] = sum(p.stat().st_size for p in dist.rglob("*") if p.is_file())
     manifest["artifact_bytes"] = {p.name: p.stat().st_size for p in (deb, archive)}
+    # Detect BOTH changed hashes and a changed input set (new/deleted files).
+    final_inputs = source_inputs()
+    if set(final_inputs) != set(manifest["inputs"]):
+        raise RuntimeError("Source input-set drift during build")
     for name, digest in manifest["inputs"].items():
-        if sha(ROOT / name) != digest:
+        if final_inputs[name] != digest:
             raise RuntimeError("Source changed during build")
     (OUT / "release-manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     (OUT / "SHA256SUMS").write_text(
