@@ -98,6 +98,7 @@ def main():
         "--include-package-data=certifi",
         "--include-data-files=docs/ddl/g0_b_proposed.sql=docs/ddl/g0_b_proposed.sql",
         "--include-data-files=docs/ddl/002_public_deep.sql=docs/ddl/002_public_deep.sql",
+        "--include-data-files=docs/ddl/003_attempt_telemetry.sql=docs/ddl/003_attempt_telemetry.sql",
         "--include-data-files=packaging/linux/config/egp-profile.json=config/egp-profile.json",
         f"--include-data-files={info}=config/build-info.json",
         *(f"--nofollow-import-to={name}" for name in excluded),

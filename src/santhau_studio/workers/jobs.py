@@ -107,6 +107,14 @@ class JobRequest:
             pacing = self.request_limits["pacing_seconds"]
             if type(pacing) not in (int,float) or not 3 <= pacing <= 300:
                 raise JobError("pacing_seconds must be 3..300")
+        if "max_attempts" in self.request_limits:
+            value = self.request_limits["max_attempts"]
+            if type(value) is not int or not 1 <= value <= 5:
+                raise JobError("max_attempts must be 1..5")
+        if "connect_timeout_seconds" in self.request_limits:
+            value = self.request_limits["connect_timeout_seconds"]
+            if type(value) not in (int, float) or not 15 <= value <= 20:
+                raise JobError("connect_timeout_seconds must be 15..20")
 
     @classmethod
     def from_json(cls, text: str) -> JobRequest:
@@ -364,6 +372,7 @@ class WorkerLoop:
                          **value, **self._weekly_progress, "updated_at": _now()}
 
     def runtime_status(self):
+        from santhau_studio.collectors.network_status import snapshot as network_snapshot
         phase = self._phase
         current = self._current
         if phase not in ("STOPPED", "FAILED"):
@@ -378,7 +387,8 @@ class WorkerLoop:
         return {"phase": phase, "step": self._phase, "phase_since": self._phase_since,
                 "observed_at": _now(), "current_job_id": current.job_id if current else None,
                 "last_job_id": self._last_job_id, "pending_actions": pending,
-                "progress": dict(self.progress) if current else {}, "snapshot_error": self.snapshot_error}
+                "progress": dict(self.progress) if current else {}, "snapshot_error": self.snapshot_error,
+                "network": network_snapshot()}
 
     # -- called from the IPC thread
     def post_command(self, *, job_id: str | None, command: str, sid: str) -> None:

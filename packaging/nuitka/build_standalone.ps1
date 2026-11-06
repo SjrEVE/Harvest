@@ -69,6 +69,7 @@ Write-Host '--- building SanThauCollector.exe (headless worker) ---'
     --windows-file-description='San Thau Data Studio Collector 0.0.1-RC3' `
     --include-data-files=docs/ddl/g0_b_proposed.sql=docs/ddl/g0_b_proposed.sql `
     --include-data-files=docs/ddl/002_public_deep.sql=docs/ddl/002_public_deep.sql `
+    --include-data-files=docs/ddl/003_attempt_telemetry.sql=docs/ddl/003_attempt_telemetry.sql `
     --output-dir=$Out `
     --output-filename=SanThauCollector.exe `
     --remove-output `

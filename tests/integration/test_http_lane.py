@@ -66,7 +66,7 @@ def lane_for(recorder: Recorder, *, sleeps: list[float], max_attempts: int = 3) 
         url=URL,
         source_key="egp_home",
         client=recorder.client(),
-        retry=network_policy.RetryPolicy(max_attempts=max_attempts),
+        retry=network_policy.RetryPolicy(max_attempts=max_attempts, jitter_fraction=0),
         sleeper=sleeps.append,
         pacing_sleeper=_consume,
     )

@@ -8,20 +8,32 @@ import sys
 import time
 from pathlib import Path
 
-from santhau_studio.platform_win.os_lock import DataRootLock
+from santhau_studio.platform_win.os_lock import DataRootBusy, DataRootLock
 
 
 class HostRequestGate:
-    def __init__(self, host: str, interval: float) -> None:
+    def __init__(self, host: str, interval: float, *, budget=None) -> None:
         base = (Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
                 if sys.platform == 'win32' else Path(os.environ.get('XDG_STATE_HOME') or Path.home() / '.local/state'))
         root = base / "SanThauDataStudio" / "network" / hashlib.sha256(host.lower().encode()).hexdigest()[:24]
         self.lock = DataRootLock(root, role="host-request")
         self.state = root / "next-request.txt"
         self.delay = max(0.0, interval)
+        self.budget = budget
 
     def __enter__(self):
-        self.lock.acquire(retries=1200, retry_delay_seconds=0.05)
+        if self.budget is None:
+            self.lock.acquire(retries=1200, retry_delay_seconds=0.05)
+        else:
+            for attempt in range(1201):
+                self.budget.check_time()
+                try:
+                    self.lock.acquire()
+                    break
+                except DataRootBusy:
+                    if attempt == 1200:
+                        raise
+                    self.budget.sleep(0.05, time.sleep)
         try:
             try:
                 next_request = float(self.state.read_text(encoding="ascii"))
@@ -29,7 +41,10 @@ class HostRequestGate:
                 next_request = 0.0
             remaining = next_request - time.time()
             if remaining > 0:
-                time.sleep(remaining)
+                if self.budget:
+                    self.budget.sleep(remaining, time.sleep)
+                else:
+                    time.sleep(remaining)
         except BaseException:
             self.lock.release()
             raise

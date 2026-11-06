@@ -10,6 +10,15 @@ class RequestBudget:
         self.limit, self.used, self.clock = requests, 0, clock
         self.deadline = clock() + seconds
 
+    @property
+    def remaining_seconds(self):
+        return max(0.0, self.deadline - self.clock())
+
+    def check_time(self):
+        if self.remaining_seconds <= 0:
+            from santhau_studio.collectors.http_client import FetchFailed
+            raise FetchFailed("REQUEST_DEADLINE_EXCEEDED")
+
     def check(self, delay=0):
         if self.used >= self.limit or self.clock() + delay >= self.deadline:
             from santhau_studio.collectors.http_client import FetchFailed

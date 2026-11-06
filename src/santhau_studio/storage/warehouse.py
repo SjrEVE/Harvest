@@ -189,6 +189,8 @@ class WarehouseWriter:
         self, *, run_id: str, family: str, endpoint: str, interval_from: str, interval_to: str,
         page_no: int, attempt_no: int, outcome: str, response: ObjectRef | None, http_status: int = 200,
         error_kind: str | None = None,
+        started_at_utc: str | None = None, finished_at_utc: str | None = None,
+        elapsed_seconds: float | None = None, wait_seconds: float | None = None,
     ) -> int:
         """Retry creates an attempt, never a new request (§3.3 rule 3)."""
         fingerprint = _request_fingerprint(family, endpoint, interval_from, interval_to, page_no)
@@ -208,10 +210,14 @@ class WarehouseWriter:
         cur = self.conn.execute(
             "INSERT INTO fetch_attempts (request_id, attempt_no, started_at_utc, finished_at_utc, outcome,"
             " http_status, response_object_sha, byte_len, error_kind) VALUES (?,?,?,?,?,?,?,?,?)",
-            (request_id, attempt_no, _now(), _now(), outcome, http_status, response.sha256 if response else None,
+            (request_id, attempt_no, started_at_utc or _now(), finished_at_utc or _now(), outcome, http_status, response.sha256 if response else None,
              response.byte_len if response else None, error_kind),
         )
-        return int(cur.lastrowid)
+        attempt_id = int(cur.lastrowid)
+        if elapsed_seconds is not None:
+            self.conn.execute("INSERT INTO fetch_attempt_telemetry VALUES(?,?,?)",
+                (attempt_id, max(0.0, elapsed_seconds), max(0.0, wait_seconds or 0.0)))
+        return attempt_id
 
     def _register_object(self, ref: ObjectRef) -> None:
         self.conn.execute(

@@ -105,8 +105,8 @@ def run_worker(root, *, offline=False, idle_exit=None):
         last_log = 0
         while worker.is_alive():
             worker.join(0.2)
-            if loop.progress and time.monotonic() - last_log >= 30:
-                output({"progress": loop.progress})
+            if time.monotonic() - last_log >= 30:
+                output({"progress": loop.progress, "runtime": loop.runtime_status()})
                 last_log = time.monotonic()
     finally:
         stop.set()
@@ -234,6 +234,8 @@ def parser():
     enqueue.add_argument("--max-requests", type=int, default=3000)
     enqueue.add_argument("--max-seconds", type=int, default=3600)
     enqueue.add_argument("--pacing-seconds", type=float, default=3)
+    enqueue.add_argument("--connect-timeout-seconds", type=float, default=15)
+    enqueue.add_argument("--max-attempts", type=int, default=4)
     run = sub.add_parser(
         "run", parents=[common], help="Chạy bộ thu thập; SIGTERM lưu và xếp lại tác vụ dở"
     )
@@ -280,7 +282,7 @@ def main(argv=None):
         if args.command == "enqueue":
             limits = {
                 key: getattr(args, key)
-                for key in ("max_pages", "max_requests", "max_seconds", "pacing_seconds")
+                for key in ("max_pages", "max_requests", "max_seconds", "pacing_seconds", "connect_timeout_seconds", "max_attempts")
             }
             jobs = make_jobs(
                 root,

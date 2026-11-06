@@ -77,7 +77,7 @@ def test_auto_deep_runs_inside_parent_without_resetting_pause_or_current_job(tmp
         loop._dispatch = dispatch
         assert run_batch(loop, "parent-run") == 1
         assert loop._current is parent and loop.flag.interrupt_requested
-        assert len(seen) == 1 and seen[0].request_limits["max_requests"] == 1
+        assert len(seen) == 1 and seen[0].request_limits["max_requests"] <= 4
     finally:
         writer.close()
 
@@ -116,6 +116,24 @@ def test_idle_automatic_collection_stays_paused_with_user_job(tmp_path):
         loop._paused_jobs.add("paused-parent")
         assert not enqueue_idle_batch(loop)
         assert not list((tmp_path / "jobs" / "queued").glob("*.json"))
+    finally:
+        writer.close()
+
+
+def test_automatic_retry_budget_is_shared_between_record_jobs(tmp_path):
+    writer = seed_records(tmp_path)
+    try:
+        make_eligible(writer)
+        configure(writer.conn, {"enabled": True, "batch_requests": 6})
+        loop = WorkerLoop(tmp_path)
+        loop._writer = writer
+        limits = []
+        def dispatch(request, _run_id):
+            limits.append(request.request_limits["max_requests"])
+            return "FAILED", {"requests_used": request.request_limits["max_requests"]}
+        loop._dispatch = dispatch
+        assert run_batch(loop) == 2
+        assert limits == [4, 2]
     finally:
         writer.close()
 

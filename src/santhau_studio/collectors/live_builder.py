@@ -4,6 +4,7 @@ import json
 
 from santhau_studio.collectors.budget import RequestBudget
 from santhau_studio.collectors.lane_source import egp_page_source
+from santhau_studio.collectors.network_policy import RetryPolicy
 from santhau_studio.collectors.source_registry import SOURCES
 
 
@@ -26,6 +27,8 @@ def live_builder(writer, request):
         pacing_seconds=limits.get("pacing_seconds", 3),
         budget=budget,
         lane_factory=lambda: FetchLane(
-            url=f"https://{SOURCES[key].host}{SOURCES[key].endpoint}", source_key=key, budget=budget
+            url=f"https://{SOURCES[key].host}{SOURCES[key].endpoint}", source_key=key, budget=budget,
+            connect_timeout_seconds=limits.get("connect_timeout_seconds", 15),
+            retry=RetryPolicy(max_attempts=limits.get("max_attempts", 4)),
         ),
     )

@@ -21,7 +21,8 @@ class PublicDeepFetcher:
             min(30, limits.get("max_requests", 30)), limits.get("max_seconds", 300)
         )
         self.pacing = max(3, limits.get("pacing_seconds", 3))
-        self.retry = RetryPolicy(max_attempts=min(3, limits.get("max_attempts", 3)))
+        self.retry = RetryPolicy(max_attempts=limits.get("max_attempts", 4))
+        self.connect_timeout_seconds = limits.get("connect_timeout_seconds", 15)
         self.receipt = {}
 
     def fetch_record(self, record):
@@ -54,7 +55,8 @@ class PublicDeepFetcher:
             "expected_version": raw.get("notifyVersion"),
         }
         with FetchLane(
-            url=endpoint, source_key="egp_public_cgttrg", budget=self.budget, retry=self.retry
+            url=endpoint, source_key="egp_public_cgttrg", budget=self.budget, retry=self.retry,
+            connect_timeout_seconds=self.connect_timeout_seconds,
         ) as lane:
             try:
                 result = lane.post(body, min_interval=self.pacing)

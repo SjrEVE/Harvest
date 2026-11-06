@@ -338,7 +338,9 @@ class Runner:
             self.writer.ensure_attempt(run_id=run_id, family=self.family, endpoint=self.endpoint,
                 interval_from=_iso(outcome.interval.from_utc), interval_to=_iso(outcome.interval.to_utc),
                 page_no=page_no, attempt_no=attempt.attempt_no, outcome=_ddl_outcome(attempt),
-                http_status=attempt.http_status, error_kind=attempt.error_kind, response=None)
+                http_status=attempt.http_status, error_kind=attempt.error_kind, response=None,
+                started_at_utc=attempt.started_at_utc, finished_at_utc=attempt.finished_at_utc,
+                elapsed_seconds=attempt.elapsed_seconds, wait_seconds=attempt.wait_seconds)
 
         if isinstance(exc, AccessBlocked):
             outcome.status = "BLOCKED"
@@ -370,6 +372,8 @@ class Runner:
                 response=response_ref if succeeded else None,
                 http_status=attempt.http_status,
                 error_kind=attempt.error_kind,
+                started_at_utc=attempt.started_at_utc, finished_at_utc=attempt.finished_at_utc,
+                elapsed_seconds=attempt.elapsed_seconds, wait_seconds=attempt.wait_seconds,
             )
             if succeeded:
                 attempt_id = recorded
@@ -574,7 +578,7 @@ def _ddl_outcome(attempt: Attempt) -> str:
     mapped = _LANE_OUTCOME_TO_DDL.get(attempt.outcome)
     if mapped is not None:
         return mapped
-    if "timeout" in (attempt.error_kind or "").lower():
+    if any(token in (attempt.error_kind or "").lower() for token in ("timeout", "deadline")):
         return "TIMEOUT"
     return "HTTP_ERROR"
 

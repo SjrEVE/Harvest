@@ -16,6 +16,7 @@ MIGRATIONS: tuple[tuple[int, str, Path], ...] = (
     # (version, name, sql file). v1 is the frozen G0-B contract; later entries are additive.
     (1, "g0_b_contract", Path("docs/ddl/g0_b_proposed.sql")),
     (2, "public_deep_checkpoints", Path("docs/ddl/002_public_deep.sql")),
+    (3, "attempt_telemetry", Path("docs/ddl/003_attempt_telemetry.sql")),
 )
 
 

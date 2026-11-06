@@ -96,9 +96,10 @@ def run_batch(loop, parent_run=None):
     selected = candidates(loop._writer.conn, config["batch_requests"])
     previous_phase, previous_progress = loop._phase, loop.progress
     completed = 0
+    requests_used = 0
     try:
         for target in selected:
-            if loop.flag.interrupt_requested:
+            if loop.flag.interrupt_requested or requests_used >= config["batch_requests"]:
                 break
             request = JobRequest(
                 job_id="auto-deep-" + uuid.uuid4().hex[:16],
@@ -107,8 +108,8 @@ def run_batch(loop, parent_run=None):
                 sources=({"source_key": "egp_home", "family": "TBMT"},),
                 scope={"record_ids": [target["id"]]},
                 request_limits={
-                    "max_requests": 1,
-                    "max_attempts": 1,
+                    "max_requests": min(4, config["batch_requests"] - requests_used),
+                    "max_attempts": 4,
                     "max_seconds": 90,
                     "pacing_seconds": 3,
                 },
@@ -150,6 +151,7 @@ def run_batch(loop, parent_run=None):
                 ),
             )
             completed += 1
+            requests_used += max(1, detail.get("requests_used", 1))
     finally:
         loop._set_phase(previous_phase)
         loop.progress = previous_progress

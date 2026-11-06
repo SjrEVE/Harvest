@@ -159,6 +159,8 @@ def make_jobs(root, *, mode="BACKFILL", family="ALL", first=None, last=None, lim
         "max_requests": 3000,
         "max_seconds": 3600,
         "pacing_seconds": 3,
+        "connect_timeout_seconds": 15,
+        "max_attempts": 4,
         **(limits or {}),
     }
     if mode == "BACKFILL" and family == "ALL":
