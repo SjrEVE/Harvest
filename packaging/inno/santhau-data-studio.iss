@@ -8,8 +8,8 @@
 ; Build:  iscc /DStageDir=<absolute path to build\stage> packaging\inno\santhau-data-studio.iss
 
 #define MyAppName      "Săn Thầu — Kho dữ liệu"
-#define MyAppVersion   "0.0.1-RC3-7"
-#define MyWindowsVersion "0.0.1.7"
+#define MyAppVersion   "0.0.1-RC3-8"
+#define MyWindowsVersion "0.0.1.8"
 #define MyAppPublisher "Gia Su AI"
 #define MyAppExeName   "SanThauDataStudio.exe"
 
@@ -35,7 +35,7 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=..\..\build\inno
-OutputBaseFilename=SanThau-Data-Studio-Setup-0.0.1-RC3-7
+OutputBaseFilename=SanThau-Data-Studio-Setup-0.0.1-RC3-8
 Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible

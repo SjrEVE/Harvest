@@ -1,6 +1,6 @@
 [project]
 name = "santhau-data-studio"
-version = "0.0.1rc3.post7"
+version = "0.0.1rc3.post8"
 description = "Săn Thầu Data Studio — Windows procurement data collection, verification and exploration workbench"
 requires-python = "==3.12.*"
 dependencies = [
