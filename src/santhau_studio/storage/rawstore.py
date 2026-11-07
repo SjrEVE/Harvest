@@ -218,7 +218,8 @@ class RawObjectStore:
         rows = {row["sha256"]: row for row in conn.execute("SELECT sha256, storage_rel_path FROM raw_objects")}
         files = self.known_shas()
 
-        missing_files = sorted(set(rows) - files)
+        missing_file_set = set(rows) - files
+        missing_files = sorted(missing_file_set)
         orphan_files = sorted(files - set(rows))
         unreadable: list[tuple[str, str]] = []
         for sha in sorted(set(rows) & files):
@@ -240,7 +241,7 @@ class RawObjectStore:
                     "INSERT INTO integrity_repairs (target_kind, target_ref, finding, action, acted_at_utc, run_id, detail_json)"
                     " VALUES (?, ?, ?, 'MARK_CORRUPT', ?, ?, ?)",
                     (
-                        "OBJECT_ROW_ORPHAN" if sha in missing_files else "HASH",
+                        "OBJECT_ROW_ORPHAN" if sha in missing_file_set else "HASH",
                         sha,
                         detail,
                         stamp,

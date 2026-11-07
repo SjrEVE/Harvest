@@ -198,7 +198,7 @@ def parser():
         prog="santhau-collector",
         description="Bộ thu thập Linux: sáu loại, theo tuần, không giao diện/thống kê.",
     )
-    cli.add_argument("--version", action="version", version="Săn Thầu Collector 0.0.1-RC3-8 (Linux x86-64)")
+    cli.add_argument("--version", action="version", version="Săn Thầu Collector 0.0.1-RC3-9 (Linux x86-64)")
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "--data-root",
