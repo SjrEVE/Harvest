@@ -23,9 +23,16 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from santhau_studio.collectors.live_builder import live_builder
+from santhau_studio.domain.ai_bridge import emit as ai_emit
 from santhau_studio.platform_win.process import current_process_sid, register_runtime
 from santhau_studio.platform_win.shutdown_signal import open_shutdown_event, shutdown_requested
-from santhau_studio.workers.ipc import PipeNameConflictError, PipeServer, worker_pipe_name
+from santhau_studio.workers.ai_control import AIControlServer
+from santhau_studio.workers.ipc import (
+    PipeNameConflictError,
+    PipeServer,
+    PipeTransportError,
+    worker_pipe_name,
+)
 from santhau_studio.workers.jobs import WorkerController, WorkerLoop
 from santhau_studio.workers.maintenance import ACTIONS, perform
 
@@ -83,6 +90,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         help="thoát khi hàng đợi trống đủ lâu (scheduled runs)")
     args = parser.parse_args(argv)
 
+    from santhau_studio.workers import ai_control
+    ai_control.configure(args.data_root)
+    ai_emit("STARTING", worker_pid=os.getpid())
+
     shutdown_handle = open_shutdown_event()
     if shutdown_requested(shutdown_handle):
         return EXIT_OK
@@ -135,6 +146,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     stop = threading.Event()
     loop_thread = threading.Thread(target=loop.run, args=(stop,), name="santhau-worker", daemon=True)
     pipe_thread = threading.Thread(target=server.serve_until, args=(stop,), name="santhau-pipe", daemon=True)
+    ai_stop = threading.Event()
+    ai_server = None
+    try:
+        ai_server = AIControlServer(data_root=args.data_root)
+        threading.Thread(target=ai_server.serve_until, args=(ai_stop,),
+                         name="santhau-ai", daemon=True).start()
+    except (PipeNameConflictError, PipeTransportError, RuntimeError, OSError) as exc:
+        _log_failure(args.data_root, f"AI control lane unavailable: {exc}")
+        ai_server = None  # observation is optional; never fail the worker
+    ai_emit("IDLE", worker_pid=os.getpid())
     loop_thread.start()
     pipe_thread.start()
     while loop_thread.is_alive():
@@ -143,6 +164,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             stop.set()
         loop_thread.join(timeout=0.1)
     stop.set()
+    ai_emit("STOPPED", worker_pid=os.getpid())
+    ai_stop.set()
+    if ai_server is not None:
+        ai_server.wake()
     server.wake()
     pipe_thread.join(timeout=5)
     controller.close()

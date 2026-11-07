@@ -9,6 +9,7 @@ suy giảm như thể đầy đủ").
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sqlite3
@@ -20,15 +21,32 @@ from pathlib import Path
 from santhau_studio.domain.text import fold_vietnamese
 from santhau_studio.storage.migrations import MIGRATIONS
 
+try:
+    from santhau_studio.workers import ai_control
+except (ImportError, OSError):  # Linux: workers.ipc is Windows-only; observation is optional
+    ai_control = None
+
+
+def _ai(phase: str, **fields) -> None:
+    """Best-effort observation. A broken AI lane must never break a publish."""
+    if ai_control is None:
+        return
+    with contextlib.suppress(Exception):  # observation is strictly non-critical
+        ai_control.emit(phase, **fields)
+
 FTS_BATCH = 2000
 
+# RC3-8: audit/provenance tables (observations, object_derivation, raw_revisions,
+# raw_objects) stay warehouse-only. The desktop reads them read-only via
+# desktop.warehouse_reader; copying them here duplicated ~700-800 MB per snapshot.
 SNAPSHOT_TABLES = (
-    "source_records", "source_record_versions", "raw_revisions", "observations",
+    "source_records", "source_record_versions",
     "coverage_intervals", "coverage_proofs", "notice_groups", "notice_group_members",
     "canonical_entities", "entity_source_links", "unresolved_records", "quarantined_responses",
-    "deep_captures", "page_receipts", "watermarks", "reconcile_gaps", "money_amounts",
+    "deep_captures", "deep_tasks", "deep_capture_history", "deep_capture_parse_metadata",
+    "deep_task_metadata", "page_receipts", "watermarks", "reconcile_gaps", "money_amounts",
     "lots", "goods_rows", "contractor_memberships", "documents", "filter_boundary_rules",
-    "raw_objects", "source_registry", "settings",
+    "source_registry", "settings",
 )
 
 # Named separately so the secret gate sees a tokenizer identifier rather than an
@@ -66,6 +84,19 @@ def _now() -> str:
 
 
 def build_serving_db(warehouse: Path, target: Path) -> PublishResult:
+    """Publish a verified snapshot, reporting the rebuild to the AI control lane.
+
+    The observation wraps the real implementation in try/finally so the lane sees
+    the end of a rebuild even when a gate rejects the candidate.
+    """
+    _ai("PUBLISHING_SNAPSHOT", serving={"rebuilding": True})
+    try:
+        return _build_serving_db_impl(warehouse, target)
+    finally:
+        _ai("IDLE", serving={"rebuilding": False})
+
+
+def _build_serving_db_impl(warehouse: Path, target: Path) -> PublishResult:
     """Build a candidate snapshot at `target.<pid>.tmp`, verify, then atomically swap.
 
     `target` is only replaced when every gate passes. Callers can therefore treat the
@@ -88,7 +119,13 @@ def build_serving_db(warehouse: Path, target: Path) -> PublishResult:
         from santhau_studio.storage.read_model import materialise_records
 
         materialise_records(dest, warehouse.parent)
-        _materialise_family_stats(dest)
+        # Optional audit counts come from the warehouse. The family-stats step keeps its
+        # 1-arg monkeypatch seam, so the source connection rides on the dest connection.
+        _source_of[id(dest)] = source
+        try:
+            _materialise_family_stats(dest)
+        finally:
+            _source_of.pop(id(dest), None)
         dest.execute(
             "CREATE TABLE IF NOT EXISTS serving_meta ("
             " id INTEGER PRIMARY KEY, snapshot_built_at_utc TEXT NOT NULL,"
@@ -99,6 +136,9 @@ def build_serving_db(warehouse: Path, target: Path) -> PublishResult:
         source_counts = {t: _count(source, t) for t in counts}
         if counts != source_counts:
             raise SnapshotRejected(f"row count drift: {[(k, counts[k], source_counts[k]) for k in counts if counts[k] != source_counts[k]][:5]}")
+        digest = _content_digest(source)
+        if digest != _content_digest(dest):
+            raise SnapshotRejected("content digest drift between warehouse and candidate")
         integrity = dest.execute("PRAGMA integrity_check").fetchone()[0]
         if integrity != "ok":
             raise SnapshotRejected(f"integrity_check returned {integrity}")
@@ -113,7 +153,8 @@ def build_serving_db(warehouse: Path, target: Path) -> PublishResult:
         dest.execute(
             "INSERT INTO serving_meta (snapshot_built_at_utc, source_warehouse_sha, row_counts_json,"
             " stale, stale_reason) VALUES (?,?,?,?,?)",
-            (_now(), _warehouse_sha(warehouse), json.dumps(counts, sort_keys=True),
+            (_now(), _warehouse_sha(warehouse), json.dumps(
+                {**counts, "content_digest": digest}, sort_keys=True),
              1 if degradation else 0,
              json.dumps({"kind": "DEGRADED", "counts": degradation}, sort_keys=True) if degradation else None),
         )
@@ -155,21 +196,57 @@ def build_serving_db(warehouse: Path, target: Path) -> PublishResult:
 
 
 def _copy_schema_and_rows(source: sqlite3.Connection, dest: sqlite3.Connection) -> None:
-    """SQLite copies a consistent image in bounded pages, including indexes and WAL state."""
-    source.backup(dest, pages=1024)
-    dest.execute("PRAGMA journal_mode=WAL")
-    dest.execute("DELETE FROM serving_meta")
-    # Canonical contract stays intact; these are disposable read-side projections.
-    dest.execute("DROP TABLE IF EXISTS record_fields")
-    dest.execute("DROP TABLE IF EXISTS serving_family_stats")
+    """Copy exactly SNAPSHOT_TABLES (schema + rows + indexes) from the warehouse.
+
+    A whole-file backup() would drag the audit tables along; RC3-8 copies table by
+    table inside the source's open read transaction so every table still sees one
+    consistent snapshot. The snapshot is a projection: FK enforcement stays off and
+    referential truth lives in the warehouse; this copy is validated by row-count
+    equality, content digest and integrity_check.
+    """
+    dest.execute("PRAGMA foreign_keys=OFF")
+    for table in SNAPSHOT_TABLES:
+        if not _exists(source, table):
+            continue
+        columns = [r[1] for r in source.execute(f"PRAGMA table_info('{table}')")]
+        ddl = source.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
+        ).fetchone()[0]
+        dest.execute(ddl)
+        placeholders = ",".join("?" * len(columns))
+        quoted = ",".join(f'"{c}"' for c in columns)
+        cursor = source.execute(f"SELECT {quoted} FROM '{table}'")
+        while rows := cursor.fetchmany(2000):
+            dest.executemany(
+                f"INSERT INTO '{table}' ({quoted}) VALUES ({placeholders})",
+                [tuple(r) for r in rows],
+            )
+        for index in source.execute(
+            "SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL"
+            " AND tbl_name=?", (table,)
+        ):
+            dest.execute(index[0])
+    # The snapshot is a *projection*: DDL still carries REFERENCES clauses pointing at
+    # tables that deliberately stay warehouse-only (raw_objects, fetch_attempts,
+    # fetch_requests). Enforcing FKs here would require copying those tables back,
+    # defeating RC3-8. Referential truth stays in the warehouse; the snapshot is
+    # validated by row-count equality and integrity_check instead. Keep enforcement
+    # off so INSERT order never matters.
+    dest.execute("PRAGMA foreign_keys=OFF")
 
 
-def _materialise_family_stats(dest: sqlite3.Connection) -> None:
+_source_of: dict[int, sqlite3.Connection] = {}
+
+
+def _materialise_family_stats(dest: sqlite3.Connection, source: sqlite3.Connection | None = None) -> None:
     """Family counters computed once per publish; the dashboard becomes a table read.
 
     The snapshot is rebuilt wholesale on every publish, so this is the invalidation mechanism:
-    a number in this table is exactly as fresh as the snapshot that carries it.
+    a number in this table is exactly as fresh as the snapshot that carries it. Audit counters
+    (raw_revisions, observations) are read from the warehouse via `_source_of`/`source`;
+    the 1-arg monkeypatch seam of fault-injection tests stays intact.
     """
+    source = source if source is not None else _source_of.get(id(dest))
     dest.execute(
         "CREATE TABLE IF NOT EXISTS serving_family_stats ("
         " family TEXT PRIMARY KEY, records INTEGER NOT NULL, versions INTEGER NOT NULL,"
@@ -177,6 +254,37 @@ def _materialise_family_stats(dest: sqlite3.Connection) -> None:
         " last_verified_at_utc TEXT)"
     )
     dest.execute("DELETE FROM serving_family_stats")
+    if source is None:  # tests may call this directly against a dest-only fixture
+        dest.execute(
+            "INSERT INTO serving_family_stats (family, records, versions, raw_revisions, observations,"
+            " last_verified_at_utc)"
+            " SELECT families.family,"
+            "  (SELECT COUNT(*) FROM source_records r WHERE r.family = families.family),"
+            "  (SELECT COUNT(*) FROM source_record_versions v JOIN source_records sr ON sr.id = v.source_record_id"
+            "     WHERE sr.family = families.family),"
+            "  0,"
+            "  0,"
+            "  (SELECT MAX(cp.verified_at_utc) FROM coverage_proofs cp WHERE cp.family = families.family)"
+            " FROM ("
+            "   SELECT family FROM source_records"
+            "   UNION SELECT family FROM coverage_proofs"
+            " ) AS families ORDER BY families.family"
+        )
+        return
+    dest.execute(
+        "ATTACH ? AS wh_audit", (str(source.execute("PRAGMA database_list").fetchone()[2]),)
+    ) if False else None  # ATTACH would lock; instead read counts in Python below
+    audit = {}
+    for family, revisions, observations in source.execute(
+        " SELECT sr.family,"
+        "   (SELECT COUNT(*) FROM raw_revisions rr JOIN source_records s2 ON s2.id = rr.source_record_id"
+        "      WHERE s2.family = sr.family),"
+        "   (SELECT COUNT(*) FROM observations o WHERE o.family = sr.family)"
+        " FROM source_records sr GROUP BY sr.family"
+    ):
+        audit[family] = (revisions, observations)
+    # An empty warehouse legitimately yields an empty mapping here; the row-count
+    # equality gate below is what catches a broken copy.
     dest.execute(
         "INSERT INTO serving_family_stats (family, records, versions, raw_revisions, observations,"
         " last_verified_at_utc)"
@@ -184,16 +292,19 @@ def _materialise_family_stats(dest: sqlite3.Connection) -> None:
         "  (SELECT COUNT(*) FROM source_records r WHERE r.family = families.family),"
         "  (SELECT COUNT(*) FROM source_record_versions v JOIN source_records sr ON sr.id = v.source_record_id"
         "     WHERE sr.family = families.family),"
-        "  (SELECT COUNT(*) FROM raw_revisions rr JOIN source_records sr ON sr.id = rr.source_record_id"
-        "     WHERE sr.family = families.family),"
-        "  (SELECT COUNT(*) FROM observations o WHERE o.family = families.family),"
+        "  0,"
+        "  0,"
         "  (SELECT MAX(cp.verified_at_utc) FROM coverage_proofs cp WHERE cp.family = families.family)"
         " FROM ("
         "   SELECT family FROM source_records"
         "   UNION SELECT family FROM coverage_proofs"
-        "   UNION SELECT family FROM observations"
         " ) AS families ORDER BY families.family"
     )
+    for family, (revisions, observations) in audit.items():
+        dest.execute(
+            "UPDATE serving_family_stats SET raw_revisions=?, observations=? WHERE family=?",
+            (revisions, observations, family),
+        )
 
 
 def _build_search_index(dest: sqlite3.Connection) -> None:
@@ -279,6 +390,96 @@ def _exists(conn: sqlite3.Connection, table: str) -> bool:
 
 def _count(conn: sqlite3.Connection, table: str) -> int:
     return int(conn.execute(f"SELECT COUNT(*) FROM '{table}'").fetchone()[0])
+
+
+def snapshot_is_current(warehouse: Path, serving: Path) -> bool:
+    """True only when the published snapshot provably reflects every warehouse row.
+
+    Both sides are opened ``mode=ro`` so uncommitted-by-checkpoint WAL content is
+    visible without touching the writer. Hashing the main ``.sqlite`` file would
+    miss WAL writes and falsely report "current"; counting through a read-only
+    connection does not. Fail-safe: any doubt returns False and the caller rebuilds.
+
+    The UI's ``.stale.json`` marker means "collection in progress", not "stale
+    data", so it is deliberately ignored here — the caller clears it when skipping.
+    """
+    try:
+        if not warehouse.exists() or not serving.exists():
+            return False
+        with contextlib.closing(
+            sqlite3.connect(serving.resolve().as_uri() + "?mode=ro", uri=True)
+        ) as snap, contextlib.closing(
+            sqlite3.connect(warehouse.resolve().as_uri() + "?mode=ro", uri=True)
+        ) as source:
+            if not _exists(snap, "serving_meta"):
+                return False
+            row = snap.execute(
+                "SELECT row_counts_json FROM serving_meta ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            if row is None:
+                return False
+            counts = json.loads(row[0])
+            if not isinstance(counts, dict) or not counts:
+                return False
+            digest = counts.pop("content_digest", None)
+            if digest is None or _content_digest(source) != digest:
+                return False  # pre-digest manifest or a content flip: rebuild
+            for table, saved in counts.items():
+                # The manifest is written by build_serving_db from SNAPSHOT_TABLES;
+                # refusing unknown names keeps the count query injection-free.
+                if table not in SNAPSHOT_TABLES or type(saved) is not int:
+                    return False
+                if not _exists(source, table) or not _exists(snap, table):
+                    return False
+                if _count(source, table) != saved or _count(snap, table) != saved:
+                    return False
+                # Row MAX(rowid) is not comparable: TEXT-key tables get fresh
+                # rowids on copy. Content equality is owned by the digest above.
+            if "settings" in counts:
+                left, right = _max_timestamp(source, "settings"), _max_timestamp(snap, "settings")
+                return (left is not _UNREADABLE and right is not _UNREADABLE and left == right)
+            return True
+    except (sqlite3.Error, OSError, ValueError, TypeError):
+        return False
+
+
+def _content_digest(conn: sqlite3.Connection) -> str:
+    """Order-independent digest over EVERY column of every snapshot table.
+
+    Includes primary keys (record linkage: a cross-swap between two rows must
+    show up) and all columns the UI displays, so any content change at all
+    invalidates the guard. NULL-safe, batched by full-row groups.
+    """
+    import hashlib
+
+    hasher = hashlib.sha256()
+    for table in SNAPSHOT_TABLES:
+        if not _exists(conn, table):
+            continue
+        columns = [r[1] for r in conn.execute(f"PRAGMA table_info('{table}')")]
+        if not columns:
+            continue
+        projection = ",".join(f"COALESCE(quote(\"{c}\"),'-')" for c in columns)
+        rows = conn.execute(
+            f"SELECT {projection}, COUNT(*) FROM '{table}' GROUP BY {projection} ORDER BY 1"
+        )
+        while True:
+            batch = rows.fetchmany(2000)
+            if not batch:
+                break
+            for row in batch:
+                hasher.update(("|".join(map(str, row))).encode("utf-8", "replace"))
+    return hasher.hexdigest()
+
+
+_UNREADABLE = object()  # missing/unreadable column: doubt, not equality
+
+
+def _max_timestamp(conn: sqlite3.Connection, table: str):
+    try:
+        return conn.execute(f"SELECT MAX(updated_at_utc) FROM '{table}'").fetchone()[0]
+    except sqlite3.Error:
+        return _UNREADABLE
 
 
 def _parse_marker(raw: str | None) -> dict:

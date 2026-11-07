@@ -8,8 +8,10 @@ Budget reservations are committed before HTTP and remain charged after a crash.
 import hashlib
 import json
 import random
+import sqlite3
 import time
 import uuid
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 
 from santhau_studio.domain.coverage import Interval
@@ -216,11 +218,44 @@ def recover(conn, *, now=None):
     conn.commit()
 
 
-def _schedule_audits(conn, scope, now):
+def _schedule_audits(conn, scope, now, *, root=None):
     if not scope["policy"]["reconcile_enabled"]:
         return
     windows = list(scope_store.windows(scope))
-    if any(not scope_store.resolve(conn, source, span).can_skip for _, source, span in windows):
+    all_proven = not any(
+        not scope_store.resolve(conn, source, span).can_skip
+        for _, source, span in windows
+    )
+    if not all_proven:
+        # While backfill is unfinished, audit only the day/family windows the
+        # coverage UI already flags as "Cần đối chiếu", capped by the quota.
+        if root is None:
+            return
+        serving = root / "serving.sqlite"
+        if not serving.exists():
+            return
+        from santhau_studio.storage.coverage_targets import targeted_reconcile_windows
+
+        try:
+            with closing(sqlite3.connect(serving.resolve().as_uri() + "?mode=ro", uri=True)) as snap:
+                targets = targeted_reconcile_windows(
+                    snap, scope, limit=scope["policy"]["reconcile_quota_per_day"]
+                )
+        except (sqlite3.Error, OSError, ValueError):
+            targets = []
+        from santhau_studio.domain.ai_bridge import emit as ai_emit
+        ai_emit("IDLE", progress={"reconcile_targets_queued": len(targets)})
+        by_family = {s["family"]: s for s in scope["sources"]}
+        for target in targets:
+            source = by_family.get(target["family"])
+            if source is None:
+                continue
+            span = Interval(
+                datetime.fromisoformat(target["from"]),
+                datetime.fromisoformat(target["to"]),
+            )
+            _insert(conn, "RECONCILE", source, span, now, approved=True)
+        conn.commit()
         return
     for _, source, span in windows:
         _insert(conn, "RECONCILE", source, span, now, approved=True)
@@ -351,7 +386,7 @@ def run_batch(loop, parent_run=None):
     policy = scope["policy"]
     if policy["repair_enabled"]:
         discover(conn, loop.data_root, execute=True, now=now)
-    _schedule_audits(conn, scope, now)
+    _schedule_audits(conn, scope, now, root=loop.data_root)
     today = coverage._iso(now.replace(hour=0, minute=0, second=0, microsecond=0))
     used = dict(conn.execute(
         "SELECT t.kind,COUNT(*) FROM maintenance_attempts a JOIN maintenance_tasks t USING(task_key) WHERE a.started_at_utc>=? GROUP BY t.kind", (today,)))

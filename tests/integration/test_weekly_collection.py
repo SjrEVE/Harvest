@@ -277,8 +277,12 @@ def test_weekly_coalesces_snapshots_and_publishes_terminal_parent(studio, monkey
     run(studio, fast_builder([]))
     # 12 child runs: one batch of six, then a final snapshot with parent outcome.
     assert published == [6, 48]
+    from santhau_studio.desktop.warehouse_reader import WarehouseReader
+
+    with WarehouseReader(studio.data_root) as reader:
+        states = reader.latest_run_states([request["job_id"]])
+    assert states and states[0]["status"] == "COMPLETED"
     with closing(connect_read_only(studio.serving_path)) as conn:
-        assert conn.execute("SELECT status FROM runs WHERE job_id=?", (request["job_id"],)).fetchone()[0] == "COMPLETED"
         assert conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
 
 

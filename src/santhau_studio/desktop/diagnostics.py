@@ -1,23 +1,40 @@
 """Read-only evidence details; never upgrades a legacy or reachability claim."""
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from santhau_studio.collectors.canary import canary_state
 from santhau_studio.collectors.source_registry import FAMILY_ORDER, SOURCE_EGP_HOME
 
 
-def source_evidence(conn):
-    families = []
+def source_evidence(conn, warehouse_db=None):
+    """`warehouse_db` is the warehouse.sqlite PATH (audit tables live there since RC3-8)."""
     access = conn.execute('SELECT access_state,notes FROM source_registry WHERE source_key=?',(SOURCE_EGP_HOME,)).fetchone()
+    audit_conn = None
+    if warehouse_db is not None:
+        from santhau_studio.storage.warehouse import connect_read_only
+
+        audit_conn = connect_read_only(Path(warehouse_db))
+        audit_conn.row_factory = conn.row_factory
+    lookup = audit_conn or conn
+    try:
+        return _source_evidence(lookup, access)
+    finally:
+        if audit_conn is not None:
+            audit_conn.close()
+
+
+def _source_evidence(lookup, access):
+    families = []
     for family in FAMILY_ORDER:
-        state = canary_state(conn, SOURCE_EGP_HOME, family)
+        state = canary_state(lookup, SOURCE_EGP_HOME, family)
         state.update(family=family, source_key=SOURCE_EGP_HOME)
         state['blocked_reason'] = None if state['rule_verified'] else 'BOUNDARY_RULE_UNVERIFIED: cần owner duyệt canary và hợp đồng biên'
         if access and access[0] in ('BLOCKED','DISABLED','NEEDS_USER_SESSION'):
             state['blocked_reason'] = access[0] + ': ' + (access[1] or 'SOURCE_ACCESS_NOT_GRANTED')
         families.append(state)
-    events = [dict(r) for r in conn.execute('SELECT family,reason_kind,detail_scrubbed,observed_at_utc FROM source_access_events ORDER BY id DESC LIMIT 50')]
+    events = [dict(r) for r in lookup.execute('SELECT family,reason_kind,detail_scrubbed,observed_at_utc FROM source_access_events ORDER BY id DESC LIMIT 50')]
     return {'families': families, 'access_events': events}
 
 

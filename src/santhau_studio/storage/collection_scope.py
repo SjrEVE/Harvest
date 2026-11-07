@@ -10,17 +10,21 @@ from santhau_studio.storage import coverage
 from santhau_studio.storage.coverage_contract import current
 
 KEY = "collection_scope_v1"
+# Client-side ceilings only. These are OUR budgets, chosen to keep a single
+# backfill pass from stopping after a handful of day windows. The source's own
+# rate limit is separate (HTTP 429) and is respected by collectors/network_policy:
+# one process, >=0.12s pacing, 120s x attempt backoff, exit on exhaustion.
 DEFAULT_POLICY = {
-    "repair_enabled": False,
-    "reconcile_enabled": False,
+    "repair_enabled": True,
+    "reconcile_enabled": True,
     "max_attempts": 4,
-    "max_total_requests": 6000,
-    "max_total_seconds": 14400,
-    "day_max_pages": 1200,
-    "day_max_requests": 1500,
-    "day_max_seconds": 3600,
-    "quota_per_day": 24,
-    "reconcile_quota_per_day": 2,
+    "max_total_requests": 30000,
+    "max_total_seconds": 86400,
+    "day_max_pages": 10000,
+    "day_max_requests": 30000,
+    "day_max_seconds": 86400,
+    "quota_per_day": 200,
+    "reconcile_quota_per_day": 20,
     "reconcile_every_days": 7,
     "overlap_days": 3,
 }

@@ -198,7 +198,7 @@ def parser():
         prog="santhau-collector",
         description="Bộ thu thập Linux: sáu loại, theo tuần, không giao diện/thống kê.",
     )
-    cli.add_argument("--version", action="version", version="Săn Thầu Collector 0.0.1-RC3-5 (Linux x86-64)")
+    cli.add_argument("--version", action="version", version="Săn Thầu Collector 0.0.1-RC3-7 (Linux x86-64)")
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "--data-root",
@@ -260,6 +260,14 @@ def parser():
     )
     run.add_argument("--idle-exit-seconds", type=float)
     run.add_argument("--offline-test", action="store_true", help=argparse.SUPPRESS)
+    auto = sub.add_parser(
+        "auto", parents=[common],
+        help="Mot nut: keo nguoc tu hom nay ve date_from, tu ne ngay da co du lieu",
+    )
+    auto.add_argument("--execute", action="store_true",
+                      help="Xep hang va chay that; mac dinh chi xem truoc, khong goi mang")
+    auto.add_argument("--no-run", action="store_true",
+                      help="Chi xep hang, khong chay worker (dung khi da co systemd)")
     for name in ("status", "pause", "resume", "cancel", "stop"):
         p = sub.add_parser(name, parents=[common])
         p.add_argument("--job")
@@ -314,6 +322,11 @@ def main(argv=None):
                 None if args.no_profile else args.source_profile or data_file("egp-profile.json"),
             )
             output({"ok": True, "data_root": str(root), "network_requests": 0})
+            return 0
+        if args.command == "auto":
+            from santhau_studio.linux.auto_pull import auto_pull
+
+            output(auto_pull(root, execute=args.execute, run=not args.no_run))
             return 0
         if args.command == "enqueue":
             limits = {

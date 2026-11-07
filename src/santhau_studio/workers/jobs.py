@@ -473,7 +473,7 @@ class WorkerLoop:
             if self._scheduled:
                 self._enqueue_scheduled()
             if self._snapshot_needs_refresh():
-                self._publish_snapshot()
+                self._publish_snapshot(content_unchanged=True)
             self._set_phase("IDLE")
             self._idle_since = time.monotonic()
             while True:
@@ -501,6 +501,8 @@ class WorkerLoop:
                     stop.wait(self._poll)
                     continue
                 self._idle_since = time.monotonic()
+                from santhau_studio.domain.ai_bridge import emit as ai_emit
+                ai_emit("COLLECTING", current_job_id=request.job_id, progress={"job": request.job_kind})
                 self._execute(request)
                 background = request.requested_by in (
                     "scoped-maintenance", "automatic-public-deep", "scheduler",
@@ -511,6 +513,8 @@ class WorkerLoop:
                     # A user-visible job must see its own data before the terminal state.
                     self._maybe_publish_snapshot(force=True)
                 self._set_phase("IDLE")
+                from santhau_studio.domain.ai_bridge import emit as ai_emit
+                ai_emit("IDLE")
                 self._idle_since = time.monotonic()
         except Exception:
             self.exit_code = 1
@@ -546,9 +550,20 @@ class WorkerLoop:
             with contextlib.suppress(JobAlreadyQueued):
                 enqueue_job(self.data_root, request)
 
-    def _publish_snapshot(self) -> None:
+    def _publish_snapshot(self, *, content_unchanged: bool = False) -> None:
         if not self._publish_serving:
             return
+        # The no-op guard digests the whole warehouse (~2 min on the real root), so
+        # it only pays on the idle-refresh path where nothing is known to have
+        # changed. A dirty snapshot is stale by definition — rebuild directly.
+        if content_unchanged:
+            from santhau_studio.storage.serving import snapshot_is_current
+            if snapshot_is_current(self.data_root / "warehouse.sqlite", self.data_root / "serving.sqlite"):
+                # No warehouse row moved: the published snapshot is already current.
+                # Clearing the UI marker keeps "collection in progress" from sticking.
+                self.snapshot_error = None
+                (self.data_root / "serving.stale.json").unlink(missing_ok=True)
+                return
         self.snapshot_attempts += 1
         from santhau_studio.storage.serving import build_serving_db
         previous = self.progress
