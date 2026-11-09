@@ -450,3 +450,91 @@ def test_v2_relationship_edges_use_code_keys_and_hashes(env, tmp_path: Path) -> 
     finally:
         snapshot.close()
 
+
+def test_v2_enrichment_columns_project_raw_only_fields(env, tmp_path: Path) -> None:
+    """Catalog enrichment (sectors/participants/deadline/components) must be projected at
+    snapshot time from the raw payload, because the display keep-lists strip investField,
+    numBidderJoin (non-KQLCNT), bidCloseDate (YCBG) and the KHLCNT bidName component array."""
+    writer, _, _, data_root = env
+    commit_page(writer, [{
+        "notifyNo": "IB2600030", "notifyVersion": "00", "bidName": "Mua sắm",
+        "investField": ["HH", "XL"], "bidCloseDate": "2026-12-01T09:00:00",
+        "publicDate": "2026-11-01T00:00:00", "status": "OPEN_BID",
+    }], page_no=1)
+    commit_page(writer, [{
+        "notifyNo": "IB2600031", "notifyVersion": "00", "bidName": "Kết quả",
+        "numBidderJoin": 3, "numBidderTech": 2, "investField": ["TV"],
+        "bidWinningPrice": [100], "publicDateKqlcnt": "2026-11-02T00:00:00",
+    }], family="KQLCNT", page_no=2)
+    commit_page(writer, [{
+        "notifyNo": "YCBG2600001", "notifyVersion": "00", "bidName": "Báo giá",
+        "quoteDeadline": "2026-12-05T17:00:00", "publicDate": "2026-11-01T00:00:00",
+    }], family="YCBG", page_no=3)
+    commit_page(writer, [{
+        "planNo": "PL2600002", "planVersion": "00", "name": "Kế hoạch",
+        "bidName": ["Gói thầu A", "Gói thầu B"],
+    }], family="KHLCNT", page_no=4)
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite").published
+    snapshot = sqlite3.connect(tmp_path / "serving.sqlite")
+    snapshot.row_factory = sqlite3.Row
+    try:
+        tbmt = snapshot.execute("SELECT * FROM record_fields WHERE family='TBMT'").fetchone()
+        assert json.loads(tbmt["sectors_json"]) == ["HH", "XL"]
+        assert tbmt["close_date"] == "2026-12-01T09:00:00"
+        kqlcnt = snapshot.execute("SELECT * FROM record_fields WHERE family='KQLCNT'").fetchone()
+        assert kqlcnt["participants"] == 3 and kqlcnt["qualified"] == 2
+        assert json.loads(kqlcnt["sectors_json"]) == ["TV"]
+        ycbg = snapshot.execute("SELECT * FROM record_fields WHERE family='YCBG'").fetchone()
+        assert ycbg["close_date"] == "2026-12-05T17:00:00"
+        khlc = snapshot.execute("SELECT * FROM record_fields WHERE family='KHLCNT'").fetchone()
+        assert json.loads(khlc["components_json"]) == ["Gói thầu A", "Gói thầu B"]
+        # numBidderJoin absent/invalid stays NULL, never fabricated as zero.
+        assert tbmt["participants"] is None
+    finally:
+        snapshot.close()
+
+
+def test_v2_catalog_columns_project_display_epochs_and_latest(env, tmp_path: Path) -> None:
+    """The catalog aggregate/page path must be raw-free: display values, VN epochs and the
+    ranked latest flag are projected at snapshot time so the bridge can filter/aggregate in
+    indexed SQL without re-reading 300k+ raw objects on the first request."""
+    from datetime import datetime, timedelta, timezone
+
+    vn = timezone(timedelta(hours=7))
+
+    def epoch(value):
+        return datetime.fromisoformat(value).replace(tzinfo=vn).timestamp()
+
+    writer, _, _, data_root = env
+    commit_page(writer, [{
+        "notifyNo": "IB2600040", "notifyVersion": "00", "bidName": "Mua sắm thiết bị",
+        "investorName": "Công ty ABC", "provinceName": "Thành phố Hà Nội",
+        "publicDate": "2026-11-01T00:00:00", "bidCloseDate": "2026-12-01T09:00:00",
+        "status": "01",
+    }], page_no=1)
+    commit_page(writer, [{
+        "contractCode": "CT2600041", "contractVersion": "00", "ctName": "Hợp đồng xây lắp",
+        "notifyNo": "IB2600041", "investorName": "Công ty ABC", "contractNo": "HD-001",
+        "winningContractorName": ["Nhà thầu X"], "contractSignDate": "2027-01-15",
+        "provinceName": "Tỉnh Nghệ An",
+    }], family="HOP_DONG", page_no=2)
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite").published
+    snapshot = sqlite3.connect(tmp_path / "serving.sqlite")
+    snapshot.row_factory = sqlite3.Row
+    try:
+        tbmt = snapshot.execute("SELECT * FROM record_fields WHERE family='TBMT'").fetchone()
+        assert tbmt["is_latest"] == 1
+        assert tbmt["published_epoch"] == epoch("2026-11-01T00:00:00")
+        assert tbmt["closing_epoch"] == epoch("2026-12-01T09:00:00")
+        assert tbmt["investor_name"] == "Công ty ABC"
+        assert json.loads(tbmt["provinces_json"]) == ["Hà Nội"]
+        contract = snapshot.execute("SELECT * FROM record_fields WHERE family='HOP_DONG'").fetchone()
+        assert contract["signed_epoch"] == epoch("2027-01-15")
+        assert contract["winner_names_json"] == json.dumps(["Nhà thầu X"], ensure_ascii=False)
+        assert json.loads(contract["provinces_json"]) == ["Nghệ An"]
+        assert "HD-001" in contract["search_text"]
+        assert "Nhà thầu X" in contract["search_text"]
+        assert "Hợp đồng xây lắp" in contract["search_text"]
+    finally:
+        snapshot.close()
+
