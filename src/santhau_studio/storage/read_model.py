@@ -292,7 +292,10 @@ def materialise_records(conn: sqlite3.Connection, raw_root=None) -> None:
                 _sectors_json(f), _present_int(f.get("numBidderJoin")), _present_int(f.get("numBidderTech")),
                 close_value, sign_value, _components_json(f, row[2]),
                 investor_name, winner_names, search_text, _provinces_json(province),
-                published_epoch, _epoch(close_value), _epoch(sign_value), 0, _text(f, "status")))
+                # Epochs mirror v1 project()'s str-only text() (an array date is missing to the
+                # catalog), not _first_scalar, so v2 active()/date filters cannot diverge from v1.
+                published_epoch, _epoch(_text(f, "bidCloseDate", "closeDate", "quoteDeadline")),
+                _epoch(_text(f, "contractSignDate")), 0, _text(f, "status")))
         conn.executemany(
             "INSERT INTO record_fields (record_id,source_key,family,natural_key,version_state,version_raw,"
             "title_display,investor_display,last_seen_at_utc,published_date,province,tax_id,procurement_type,"

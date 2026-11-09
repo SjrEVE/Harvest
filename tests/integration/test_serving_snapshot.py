@@ -560,3 +560,32 @@ def test_v2_status_display_mirrors_raw_status_not_normalized_source(env, tmp_pat
     finally:
         snapshot.close()
 
+
+def test_v2_catalog_epochs_mirror_str_only_display_dates(env, tmp_path: Path) -> None:
+    """closing_epoch/signed_epoch feed the v2 catalog active()/date filters and must mirror v1
+    project()'s str-only text() of bidCloseDate/contractSignDate. text() ignores a 1-element-list
+    date (v1 treats it as missing), so the epoch stays NULL rather than being unwrapped by
+    _first_scalar; otherwise v2 counts a row active/dated that v1 excludes. Production E-GP dates
+    are text today, but parity must hold by construction for any array-valued source date."""
+    writer, _, _, data_root = env
+    commit_page(writer, [{
+        "notifyNo": "YCBG2600002", "notifyVersion": "00", "bidName": "Báo giá mảng",
+        "bidCloseDate": ["2026-12-05T17:00:00"], "publicDate": "2026-11-01T00:00:00", "status": "01",
+    }], family="YCBG", page_no=1)
+    commit_page(writer, [{
+        "contractCode": "CT2600042", "contractVersion": "00", "ctName": "Hợp đồng mảng",
+        "notifyNo": "IB2600042", "investorName": "Công ty ABC", "contractNo": "HD-002",
+        "winningContractorName": ["Nhà thầu Y"], "contractSignDate": ["2027-02-01"],
+        "provinceName": "Tỉnh Nghệ An",
+    }], family="HOP_DONG", page_no=2)
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite").published
+    snapshot = sqlite3.connect(tmp_path / "serving.sqlite")
+    snapshot.row_factory = sqlite3.Row
+    try:
+        ycbg = snapshot.execute("SELECT * FROM record_fields WHERE family='YCBG'").fetchone()
+        assert ycbg["closing_epoch"] is None
+        contract = snapshot.execute("SELECT * FROM record_fields WHERE family='HOP_DONG'").fetchone()
+        assert contract["signed_epoch"] is None
+    finally:
+        snapshot.close()
+
