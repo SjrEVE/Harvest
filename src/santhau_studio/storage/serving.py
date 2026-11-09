@@ -35,6 +35,7 @@ def _ai(phase: str, **fields) -> None:
         ai_control.emit(phase, **fields)
 
 FTS_BATCH = 2000
+PROJECTION_VERSION = 2
 
 # RC3-8: audit/provenance tables (observations, object_derivation, raw_revisions,
 # raw_objects) stay warehouse-only. The desktop reads them read-only via
@@ -150,13 +151,25 @@ def _build_serving_db_impl(warehouse: Path, target: Path) -> PublishResult:
         # signal is carried as structured JSON there rather than by adding columns. `stale=1`
         # tells the UI "do not present this as current-and-complete"; degraded_reason says why.
         degradation = _degradation(source)
+        built_at = _now()
         dest.execute(
             "INSERT INTO serving_meta (snapshot_built_at_utc, source_warehouse_sha, row_counts_json,"
             " stale, stale_reason) VALUES (?,?,?,?,?)",
-            (_now(), _warehouse_sha(warehouse), json.dumps(
+            (built_at, _warehouse_sha(warehouse), json.dumps(
                 {**counts, "content_digest": digest}, sort_keys=True),
              1 if degradation else 0,
              json.dumps({"kind": "DEGRADED", "counts": degradation}, sort_keys=True) if degradation else None),
+        )
+        # serving_meta stays frozen for v1 readers; projection identity is additive.
+        dest.execute(
+            "CREATE TABLE serving_projection_meta ("
+            " id INTEGER PRIMARY KEY CHECK (id = 1),"
+            " projection_version INTEGER NOT NULL CHECK (projection_version >= 1),"
+            " snapshot_built_at_utc TEXT NOT NULL)"
+        )
+        dest.execute(
+            "INSERT INTO serving_projection_meta (id, projection_version, snapshot_built_at_utc) VALUES (1,?,?)",
+            (PROJECTION_VERSION, built_at),
         )
         dest.commit()
     except SnapshotRejected as exc:
@@ -418,6 +431,13 @@ def snapshot_is_current(warehouse: Path, serving: Path) -> bool:
             ).fetchone()
             if row is None:
                 return False
+            if not _exists(snap, "serving_projection_meta"):
+                return False
+            projection = snap.execute(
+                "SELECT projection_version FROM serving_projection_meta WHERE id=1"
+            ).fetchone()
+            if projection is None or int(projection[0]) != PROJECTION_VERSION:
+                return False
             counts = json.loads(row[0])
             if not isinstance(counts, dict) or not counts:
                 return False
@@ -532,6 +552,13 @@ def _read_serving_state(serving: Path) -> dict[str, object]:
         if row is None:
             return {"present": True, "built_at": None}
         marker = _parse_marker(row[3])
+        projection_version = 1
+        if _exists(conn, "serving_projection_meta"):
+            projection = conn.execute(
+                "SELECT projection_version FROM serving_projection_meta WHERE id=1"
+            ).fetchone()
+            if projection is not None:
+                projection_version = int(projection[0])
         return {
             "present": True,
             "built_at": row[0],
@@ -540,6 +567,7 @@ def _read_serving_state(serving: Path) -> dict[str, object]:
             "degraded": marker.get("kind") == "DEGRADED",
             "degradation": marker.get("counts"),
             "reason": row[3],
+            "projection_version": projection_version,
             "schema_versions": [v for v, _, _ in MIGRATIONS],
         }
     finally:

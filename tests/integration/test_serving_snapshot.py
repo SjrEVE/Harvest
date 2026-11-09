@@ -6,6 +6,7 @@ referenced by UI tasks, and no test executed it. The first run found a malformed
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -251,4 +252,81 @@ def test_publish_retries_transient_windows_reader_lock(tmp_path, monkeypatch):
     result = build_serving_db(tmp_path / "warehouse.sqlite", tmp_path / "serving.sqlite")
     assert result.published, result.reason
     assert len(attempts) == 3
+
+
+def test_snapshot_publishes_projection_v2_contract_without_losing_raw_arrays(env, tmp_path: Path) -> None:
+    writer, _, _, data_root = env
+    commit_page(writer, [{
+        "notifyNo": "IB2600001", "notifyVersion": "00", "bidName": "Gói đang mở",
+        "status": "OPEN_BID", "bidCloseDate": "2026-11-12T09:00:00",
+    }])
+    commit_page(writer, [{
+        "notifyNo": "IB2600002", "notifyVersion": "00", "inputResultId": "result-2",
+        "bidName": "Kết quả nhiều lô", "winningCode": ["vn0123456789", "vn9876543210"],
+        "bidWinningPrice": [132000000, 220000000], "bidPrice": [-1],
+        "publicDateKqlcnt": "2026-11-01T00:00:00", "statusForNotify": "CNTTT",
+    }], family="KQLCNT", page_no=1)
+
+    result = serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")
+    assert result.published, result.reason
+    snapshot = sqlite3.connect(tmp_path / "serving.sqlite")
+    try:
+        projection = snapshot.execute(
+            "SELECT projection_version, snapshot_built_at_utc FROM serving_projection_meta WHERE id=1"
+        ).fetchone()
+        stamp = snapshot.execute("SELECT snapshot_built_at_utc FROM serving_meta ORDER BY id DESC LIMIT 1").fetchone()[0]
+        assert projection == (2, stamp)
+        columns = {row[1] for row in snapshot.execute("PRAGMA table_info(record_fields)")}
+        assert {"record_id", "source_key", "family", "natural_key", "bid_price", "award_price", "currency"} <= columns
+        assert {"status_raw", "status_normalized", "winning_codes_json", "award_prices_json",
+                "gia_trung", "price_status", "price_provenance_json"} <= columns
+        raw = snapshot.execute(
+            "SELECT v.normalized_json FROM source_record_versions v JOIN source_records r ON r.id=v.source_record_id"
+            " AND v.content_version_seq=r.current_content_version WHERE r.family='KQLCNT'"
+        ).fetchone()[0]
+        fields = json.loads(raw)
+        assert fields["bidWinningPrice"] == [132000000, 220000000]
+        assert fields["winningCode"] == ["vn0123456789", "vn9876543210"]
+        assert fields["bidPrice"] == [-1]
+        assert serving.serving_state(tmp_path / "serving.sqlite")["projection_version"] == 2
+    finally:
+        snapshot.close()
+
+
+def test_v1_snapshot_without_projection_meta_remains_readable(tmp_path: Path) -> None:
+    path = tmp_path / "v1.sqlite"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE serving_meta (id INTEGER PRIMARY KEY, snapshot_built_at_utc TEXT NOT NULL,"
+        " source_warehouse_sha TEXT NOT NULL, row_counts_json TEXT NOT NULL,"
+        " stale INTEGER NOT NULL DEFAULT 0, stale_reason TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO serving_meta VALUES (1,'2026-11-04T00:58:22Z','warehouse-sha',"
+        "'{\"source_records\":0,\"content_digest\":\"digest\"}',0,NULL)"
+    )
+    conn.commit()
+    conn.close()
+
+    state = serving.serving_state(path)
+    assert state["present"] is True
+    assert state["built_at"] == "2026-11-04T00:58:22Z"
+    assert state["projection_version"] == 1
+    assert state["stale"] is False
+
+
+def test_projection_version_change_forces_snapshot_rebuild(env, tmp_path: Path) -> None:
+    writer, _, _, data_root = env
+    commit_page(writer, [{"notifyNo": "IB2600003", "notifyVersion": "00", "bidName": "Gói v2"}])
+    warehouse = data_root / "warehouse.sqlite"
+    target = tmp_path / "serving.sqlite"
+    assert serving.build_serving_db(warehouse, target).published
+    assert serving.snapshot_is_current(warehouse, target)
+
+    conn = sqlite3.connect(target)
+    conn.execute("DROP TABLE serving_projection_meta")
+    conn.commit()
+    conn.close()
+
+    assert not serving.snapshot_is_current(warehouse, target)
 

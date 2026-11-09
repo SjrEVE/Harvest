@@ -55,6 +55,16 @@ def _make_pair(root: Path) -> None:
                 ("2026-11-06T12:00:00Z", "sha-not-used-by-the-guard",
                  json.dumps({**counts, "content_digest": _digest(conn)}, sort_keys=True)),
             )
+            conn.execute(
+                "CREATE TABLE serving_projection_meta ("
+                " id INTEGER PRIMARY KEY CHECK (id = 1),"
+                " projection_version INTEGER NOT NULL CHECK (projection_version >= 1),"
+                " snapshot_built_at_utc TEXT NOT NULL)"
+            )
+            conn.execute(
+                "INSERT INTO serving_projection_meta (id, projection_version, snapshot_built_at_utc)"
+                " VALUES (1, 2, '2026-11-06T12:00:00Z')"
+            )
         conn.commit()
         conn.close()
     # The UI marker "collection in progress" must be cleared when the guard skips.
