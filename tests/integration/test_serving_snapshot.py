@@ -330,3 +330,123 @@ def test_projection_version_change_forces_snapshot_rebuild(env, tmp_path: Path) 
 
     assert not serving.snapshot_is_current(warehouse, target)
 
+
+def test_v2_projection_sums_award_array_and_keeps_winner_ids(env, tmp_path: Path) -> None:
+    writer, _, _, data_root = env
+    commit_page(writer, [{
+        "notifyNo": "IB2600010", "notifyVersion": "00", "bidName": "Kết quả hai lô",
+        "winningCode": ["vn0123456789", "vn9876543210"],
+        "bidWinningPrice": [132000000, 220000000], "statusForNotify": "CNTTT",
+        "publicDateKqlcnt": "2026-11-01T00:00:00",
+    }], family="KQLCNT")
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite").published
+    snapshot = sqlite3.connect(tmp_path / "serving.sqlite")
+    try:
+        row = snapshot.execute(
+            "SELECT award_prices_json,gia_trung,price_status,winning_codes_json,status_normalized,price_provenance_json"
+            " FROM record_fields WHERE family='KQLCNT'"
+        ).fetchone()
+        assert json.loads(row[0]) == [132000000, 220000000]
+        assert row[1] == 352000000
+        assert row[2] == "SUMMED_ARRAY"
+        assert json.loads(row[3]) == ["vn0123456789", "vn9876543210"]
+        assert row[4] == "AWARDED"
+        provenance = json.loads(row[5])
+        assert provenance["source_field"] == "bidWinningPrice"
+        assert provenance["raw_hash"]
+    finally:
+        snapshot.close()
+
+
+def test_v2_projection_marks_invalid_amount_and_unmapped_status(env, tmp_path: Path) -> None:
+    writer, _, _, data_root = env
+    commit_page(writer, [{
+        "notifyNo": "IB2600011", "notifyVersion": "00", "bidName": "Giá âm",
+        "bidWinningPrice": [-1], "publicDateKqlcnt": "2026-11-01T00:00:00",
+    }], family="KQLCNT")
+    commit_page(writer, [{
+        "notifyNo": "IB2600012", "notifyVersion": "00", "bidName": "Trạng thái lạ",
+        "status": "UNMAPPED_SOURCE_CODE", "publicDate": "2026-11-01T00:00:00",
+    }], page_no=1)
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite").published
+    snapshot = sqlite3.connect(tmp_path / "serving.sqlite")
+    try:
+        invalid = snapshot.execute(
+            "SELECT award_prices_json,gia_trung,price_status FROM record_fields WHERE natural_key='IB2600011'"
+        ).fetchone()
+        assert json.loads(invalid[0]) == [-1]
+        assert invalid[1] is None
+        assert invalid[2] == "INVALID"
+        unknown = snapshot.execute(
+            "SELECT status_raw,status_normalized FROM record_fields WHERE natural_key='IB2600012'"
+        ).fetchone()
+        assert unknown == ("UNMAPPED_SOURCE_CODE", "UNKNOWN")
+    finally:
+        snapshot.close()
+
+
+def test_v2_relationship_edges_use_code_keys_and_hashes(env, tmp_path: Path) -> None:
+    from santhau_studio.domain.identity import canonical_bytes
+
+    writer, conn, _, data_root = env
+    commit_page(writer, [{"planNo": "PL2600001", "planVersion": "00", "name": "Kế hoạch gốc"}], family="KHLCNT")
+    commit_page(writer, [{
+        "notifyNo": "IB2600020", "notifyVersion": "00", "bidName": "Thông báo gốc",
+        "planNo": "PL2600001", "status": "OPEN_BID", "publicDate": "2026-11-01T00:00:00",
+    }], page_no=1)
+    commit_page(writer, [{
+        "notifyNo": "IB2600020", "notifyVersion": "00", "bidName": "Kết quả gốc",
+        "planNo": "PL2600001", "winningCode": ["vn0123456789", "vn9876543210"],
+        "bidWinningPrice": [132000000, 220000000], "publicDateKqlcnt": "2026-11-02T00:00:00",
+    }], family="KQLCNT", page_no=2)
+    commit_page(writer, [{
+        "contractCode": "CT2600001", "contractVersion": "00", "ctName": "Hợp đồng gốc",
+        "notifyNo": "IB2600020", "notifyVersion": "00", "planNo": "PL2600001",
+        "winningCode": ["vn0123456789", "vn9876543210"], "ctPriceAfter": 352000000,
+    }], family="HOP_DONG", page_no=3)
+    result_id = conn.execute("SELECT id FROM source_records WHERE family='KQLCNT'").fetchone()[0]
+    member_raw = {"contractorCode": "vn0000000001", "contractorName": "Thành viên liên danh"}
+    ref = writer.store.put(canonical_bytes(member_raw))
+    writer.register_object(ref)
+    conn.execute(
+        "INSERT INTO contractor_memberships(source_record_id,party_object_sha,party_name,party_tax_id_presence,"
+        "party_tax_id,role,membership_share_presence,membership_share,ranking,provenance_json)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?)",
+        (result_id, ref.sha256, "Thành viên liên danh", "KNOWN", "vn0000000001", "WINNER",
+         "MISSING", None, None, json.dumps({"contractorCode": "vn0000000001"})),
+    )
+    conn.commit()
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite").published
+    snapshot = sqlite3.connect(tmp_path / "serving.sqlite")
+    try:
+        ids = {family: snapshot.execute("SELECT record_id FROM record_fields WHERE family=?", (family,)).fetchone()[0]
+               for family in ("KHLCNT", "TBMT", "KQLCNT", "HOP_DONG")}
+        hashes = {row[0]: (row[1], row[2]) for row in snapshot.execute(
+            "SELECT id,current_content_hash,current_record_object_sha FROM source_records"
+        )}
+        edges = snapshot.execute(
+            "SELECT from_record_id,to_record_id,source_record_id,relation,basis,join_key,party_tax_id,content_hash,raw_hash"
+            " FROM market_relation_edges"
+        ).fetchall()
+        plan_edge = next(e for e in edges if e[3] == "PLAN_HAS_NOTICE")
+        assert plan_edge[:6] == (ids["KHLCNT"], ids["TBMT"], ids["TBMT"], "PLAN_HAS_NOTICE", "same_planNo", "PL2600001")
+        assert plan_edge[7:] == hashes[ids["TBMT"]]
+        notice_edge = next(e for e in edges if e[3] == "NOTICE_HAS_RESULT")
+        assert notice_edge[:6] == (ids["TBMT"], ids["KQLCNT"], ids["KQLCNT"], "NOTICE_HAS_RESULT", "same_notifyNo_version", "IB2600020:00")
+        assert notice_edge[7:] == hashes[ids["KQLCNT"]]
+        plan_contract = next(e for e in edges if e[3] == "PLAN_HAS_CONTRACT")
+        assert plan_contract[:6] == (ids["KHLCNT"], ids["HOP_DONG"], ids["HOP_DONG"], "PLAN_HAS_CONTRACT", "same_planNo", "PL2600001")
+        notice_contract = next(e for e in edges if e[3] == "NOTICE_HAS_CONTRACT")
+        assert notice_contract[:6] == (ids["TBMT"], ids["HOP_DONG"], ids["HOP_DONG"], "NOTICE_HAS_CONTRACT", "same_notifyNo_version", "IB2600020:00")
+        result_contract = next(e for e in edges if e[3] == "RESULT_HAS_CONTRACT")
+        assert result_contract[:6] == (ids["KQLCNT"], ids["HOP_DONG"], ids["HOP_DONG"], "RESULT_HAS_CONTRACT", "same_notifyNo_version", "IB2600020:00")
+        winner_codes = {e[6] for e in edges if e[3] == "EXECUTED_BY" and e[0] == ids["KQLCNT"] and e[4] == "winningCode"}
+        assert winner_codes == {"vn0123456789", "vn9876543210"}
+        membership = next(e for e in edges if e[4] == "deep_contractorCode")
+        assert membership[6] == "vn0000000001"
+        assert membership[7:] == hashes[ids["KQLCNT"]]
+        contract_winners = [e for e in edges if e[0] == ids["HOP_DONG"] and e[3] == "EXECUTED_BY"]
+        assert len(contract_winners) == 2
+    finally:
+        snapshot.close()
+

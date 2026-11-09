@@ -120,6 +120,7 @@ def _build_serving_db_impl(warehouse: Path, target: Path) -> PublishResult:
         from santhau_studio.storage.read_model import materialise_records
 
         materialise_records(dest, warehouse.parent)
+        _build_market_relationships(dest)
         # Optional audit counts come from the warehouse. The family-stats step keeps its
         # 1-arg monkeypatch seam, so the source connection rides on the dest connection.
         _source_of[id(dest)] = source
@@ -318,6 +319,94 @@ def _materialise_family_stats(dest: sqlite3.Connection, source: sqlite3.Connecti
             "UPDATE serving_family_stats SET raw_revisions=?, observations=? WHERE family=?",
             (revisions, observations, family),
         )
+
+
+def _build_market_relationships(dest: sqlite3.Connection) -> None:
+    """Code/key-based serving edges; names are display evidence, never identity keys."""
+    dest.execute("DROP TABLE IF EXISTS market_relation_edges")
+    dest.execute(
+        "CREATE TABLE market_relation_edges ("
+        " id INTEGER PRIMARY KEY, source_key TEXT NOT NULL,"
+        " from_record_id INTEGER NOT NULL, to_record_id INTEGER, source_record_id INTEGER NOT NULL,"
+        " relation TEXT NOT NULL, basis TEXT NOT NULL, join_key TEXT NOT NULL, party_tax_id TEXT,"
+        " content_hash TEXT, raw_hash TEXT, provenance_json TEXT NOT NULL,"
+        " CHECK (to_record_id IS NOT NULL OR party_tax_id IS NOT NULL))"
+    )
+    dest.execute(
+        "INSERT OR IGNORE INTO market_relation_edges"
+        " (source_key,from_record_id,to_record_id,source_record_id,relation,basis,join_key,party_tax_id,content_hash,raw_hash,provenance_json)"
+        " SELECT child.source_key,plan.record_id,child.record_id,child.record_id,"
+        "  CASE child.family WHEN 'TBMT' THEN 'PLAN_HAS_NOTICE' WHEN 'KQLCNT' THEN 'PLAN_HAS_RESULT' ELSE 'PLAN_HAS_CONTRACT' END,"
+        "  'same_planNo',child.plan_no,NULL,cr.current_content_hash,cr.current_record_object_sha,"
+        "  json_object('basis','same_planNo','planNo',child.plan_no,'source_record_id',child.record_id,"
+        "   'content_hash',cr.current_content_hash,'raw_hash',cr.current_record_object_sha)"
+        " FROM record_fields plan"
+        " JOIN record_fields child ON child.source_key=plan.source_key AND child.family IN ('TBMT','KQLCNT','HOP_DONG')"
+        " JOIN source_records cr ON cr.id=child.record_id"
+        " WHERE plan.family='KHLCNT' AND child.plan_no IS NOT NULL AND child.plan_no=plan.natural_key"
+    )
+    for target_family, relation in (("KQLCNT", "NOTICE_HAS_RESULT"), ("HOP_DONG", "NOTICE_HAS_CONTRACT")):
+        dest.execute(
+            "INSERT OR IGNORE INTO market_relation_edges"
+            " (source_key,from_record_id,to_record_id,source_record_id,relation,basis,join_key,party_tax_id,content_hash,raw_hash,provenance_json)"
+            " SELECT child.source_key,notice.record_id,child.record_id,child.record_id,?,'same_notifyNo_version',"
+            "  child.notify_no || ':' || child.notify_version,"
+            "  NULL,cr.current_content_hash,cr.current_record_object_sha,"
+            "  json_object('basis','same_notifyNo_version','notifyNo',child.notify_no,"
+            "   'notifyVersion',child.notify_version,'source_record_id',child.record_id,"
+            "   'content_hash',cr.current_content_hash,'raw_hash',cr.current_record_object_sha)"
+            " FROM record_fields child"
+            " JOIN source_records cr ON cr.id=child.record_id"
+            " JOIN record_fields notice ON notice.source_key=child.source_key AND notice.family='TBMT'"
+            "  AND notice.natural_key=child.notify_no AND notice.version_raw=child.notify_version"
+            " WHERE child.family=? AND child.notify_no IS NOT NULL AND child.notify_version IS NOT NULL",
+            (relation, target_family),
+        )
+    dest.execute(
+        "INSERT OR IGNORE INTO market_relation_edges"
+        " (source_key,from_record_id,to_record_id,source_record_id,relation,basis,join_key,party_tax_id,content_hash,raw_hash,provenance_json)"
+        " SELECT contract.source_key,result.record_id,contract.record_id,contract.record_id,'RESULT_HAS_CONTRACT','same_notifyNo_version',"
+        "  contract.notify_no || ':' || contract.notify_version,"
+        "  NULL,cr.current_content_hash,cr.current_record_object_sha,"
+        "  json_object('basis','same_notifyNo_version','notifyNo',contract.notify_no,"
+        "   'notifyVersion',contract.notify_version,'source_record_id',contract.record_id,"
+        "   'content_hash',cr.current_content_hash,'raw_hash',cr.current_record_object_sha)"
+        " FROM record_fields contract"
+        " JOIN source_records cr ON cr.id=contract.record_id"
+        " JOIN record_fields result ON result.source_key=contract.source_key AND result.family='KQLCNT'"
+        "  AND result.natural_key=contract.notify_no AND result.version_raw=contract.notify_version"
+        " WHERE contract.family='HOP_DONG' AND contract.notify_no IS NOT NULL AND contract.notify_version IS NOT NULL"
+    )
+    dest.execute(
+        "INSERT OR IGNORE INTO market_relation_edges"
+        " (source_key,from_record_id,to_record_id,source_record_id,relation,basis,join_key,party_tax_id,content_hash,raw_hash,provenance_json)"
+        " SELECT f.source_key,f.record_id,NULL,f.record_id,'EXECUTED_BY','winningCode',je.value,je.value,"
+        "  r.current_content_hash,r.current_record_object_sha,"
+        "  json_object('basis','winningCode','party_tax_id',je.value,'source_record_id',f.record_id,"
+        "   'content_hash',r.current_content_hash,'raw_hash',r.current_record_object_sha)"
+        " FROM record_fields f JOIN source_records r ON r.id=f.record_id, json_each(f.winning_codes_json) je"
+        " WHERE f.winning_codes_json IS NOT NULL AND json_valid(f.winning_codes_json) AND je.type='text'"
+    )
+    if _exists(dest, "contractor_memberships"):
+        dest.execute(
+            "INSERT OR IGNORE INTO market_relation_edges"
+            " (source_key,from_record_id,to_record_id,source_record_id,relation,basis,join_key,party_tax_id,content_hash,raw_hash,provenance_json)"
+            " SELECT r.source_key,m.source_record_id,NULL,m.source_record_id,"
+            "  CASE WHEN m.role='WINNER' THEN 'EXECUTED_BY' ELSE 'OFFERED_BY' END,'deep_contractorCode',m.party_tax_id,m.party_tax_id,"
+            "  r.current_content_hash,r.current_record_object_sha,"
+            "  json_object('basis','deep_contractorCode','membership_id',m.id,'party_tax_id',m.party_tax_id,"
+            "   'source_record_id',m.source_record_id,'content_hash',r.current_content_hash,'raw_hash',r.current_record_object_sha,"
+            "   'membership_provenance_json',m.provenance_json)"
+            " FROM contractor_memberships m JOIN source_records r ON r.id=m.source_record_id"
+            " WHERE m.party_tax_id_presence='KNOWN' AND m.party_tax_id IS NOT NULL"
+        )
+    dest.execute(
+        "CREATE UNIQUE INDEX ix_mre_identity ON market_relation_edges"
+        " (from_record_id,COALESCE(to_record_id,-1),source_record_id,relation,basis,join_key,COALESCE(party_tax_id,''))"
+    )
+    for column in ("relation", "basis", "party_tax_id", "to_record_id", "source_record_id"):
+        dest.execute(f"CREATE INDEX ix_mre_{column} ON market_relation_edges({column})")
+    dest.execute("ANALYZE market_relation_edges")
 
 
 def _build_search_index(dest: sqlite3.Connection) -> None:
