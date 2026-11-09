@@ -589,3 +589,106 @@ def test_v2_catalog_epochs_mirror_str_only_display_dates(env, tmp_path: Path) ->
     finally:
         snapshot.close()
 
+
+def _seed_measured_coverage(writer, conn):
+    """Two measured TBMT windows: day0 COMPLETE (verified proof), day1 PARTIAL (no proof).
+
+    Two records publish on VN day0, one on day1, so the held-record count per window is 2 and 1.
+    Mirrors production: every PARTIAL window lacks a proof, so volume cannot come from the proof.
+    """
+    import hashlib
+    from datetime import UTC, datetime, timedelta
+
+    from santhau_studio.domain.coverage import Interval
+    from santhau_studio.storage import coverage as coverage_store
+
+    rule_sha = hashlib.sha256(b"adapter").hexdigest()
+    conn.execute(
+        "INSERT INTO filter_boundary_rules (rule_key, rule_version, source_key, family, endpoint, adapter_sha,"
+        " boundary_kind, precision, source_timezone, offset_minutes, conversion_params, canary_verified,"
+        " verified_at_utc) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("egp-tbmt-day", 1, "egp_home", "TBMT", "/o/egp-portal-home/services/smart/search", rule_sha,
+         "CLOSED_LOCAL", "DAY", "Asia/Ho_Chi_Minh", 420, json.dumps({"to_minus": "1ms"}), 1, "2026-10-31T00:00:00Z"),
+    )
+    conn.commit()
+    rule_id = int(conn.execute("SELECT id FROM filter_boundary_rules WHERE rule_key='egp-tbmt-day'").fetchone()[0])
+    day0 = Interval(datetime(2026, 10, 31, 17, 0, tzinfo=UTC), datetime(2026, 11, 1, 17, 0, tzinfo=UTC))
+    day1 = Interval(day0.to_utc, day0.to_utc + timedelta(days=1))
+    commit_page(writer, [
+        {"notifyNo": "COV001", "notifyVersion": "00", "bidName": "Gói ngày 1a", "publicDate": "2026-11-01T00:00:00"},
+        {"notifyNo": "COV002", "notifyVersion": "00", "bidName": "Gói ngày 1b", "publicDate": "2026-11-01T08:00:00"},
+    ], page_no=1)
+    commit_page(writer, [
+        {"notifyNo": "COV003", "notifyVersion": "00", "bidName": "Gói ngày 2", "publicDate": "2026-11-02T08:00:00"},
+    ], page_no=2)
+
+    def proof(interval):
+        return coverage_store.ProofRecord(
+            proof_version=1, source_key="egp_home", family="TBMT", interval=interval, granularity="DAY",
+            boundary_rule_id=rule_id, source_query_fingerprint=hashlib.sha256(b"q").hexdigest(),
+            adapter_sha=rule_sha, request_count=2, attempt_count=2, attempt_error_count=0,
+            unrecovered_request_count=0, malformed_count=0, distinct_ids=2,
+            ids_union_hash=hashlib.sha256(b"ids").hexdigest(), total_first=2, total_last=2, total_trusted=1,
+            terminal_evidence={"kind": "SHORT_PAGE", "last_page_rows": 2}, page_size=10,
+            max_pages_hit=0, max_records_hit=0, verified_at_utc="2026-11-02T00:00:00Z",
+        )
+
+    coverage_store.record_interval(
+        conn, run_id="run-1", status="COMPLETE", proof=proof(day0),
+        source_key="egp_home", family="TBMT", interval=day0, granularity="DAY",
+    )
+    coverage_store.record_interval(
+        conn, run_id="run-1", status="PARTIAL", proof=None,
+        source_key="egp_home", family="TBMT", interval=day1, granularity="DAY",
+    )
+    return day0, day1
+
+
+def test_v2_coverage_windows_materialised_offline(env, tmp_path: Path) -> None:
+    """Measured coverage windows are resolved OFFLINE through the §4.5 resolver and shipped as a
+    prepared serving table, so the bridge reads PARTIAL/COMPLETE windows without importing the
+    producer or re-resolving per request. `records` is held latest volume dated in the window
+    (published_epoch), never interpolated; the gap around the measured windows is not invented."""
+    writer, conn, _, data_root = env
+    day0, day1 = _seed_measured_coverage(writer, conn)
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite").published
+    snapshot = sqlite3.connect(tmp_path / "serving.sqlite")
+    snapshot.row_factory = sqlite3.Row
+    try:
+        windows = snapshot.execute("SELECT * FROM serving_coverage_windows ORDER BY interval_from_utc").fetchall()
+        assert len(windows) == 2, "only measured windows; gaps between them must not be emitted"
+        assert windows[0]["interval_from_utc"] == day0.from_utc.isoformat().replace("+00:00", "Z")
+        assert windows[0]["status"] == "COMPLETE" and windows[0]["records"] == 2
+        assert windows[1]["status"] == "PARTIAL" and windows[1]["records"] == 1
+        state = snapshot.execute("SELECT * FROM serving_coverage_state WHERE family='TBMT'").fetchone()
+        assert state["coverage_state"] == "PARTIAL", "day1 unproven → the family is not complete"
+        assert state["measured_from_utc"] == day0.from_utc.isoformat().replace("+00:00", "Z")
+        assert state["measured_to_utc"] == day1.to_utc.isoformat().replace("+00:00", "Z")
+    finally:
+        snapshot.close()
+
+
+def test_v2_coverage_window_stale_when_proof_drifts(env, tmp_path: Path) -> None:
+    """Status comes from the resolver, not raw coverage_intervals.status: an unacked HASH_DRIFT
+    over a proven COMPLETE window makes it NEEDS_RECONCILE → STALE, so Radar cannot present data
+    that moved under its proof as current-and-complete (§5.5)."""
+    writer, conn, _, data_root = env
+    day0, _day1 = _seed_measured_coverage(writer, conn)
+    conn.execute(
+        "INSERT INTO reconcile_gaps (run_id, source_key, family, interval_from_utc, interval_to_utc, kind,"
+        " evidence_json, detected_at_utc) VALUES (?,?,?,?,?,?,?,?)",
+        ("run-2", "egp_home", "TBMT", day0.from_utc.isoformat(), day0.to_utc.isoformat(), "HASH_DRIFT",
+         json.dumps({"identity_key": "COV001"}), "2026-11-03T00:00:00Z"),
+    )
+    conn.commit()
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite").published
+    snapshot = sqlite3.connect(tmp_path / "serving.sqlite")
+    snapshot.row_factory = sqlite3.Row
+    try:
+        windows = snapshot.execute("SELECT * FROM serving_coverage_windows ORDER BY interval_from_utc").fetchall()
+        assert windows[0]["status"] == "STALE", "raw status is COMPLETE but the proof drifted"
+        state = snapshot.execute("SELECT * FROM serving_coverage_state WHERE family='TBMT'").fetchone()
+        assert state["coverage_state"] == "STALE"
+    finally:
+        snapshot.close()
+

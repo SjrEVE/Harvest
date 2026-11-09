@@ -126,6 +126,7 @@ def _build_serving_db_impl(warehouse: Path, target: Path) -> PublishResult:
         _source_of[id(dest)] = source
         try:
             _materialise_family_stats(dest)
+            _materialise_coverage(dest)
         finally:
             _source_of.pop(id(dest), None)
         dest.execute(
@@ -318,6 +319,94 @@ def _materialise_family_stats(dest: sqlite3.Connection, source: sqlite3.Connecti
         dest.execute(
             "UPDATE serving_family_stats SET raw_revisions=?, observations=? WHERE family=?",
             (revisions, observations, family),
+        )
+
+
+# The resolver's ResolutionStatus mapped to the spec's 4-state serving vocabulary. NEEDS_RECONCILE
+# is STALE (data moved under its proof); an unmeasured/unsupported span is UNKNOWN, never COMPLETE.
+_COVERAGE_STATE = {
+    "COMPLETE": "COMPLETE",
+    "PARTIAL": "PARTIAL",
+    "NEEDS_RECONCILE": "STALE",
+    "BLOCKED": "PARTIAL",
+    "NOT_ACCESSED": "UNKNOWN",
+    "UNSUPPORTED": "UNKNOWN",
+}
+
+
+def _materialise_coverage(dest: sqlite3.Connection, source: sqlite3.Connection | None = None) -> None:
+    """Measured coverage windows resolved OFFLINE through the §4.5 resolver, shipped prepared.
+
+    The bridge reads this projection instead of importing the producer or re-resolving per request
+    (a per-resolution drift scan is a UI-hot-path cost). Status comes from coverage.resolve — proof
+    validity, query-contract staleness and unacked drift — never the raw coverage_intervals.status.
+    `records` counts held latest records dated in the window (published_epoch, the same date field
+    the collector filters on): observed volume, never interpolated. Only measured spans are emitted;
+    the gaps between them are not invented. Runs on the warehouse source connection via the same
+    _source_of seam as family stats; its tables are copied to serving too, but resolution stays a
+    build-time concern. Derived tables stay out of SNAPSHOT_TABLES, so the digest gate exempts them.
+    """
+    source = source if source is not None else _source_of.get(id(dest))
+    dest.execute("DROP TABLE IF EXISTS serving_coverage_windows")
+    dest.execute("DROP TABLE IF EXISTS serving_coverage_state")
+    dest.execute(
+        "CREATE TABLE serving_coverage_windows ("
+        " source_key TEXT NOT NULL, family TEXT NOT NULL,"
+        " interval_from_utc TEXT NOT NULL, interval_to_utc TEXT NOT NULL,"
+        " granularity TEXT, status TEXT NOT NULL, records INTEGER NOT NULL, proven_fraction REAL,"
+        " PRIMARY KEY (source_key, family, interval_from_utc, interval_to_utc))"
+    )
+    dest.execute(
+        "CREATE TABLE serving_coverage_state ("
+        " source_key TEXT NOT NULL, family TEXT NOT NULL, coverage_state TEXT NOT NULL,"
+        " measured_from_utc TEXT, measured_to_utc TEXT, PRIMARY KEY (source_key, family))"
+    )
+    if source is None:  # tests may call this directly against a dest-only fixture
+        return
+    from santhau_studio.storage import coverage as coverage_store
+    from santhau_studio.storage.coverage_contract import current
+
+    pairs = source.execute(
+        "SELECT DISTINCT source_key, family FROM coverage_intervals ORDER BY source_key, family"
+    ).fetchall()
+    for pair in pairs:
+        source_key, family = pair["source_key"], pair["family"]
+        context = current(source, source_key, family)
+        spans = source.execute(
+            "SELECT interval_from_utc, interval_to_utc FROM coverage_intervals"
+            " WHERE source_key=? AND family=? GROUP BY interval_from_utc, interval_to_utc"
+            " ORDER BY interval_from_utc",
+            (source_key, family),
+        ).fetchall()
+        for span in spans:
+            lo = coverage_store._parse(span["interval_from_utc"])
+            hi = coverage_store._parse(span["interval_to_utc"])
+            resolution = coverage_store.resolve(source, source_key, family, lo, hi, context=context)
+            records = dest.execute(
+                "SELECT COUNT(*) FROM record_fields WHERE source_key=? AND family=? AND is_latest=1"
+                " AND published_epoch>=? AND published_epoch<?",
+                (source_key, family, lo.timestamp(), hi.timestamp()),
+            ).fetchone()[0]
+            dest.execute(
+                "INSERT INTO serving_coverage_windows (source_key, family, interval_from_utc, interval_to_utc,"
+                " granularity, status, records, proven_fraction) VALUES (?,?,?,?,?,?,?,?)",
+                (source_key, family, span["interval_from_utc"], span["interval_to_utc"],
+                 resolution.granularity, _COVERAGE_STATE[resolution.status], records,
+                 resolution.proven_fraction),
+            )
+        bounds = source.execute(
+            "SELECT MIN(interval_from_utc) AS lo, MAX(interval_to_utc) AS hi FROM coverage_intervals"
+            " WHERE source_key=? AND family=?",
+            (source_key, family),
+        ).fetchone()
+        rollup = coverage_store.resolve(
+            source, source_key, family,
+            coverage_store._parse(bounds["lo"]), coverage_store._parse(bounds["hi"]), context=context,
+        )
+        dest.execute(
+            "INSERT INTO serving_coverage_state (source_key, family, coverage_state, measured_from_utc,"
+            " measured_to_utc) VALUES (?,?,?,?,?)",
+            (source_key, family, _COVERAGE_STATE[rollup.status], bounds["lo"], bounds["hi"]),
         )
 
 
