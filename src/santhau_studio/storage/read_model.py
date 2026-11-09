@@ -240,7 +240,8 @@ def materialise_records(conn: sqlite3.Connection, raw_root=None) -> None:
       published_epoch REAL,
       closing_epoch REAL,
       signed_epoch REAL,
-      is_latest INTEGER NOT NULL DEFAULT 0)""")
+      is_latest INTEGER NOT NULL DEFAULT 0,
+      status_display TEXT)""")
     cursor = conn.execute("SELECT r.id,r.source_key,r.family,r.natural_key,r.version_state,r.version_raw,r.last_seen_at_utc,v.normalized_json,r.current_record_object_sha,r.current_content_hash"
                           " FROM source_records r LEFT JOIN source_record_versions v ON v.source_record_id=r.id"
                           " AND v.content_version_seq=r.current_content_version ORDER BY r.id")
@@ -291,15 +292,15 @@ def materialise_records(conn: sqlite3.Connection, raw_root=None) -> None:
                 _sectors_json(f), _present_int(f.get("numBidderJoin")), _present_int(f.get("numBidderTech")),
                 close_value, sign_value, _components_json(f, row[2]),
                 investor_name, winner_names, search_text, _provinces_json(province),
-                published_epoch, _epoch(close_value), _epoch(sign_value), 0))
+                published_epoch, _epoch(close_value), _epoch(sign_value), 0, _text(f, "status")))
         conn.executemany(
             "INSERT INTO record_fields (record_id,source_key,family,natural_key,version_state,version_raw,"
             "title_display,investor_display,last_seen_at_utc,published_date,province,tax_id,procurement_type,"
             "bid_price,award_price,currency,title_sort,investor_sort,province_fold,collection_date,"
             "status_raw,status_normalized,winning_codes_json,award_prices_json,gia_trung,price_status,price_provenance_json,"
             "plan_no,notify_no,notify_version,sectors_json,participants,qualified,close_date,sign_date,components_json,"
-            "investor_name,winner_names_json,search_text,provinces_json,published_epoch,closing_epoch,signed_epoch,is_latest)"
-            " VALUES(" + ",".join("?" * 44) + ")", output)
+            "investor_name,winner_names_json,search_text,provinces_json,published_epoch,closing_epoch,signed_epoch,is_latest,status_display)"
+            " VALUES(" + ",".join("?" * 45) + ")", output)
         conn.executemany("INSERT INTO record_provinces VALUES(?,?,?,?)", locations)
     if store:
         store.close()

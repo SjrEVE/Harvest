@@ -538,3 +538,25 @@ def test_v2_catalog_columns_project_display_epochs_and_latest(env, tmp_path: Pat
     finally:
         snapshot.close()
 
+
+def test_v2_status_display_mirrors_raw_status_not_normalized_source(env, tmp_path: Path) -> None:
+    """The catalog active() predicate reads the raw display `status`, which for KQLCNT differs
+    from status_raw (statusForNotify wins there). Project it verbatim so the v2 SQL aggregate
+    reproduces v1's active count even for a result that still carries an open notice status."""
+    writer, _, _, data_root = env
+    commit_page(writer, [{
+        "notifyNo": "IB2600050", "notifyVersion": "00", "bidName": "Kết quả bất thường",
+        "publicDateKqlcnt": "2026-11-02T08:00:00", "statusForNotify": "CNTTT", "status": "01",
+        "bidCloseDate": "2026-11-25T09:00:00", "numBidderJoin": 2,
+    }], family="KQLCNT", page_no=1)
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite").published
+    snapshot = sqlite3.connect(tmp_path / "serving.sqlite")
+    snapshot.row_factory = sqlite3.Row
+    try:
+        row = snapshot.execute("SELECT * FROM record_fields WHERE family='KQLCNT'").fetchone()
+        assert row["status_display"] == "01"
+        assert row["status_raw"] == "CNTTT"
+        assert row["status_normalized"] == "AWARDED"
+    finally:
+        snapshot.close()
+
