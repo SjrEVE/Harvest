@@ -379,6 +379,63 @@ def test_v2_price_provenance_names_the_public_record_id(env, tmp_path: Path) -> 
         snapshot.close()
 
 
+def test_v2_award_amount_belongs_only_to_result_rows(env, tmp_path: Path) -> None:
+    """gia_trung is the awarded amount. A plan publishes a package price and a contract publishes
+    a contract value under different meanings, so projecting those into gia_trung made the record
+    sheet label them "Giá trúng thầu" and repeat the number under two headings."""
+    writer, _, _, data_root = env
+    commit_page(writer, [{"planNo": "PL2600070", "planVersion": "00", "name": "Kế hoạch có giá gói",
+                          "bidPrice": 1000000000, "publicDate": "2026-11-01T00:00:00"}], family="KHLCNT")
+    commit_page(writer, [{"planNo": "PL2600071", "planVersion": "00", "name": "Kế hoạch chỉ có tổng mức",
+                          "investTotal": 300000000, "publicDate": "2026-11-01T00:00:00"}],
+                family="KHLCNT", page_no=1)
+    commit_page(writer, [{"contractCode": "CT2600070", "contractVersion": "00", "ctName": "Hợp đồng giá trị",
+                          "ctPriceAfter": 352000000, "contractSignDate": "2026-10-15",
+                          "publicDate": "2026-10-15T00:00:00"}], family="HOP_DONG", page_no=2)
+    commit_page(writer, [{"planNo": "PL2600072", "planVersion": "00", "name": "Kế hoạch nhiều giá",
+                          "bidPrice": [1000000000, 2000000000], "publicDate": "2026-11-01T00:00:00"}],
+                family="KHLCNT", page_no=2)
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite").published
+    snapshot = sqlite3.connect(tmp_path / "serving.sqlite")
+    try:
+        rows = {row[0]: row for row in snapshot.execute(
+            "SELECT natural_key,gia_trung,price_status,price_provenance_json FROM record_fields"
+            " WHERE natural_key IN ('PL2600070','PL2600071','PL2600072','CT2600070')")}
+        for key in ("PL2600070", "PL2600071", "PL2600072", "CT2600070"):
+            assert rows[key][1] is None, key
+        assert rows["PL2600072"][2] == "MULTIPLE_VALUES"
+        # The provenance must name the field that actually produced the displayed amount.
+        assert json.loads(rows["PL2600070"][3])["source_field"] == "bidPrice"
+        assert json.loads(rows["PL2600071"][3])["source_field"] == "investTotal"
+        assert rows["PL2600071"][2] == "KNOWN_SINGLE"
+        assert json.loads(rows["CT2600070"][3])["source_field"] == "ctPriceAfter"
+    finally:
+        snapshot.close()
+
+
+def test_v2_mixed_currency_amount_is_multiple_values(env, tmp_path: Path) -> None:
+    """Two valid amounts in different currencies are several values, not corrupt data; the array
+    stays byte-identical and no total is published."""
+    writer, _, _, data_root = env
+    commit_page(writer, [{
+        "notifyNo": "IB2600070", "notifyVersion": "00", "bidName": "Hai loại tiền",
+        "bidWinningPrice": [132000000, 220000000], "currency": ["VND", "USD"],
+        "statusForNotify": "CNTTT", "publicDateKqlcnt": "2026-11-01T00:00:00",
+    }], family="KQLCNT")
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite").published
+    snapshot = sqlite3.connect(tmp_path / "serving.sqlite")
+    try:
+        award_prices, gia_trung, price_status, provenance = snapshot.execute(
+            "SELECT award_prices_json,gia_trung,price_status,price_provenance_json"
+            " FROM record_fields WHERE natural_key='IB2600070'").fetchone()
+        assert json.loads(award_prices) == [132000000, 220000000]
+        assert gia_trung is None
+        assert price_status == "MULTIPLE_VALUES"
+        assert json.loads(provenance)["currency_evidence"] == "mixed"
+    finally:
+        snapshot.close()
+
+
 def test_v2_projection_marks_invalid_amount_and_unmapped_status(env, tmp_path: Path) -> None:
     writer, _, _, data_root = env
     commit_page(writer, [{

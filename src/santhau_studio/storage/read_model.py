@@ -39,7 +39,16 @@ def _first_scalar(fields, *keys):
 _OPEN_STATUS = {"01", "IS_PUBLISH", "OPEN_BID", "OPEN_DXTC", "OPEN_DXKT"}
 _CANCELLED_STATUS = {"CANCEL_BID", "CANCELED"}
 _AWARDED_STATUS = {"PUB_KQLCNT"}
-_AMOUNT_FIELD = {"KQLCNT": "bidWinningPrice", "HOP_DONG": "ctPriceAfter", "KHLCNT": "bidPrice"}
+# The amount each family publishes, in display precedence order. Provenance names whichever field
+# actually produced the value, so a note never describes a field the number did not come from.
+_AMOUNT_FIELDS = {
+    "KQLCNT": ("bidWinningPrice",),
+    "HOP_DONG": ("ctPriceAfter",),
+    "KHLCNT": ("bidPrice", "investTotal"),
+}
+# Only the result family publishes an awarded amount; a plan's package price and a contract's value
+# belong to their own columns and must never be read back as gia_trung.
+_AWARD_FAMILY = "KQLCNT"
 _SECTORS = {"HH", "XL", "TV", "PTV", "HON_HOP"}
 
 
@@ -122,8 +131,14 @@ def _codes_json(value):
 
 
 def _price_projection(fields, family, source_key, record_id, content_hash, raw_hash):
-    field = _AMOUNT_FIELD.get(family)
+    candidates = _AMOUNT_FIELDS.get(family, ())
+    field = next((name for name in candidates if fields.get(name) is not None),
+                 candidates[0] if candidates else None)
     raw = fields.get(field) if field else None
+
+    def awarded(value):
+        return value if family == _AWARD_FAMILY else None
+
     currency_raw = fields.get("currency", fields.get("currencyCode"))
     if isinstance(currency_raw, list):
         currencies = {str(item).strip().upper() for item in currency_raw if isinstance(item, str) and item.strip()}
@@ -141,19 +156,33 @@ def _price_projection(fields, family, source_key, record_id, content_hash, raw_h
     if isinstance(raw, list):
         original = json.dumps(raw, ensure_ascii=False)
         numbers = [_amount(item) for item in raw]
-        valid = bool(raw) and not mixed_currency and all(number is not None and number >= 0 for number in numbers)
-        if not valid:
+        if not raw:
+            provenance["calculation"] = "none"
+            return None, None, "MISSING", json.dumps(provenance, ensure_ascii=False, sort_keys=True)
+        if not all(number is not None and number >= 0 for number in numbers):
             provenance["calculation"] = "invalid"
-            return original, None, "INVALID" if raw or mixed_currency else "MISSING", json.dumps(provenance, ensure_ascii=False, sort_keys=True)
+            return original, None, "INVALID", json.dumps(provenance, ensure_ascii=False, sort_keys=True)
+        if mixed_currency:
+            # Several valid amounts in different currencies: real values that cannot be added up,
+            # so the array is published verbatim and no total is claimed.
+            provenance["calculation"] = "invalid"
+            return original, None, "MULTIPLE_VALUES", json.dumps(provenance, ensure_ascii=False, sort_keys=True)
         provenance["calculation"] = "scalar" if len(numbers) == 1 else "sum"
-        return original, sum(numbers), "KNOWN_SINGLE" if len(numbers) == 1 else "SUMMED_ARRAY", json.dumps(provenance, ensure_ascii=False, sort_keys=True)
+        if family != _AWARD_FAMILY and len(numbers) > 1:
+            # No total column exists for this family, so advertising a sum would describe a
+            # number the reader cannot see.
+            provenance["calculation"] = "invalid"
+            return original, None, "MULTIPLE_VALUES", json.dumps(provenance, ensure_ascii=False, sort_keys=True)
+        return (original, awarded(sum(numbers)),
+                "KNOWN_SINGLE" if len(numbers) == 1 else "SUMMED_ARRAY",
+                json.dumps(provenance, ensure_ascii=False, sort_keys=True))
     number = _amount(raw)
     if number is None or number < 0 or mixed_currency:
         provenance["calculation"] = "invalid"
         provenance["raw_value"] = raw
         return None, None, "INVALID", json.dumps(provenance, ensure_ascii=False, sort_keys=True)
     provenance["calculation"] = "scalar"
-    return None, number, "KNOWN_SINGLE", json.dumps(provenance, ensure_ascii=False, sort_keys=True)
+    return None, awarded(number), "KNOWN_SINGLE", json.dumps(provenance, ensure_ascii=False, sort_keys=True)
 
 
 def province_key(value):
