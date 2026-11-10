@@ -358,6 +358,27 @@ def test_v2_projection_sums_award_array_and_keeps_winner_ids(env, tmp_path: Path
         snapshot.close()
 
 
+def test_v2_price_provenance_names_the_public_record_id(env, tmp_path: Path) -> None:
+    writer, _, _, data_root = env
+    commit_page(writer, [{
+        "notifyNo": "IB2600013", "notifyVersion": "00", "bidName": "Kết quả truy nguyên",
+        "bidWinningPrice": [132000000, 220000000], "statusForNotify": "CNTTT",
+        "publicDateKqlcnt": "2026-11-01T00:00:00",
+    }], family="KQLCNT")
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite").published
+    snapshot = sqlite3.connect(tmp_path / "serving.sqlite")
+    try:
+        record_id, provenance_json = snapshot.execute(
+            "SELECT record_id,price_provenance_json FROM record_fields WHERE natural_key='IB2600013'"
+        ).fetchone()
+        provenance = json.loads(provenance_json)
+        # The public API publishes str(record_id); provenance must name that same identifier.
+        assert provenance["source_record_id"] == str(record_id)
+        assert provenance["source_key"]
+    finally:
+        snapshot.close()
+
+
 def test_v2_projection_marks_invalid_amount_and_unmapped_status(env, tmp_path: Path) -> None:
     writer, _, _, data_root = env
     commit_page(writer, [{

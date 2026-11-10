@@ -131,7 +131,7 @@ def _price_projection(fields, family, source_key, record_id, content_hash, raw_h
     else:
         mixed_currency = False
     provenance = {
-        "source_key": source_key, "source_record_id": record_id, "content_hash": content_hash,
+        "source_key": source_key, "source_record_id": str(record_id), "content_hash": content_hash,
         "raw_hash": raw_hash, "source_field": field, "locator": f"$.{field}" if field else None,
         "currency_evidence": "mixed" if mixed_currency else "source" if currency_raw is not None else "missing",
     }
