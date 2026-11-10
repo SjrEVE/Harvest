@@ -582,6 +582,26 @@ def test_v2_status_display_mirrors_raw_status_not_normalized_source(env, tmp_pat
         snapshot.close()
 
 
+def test_v2_catalog_aggregates_read_a_covering_index(env, tmp_path: Path) -> None:
+    """The family summary/province/investor aggregates scan every latest row per filter. Without a
+    covering index SQLite follows a non-covering epoch index in published order and then does one
+    random table lookup per row, which measured ~27x slower than an index-only scan at 120k rows."""
+    writer, _, _, data_root = env
+    commit_page(writer, [{
+        "notifyNo": "IB2600060", "notifyVersion": "00", "bidName": "Kết quả phủ index",
+        "publicDateKqlcnt": "2026-11-02T08:00:00", "statusForNotify": "CNTTT", "numBidderJoin": 2,
+    }], family="KQLCNT")
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite").published
+    snapshot = sqlite3.connect(tmp_path / "serving.sqlite")
+    try:
+        plan = " ".join(row[-1] for row in snapshot.execute(
+            "EXPLAIN QUERY PLAN SELECT COUNT(*),SUM(CASE WHEN participants>0 THEN 1 ELSE 0 END)"
+            " FROM record_fields WHERE family='KQLCNT' AND is_latest=1"))
+        assert "COVERING INDEX ix_rf_catalog_agg" in plan
+    finally:
+        snapshot.close()
+
+
 def test_v2_catalog_epochs_mirror_str_only_display_dates(env, tmp_path: Path) -> None:
     """closing_epoch/signed_epoch feed the v2 catalog active()/date filters and must mirror v1
     project()'s str-only text() of bidCloseDate/contractSignDate. text() ignores a 1-element-list

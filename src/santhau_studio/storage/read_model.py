@@ -333,6 +333,13 @@ def materialise_records(conn: sqlite3.Connection, raw_root=None) -> None:
     conn.execute("CREATE INDEX ix_rf_catalog_latest ON record_fields(family,is_latest,record_id)")
     conn.execute("CREATE INDEX ix_rf_catalog_close ON record_fields(family,is_latest,closing_epoch,record_id) WHERE is_latest=1")
     conn.execute("CREATE INDEX ix_rf_catalog_published ON record_fields(family,is_latest,published_epoch,record_id) WHERE is_latest=1")
+    # Every catalog aggregate (summary, sectors, provinces, investors, timeline, page ids) reads
+    # these columns for the whole family filter. Covering them keeps each pass an index-only scan;
+    # the epoch indexes above are not covering and forced a random table lookup per row.
+    conn.execute("CREATE INDEX ix_rf_catalog_agg ON record_fields("
+                 "family,is_latest,record_id,version_state,version_raw,status_display,"
+                 "published_epoch,closing_epoch,signed_epoch,participants,investor_name,"
+                 "sectors_json,provinces_json,winner_names_json) WHERE is_latest=1")
     conn.execute("ANALYZE record_fields")
     conn.execute("CREATE INDEX ix_rp_name ON record_provinces(province_fold,record_id)")
     conn.execute("CREATE INDEX ix_rp_code ON record_provinces(province_code,record_id)")
