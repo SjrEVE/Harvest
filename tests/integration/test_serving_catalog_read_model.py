@@ -5,9 +5,11 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
+import pytest
 from test_serving_snapshot import commit_page
 
-from santhau_studio.storage import serving
+from santhau_studio.domain.text import fold_vietnamese
+from santhau_studio.storage import catalog_read_model, serving
 
 pytest_plugins = ("test_serving_snapshot",)
 
@@ -60,7 +62,7 @@ def test_snapshot_materializes_exact_khlcnt_catalog_aggregates(env, tmp_path: Pa
         meta = db.execute("SELECT * FROM serving_catalog_meta").fetchone()
         assert meta["singleton_id"] == 1
         assert meta["catalog_schema_version"] == 1
-        assert meta["prepared_families_json"] == '[]'
+        assert meta["prepared_families_json"] == '["KHLCNT"]'
         assert meta["source_projection_version"] == serving.PROJECTION_VERSION
         serving_meta = json.loads(
             db.execute("SELECT row_counts_json FROM serving_meta LIMIT 1").fetchone()[0]
@@ -150,3 +152,126 @@ def test_snapshot_is_current_rejects_derived_catalog_count_drift(env, tmp_path: 
     assert not serving.snapshot_is_current(warehouse, target)
 
 
+def test_snapshot_indexes_record_text_and_ordered_duplicate_components(env, tmp_path: Path) -> None:
+    writer, _, _, data_root = env
+    commit_page(
+        writer,
+        [{
+            "planNo": "PL-SEARCH-1",
+            "planVersion": "00",
+            "bidName": ["Do not index old version"],
+        }],
+        family="KHLCNT",
+    )
+    commit_page(
+        writer,
+        [{
+            "planNo": "PL-SEARCH-1",
+            "planVersion": "01",
+            "bidName": ["Sửa chữa đường", "Sửa chữa đường", "Thiết bị y tế"],
+            "investorName": "Chủ đầu tư A",
+            "publicDate": "2026-11-02T00:00:00",
+        }],
+        family="KHLCNT",
+        page_no=1,
+    )
+    commit_page(
+        writer,
+        [{"notifyNo": "TB-SEARCH-1", "notifyVersion": "00", "bidName": "Other family"}],
+        family="TBMT",
+        page_no=2,
+    )
+
+    result = serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")
+    assert result.published, result.reason
+
+    with closing(sqlite3.connect(tmp_path / "serving.sqlite")) as db:
+        db.row_factory = sqlite3.Row
+        meta = db.execute("SELECT * FROM serving_catalog_meta WHERE singleton_id=1").fetchone()
+        assert json.loads(meta["prepared_families_json"]) == ["KHLCNT"]
+        modes = json.loads(meta["search_index_modes_json"])
+        assert modes["record"] in {"fts5-trigram", "gram-intersection"}
+        assert modes["component"] in {"fts5-trigram", "gram-intersection"}
+        assert modes["short"] == "short-grams"
+
+        components = db.execute(
+            "SELECT component_id,record_id,component_ordinal,name_original,name_folded"
+            " FROM serving_catalog_components ORDER BY component_ordinal"
+        ).fetchall()
+        assert [(row["component_ordinal"], row["name_original"]) for row in components] == [
+            (0, "Sửa chữa đường"), (1, "Sửa chữa đường"), (2, "Thiết bị y tế")
+        ]
+        assert all(row["name_folded"] == fold_vietnamese(row["name_original"]) for row in components)
+        assert len({row["component_id"] for row in components}) == 3
+        assert db.execute("SELECT COUNT(*) FROM serving_catalog_records").fetchone()[0] == 1
+
+        if modes["component"] == "fts5-trigram":
+            hits = {
+                row[0]
+                for row in db.execute(
+                    "SELECT rowid FROM serving_catalog_component_fts WHERE serving_catalog_component_fts MATCH ?",
+                    ('"sua chua duong"',),
+                )
+            }
+            expected = {row["component_id"] for row in components if "sua chua duong" in row["name_folded"]}
+            assert hits == expected
+            record_hits = db.execute(
+                "SELECT rowid FROM serving_catalog_record_fts WHERE serving_catalog_record_fts MATCH ?",
+                ('"search"',),
+            ).fetchall()
+            assert len(record_hits) == 1
+        else:
+            assert db.execute(
+                "SELECT COUNT(*) FROM serving_catalog_short_grams"
+                " WHERE scope='component' AND gram='sua'"
+            ).fetchone()[0] == 2
+
+
+def test_catalog_search_rejects_malformed_non_null_component_json(env, tmp_path: Path) -> None:
+    writer, _, _, data_root = env
+    commit_page(
+        writer,
+        [{"planNo": "PL-SEARCH-2", "planVersion": "00", "bidName": ["Valid"]}],
+        family="KHLCNT",
+    )
+    result = serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "base.sqlite")
+    assert result.published, result.reason
+    with closing(sqlite3.connect(tmp_path / "base.sqlite")) as db:
+        db.row_factory = sqlite3.Row
+        built_at = db.execute("SELECT snapshot_built_at_utc FROM serving_catalog_meta").fetchone()[0]
+        db.execute("UPDATE record_fields SET components_json='not-json' WHERE family='KHLCNT'")
+        with pytest.raises(ValueError, match="components_json"):
+            catalog_read_model.materialise_catalog_search(
+                db, snapshot_built_at_utc=built_at, source_projection_version=2
+            )
+
+
+def test_snapshot_uses_complete_gram_fallback_when_trigram_is_unavailable(env, tmp_path: Path, monkeypatch) -> None:
+    writer, _, _, data_root = env
+    commit_page(
+        writer,
+        [{"planNo": "PL-FALLBACK", "planVersion": "00", "bidName": ["Sửa chữa", "Sửa chữa"]}],
+        family="KHLCNT",
+    )
+    monkeypatch.setattr(catalog_read_model, "_fts5_trigram_supported", lambda _conn: False)
+
+    result = serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")
+    assert result.published, result.reason
+
+    with closing(sqlite3.connect(tmp_path / "serving.sqlite")) as db:
+        db.row_factory = sqlite3.Row
+        meta = db.execute("SELECT * FROM serving_catalog_meta WHERE singleton_id=1").fetchone()
+        modes = json.loads(meta["search_index_modes_json"])
+        assert modes == {"component": "gram-intersection", "record": "gram-intersection", "short": "short-grams"}
+        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        assert "serving_catalog_component_fts" not in tables
+        assert "serving_catalog_record_fts" not in tables
+        assert db.execute(
+            "SELECT COUNT(*) FROM serving_catalog_short_grams"
+            " WHERE scope='component' AND gram='sua'"
+        ).fetchone()[0] == 2
+        assert db.execute(
+            "SELECT COUNT(*) FROM serving_catalog_short_grams"
+            " WHERE scope='component' AND gram='su'"
+        ).fetchone()[0] == 2
+        assert serving.snapshot_is_current(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")

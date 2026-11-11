@@ -138,6 +138,13 @@ def _build_serving_db_impl(warehouse: Path, target: Path) -> PublishResult:
                 snapshot_built_at_utc=built_at,
                 source_projection_version=PROJECTION_VERSION,
             )
+            from santhau_studio.storage.catalog_read_model import materialise_catalog_search
+
+            catalog_build = materialise_catalog_search(
+                dest,
+                snapshot_built_at_utc=built_at,
+                source_projection_version=PROJECTION_VERSION,
+            )
         except (sqlite3.Error, ValueError) as exc:
             raise SnapshotRejected(f"catalog read model rejected: {exc}") from exc
         dest.execute(

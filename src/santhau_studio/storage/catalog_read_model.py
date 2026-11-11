@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
+import unicodedata
 from dataclasses import dataclass
+
+from santhau_studio.domain.text import fold_vietnamese
 
 CATALOG_SCHEMA_VERSION = 1
 PREPARED_FAMILIES: tuple[str, ...] = ()
@@ -180,6 +184,251 @@ def _verify_parity(conn: sqlite3.Connection, family_latest_counts: dict[str, int
         calculated_counts[key] = calculated_counts.get(key, 0) + 1
     if dimension_counts != calculated_counts:
         raise ValueError("KHLCNT dimension aggregate drift")
+
+
+def _candidate_fold(value: str | None) -> str:
+    normalized = " ".join(unicodedata.normalize("NFC", value or "").casefold().split())
+    return fold_vietnamese(normalized)
+
+
+def _fts5_trigram_supported(conn: sqlite3.Connection) -> bool:
+    try:
+        conn.execute("CREATE VIRTUAL TABLE temp.catalog_trigram_probe USING fts5(value,tokenize='trigram')")
+        conn.execute("DROP TABLE temp.catalog_trigram_probe")
+        return True
+    except sqlite3.OperationalError:
+        return False
+
+
+def _unique_grams(value: str, lengths: tuple[int, ...]) -> list[str]:
+    return sorted({value[index : index + length] for length in lengths for index in range(len(value) - length + 1)})
+
+
+def _insert_candidate_grams(conn: sqlite3.Connection, *, trigram_supported: bool) -> None:
+    conn.execute(
+        "CREATE TABLE serving_catalog_short_grams ("
+        " scope TEXT NOT NULL CHECK(scope IN ('record','component')),gram TEXT NOT NULL,target_id INTEGER NOT NULL,"
+        " PRIMARY KEY(scope,target_id,gram)) WITHOUT ROWID"
+    )
+    lengths = (1, 2) if trigram_supported else (1, 2, 3)
+    batch: list[tuple[str, str, int]] = []
+    expected_hash = hashlib.sha256()
+    expected_count = 0
+
+    def flush() -> None:
+        if batch:
+            conn.executemany(
+                "INSERT OR IGNORE INTO serving_catalog_short_grams(scope,gram,target_id) VALUES(?,?,?)",
+                batch,
+            )
+            batch.clear()
+
+    for component_id, candidate in conn.execute(
+        "SELECT component_id,name_folded FROM serving_catalog_components ORDER BY component_id"
+    ):
+        target_id = int(component_id)
+        for gram in _unique_grams(candidate, lengths):
+            batch.append(("component", gram, target_id))
+            expected_hash.update(f"component\0{target_id}\0{gram}\n".encode())
+            expected_count += 1
+            if len(batch) >= 20_000:
+                flush()
+    for record_id, candidate in conn.execute(
+        "SELECT record_id,search_text_folded FROM serving_catalog_records ORDER BY record_id"
+    ):
+        target_id = int(record_id)
+        for gram in _unique_grams(candidate or "", lengths):
+            batch.append(("record", gram, target_id))
+            expected_hash.update(f"record\0{target_id}\0{gram}\n".encode())
+            expected_count += 1
+            if len(batch) >= 20_000:
+                flush()
+    flush()
+    conn.execute(
+        "CREATE INDEX ix_scg_lookup ON serving_catalog_short_grams(scope,gram,target_id)"
+    )
+    actual_count = int(conn.execute("SELECT COUNT(*) FROM serving_catalog_short_grams").fetchone()[0])
+    if actual_count != expected_count:
+        raise ValueError(f"short-gram row count mismatch: expected {expected_count}, got {actual_count}")
+    actual_hash = hashlib.sha256()
+    for scope, target_id, gram in conn.execute(
+        "SELECT scope,target_id,gram FROM serving_catalog_short_grams ORDER BY scope,target_id,gram"
+    ):
+        actual_hash.update(f"{scope}\0{target_id}\0{gram}\n".encode())
+    if actual_hash.digest() != expected_hash.digest():
+        raise ValueError("short-gram index checksum mismatch")
+
+
+def _materialise_components(conn: sqlite3.Connection) -> int:
+    conn.execute(
+        "CREATE TABLE serving_catalog_components ("
+        " component_id INTEGER PRIMARY KEY,record_id INTEGER NOT NULL,component_ordinal INTEGER NOT NULL,"
+        " name_original TEXT NOT NULL,name_folded TEXT NOT NULL,UNIQUE(record_id,component_ordinal))"
+    )
+    cursor = conn.execute(
+        "SELECT record_id,components_json FROM record_fields"
+        " WHERE family='KHLCNT' AND is_latest=1 ORDER BY record_id"
+    )
+    batch: list[tuple[int, int, str, str]] = []
+    expected_count = 0
+    while rows := cursor.fetchmany(2000):
+        for record_id, components_json in rows:
+            if components_json is None:
+                continue
+            try:
+                components = json.loads(components_json)
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise ValueError(f"components_json is invalid for KHLCNT record_id={record_id}") from exc
+            if not isinstance(components, list):
+                raise ValueError(f"components_json is not a list for KHLCNT record_id={record_id}")
+            for ordinal, name in enumerate(components):
+                if not isinstance(name, str) or not name.strip():
+                    continue
+                batch.append((int(record_id), ordinal, name, _candidate_fold(name)))
+                expected_count += 1
+        if len(batch) >= 20_000:
+            conn.executemany(
+                "INSERT INTO serving_catalog_components(record_id,component_ordinal,name_original,name_folded)"
+                " VALUES(?,?,?,?)",
+                batch,
+            )
+            batch.clear()
+    if batch:
+        conn.executemany(
+            "INSERT INTO serving_catalog_components(record_id,component_ordinal,name_original,name_folded)"
+            " VALUES(?,?,?,?)",
+            batch,
+        )
+    actual_count = int(conn.execute("SELECT COUNT(*) FROM serving_catalog_components").fetchone()[0])
+    if actual_count != expected_count:
+        raise ValueError(f"component row count mismatch: expected {expected_count}, got {actual_count}")
+    conn.execute(
+        "CREATE INDEX ix_scc_record_ordinal ON serving_catalog_components(record_id,component_ordinal)"
+    )
+    return expected_count
+
+
+def _verify_search_indexes(conn: sqlite3.Connection, *, trigram_supported: bool, component_count: int) -> None:
+    if trigram_supported:
+        if int(conn.execute("SELECT COUNT(*) FROM serving_catalog_record_fts").fetchone()[0]) != _count(
+            conn, "serving_catalog_records"
+        ):
+            raise ValueError("record FTS row count mismatch")
+        if int(conn.execute("SELECT COUNT(*) FROM serving_catalog_component_fts").fetchone()[0]) != component_count:
+            raise ValueError("component FTS row count mismatch")
+        record_orphans = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM (SELECT rowid FROM serving_catalog_record_fts"
+                " EXCEPT SELECT record_id FROM serving_catalog_records)"
+            ).fetchone()[0]
+        )
+        component_orphans = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM (SELECT rowid FROM serving_catalog_component_fts"
+                " EXCEPT SELECT component_id FROM serving_catalog_components)"
+            ).fetchone()[0]
+        )
+        if record_orphans or component_orphans:
+            raise ValueError("FTS rowid mapping mismatch")
+
+def materialise_catalog_search(
+    conn: sqlite3.Connection,
+    *,
+    snapshot_built_at_utc: str,
+    source_projection_version: int,
+) -> CatalogBuild:
+    """Build complete search candidate indexes before declaring KHLCNT prepared."""
+    meta = conn.execute("SELECT * FROM serving_catalog_meta WHERE singleton_id=1").fetchone()
+    if meta is None or meta["snapshot_built_at_utc"] != snapshot_built_at_utc:
+        raise ValueError("catalog metadata identity is missing or inconsistent")
+    for table in (
+        "serving_catalog_component_fts",
+        "serving_catalog_record_fts",
+        "serving_catalog_short_grams",
+        "serving_catalog_components",
+    ):
+        conn.execute(f'DROP TABLE IF EXISTS "{table}"')
+    conn.execute(
+        "UPDATE serving_catalog_meta SET prepared_families_json='[]',search_index_modes_json='{}'"
+        " WHERE singleton_id=1"
+    )
+    def fold_fn(value):
+        return _candidate_fold(value)
+    conn.create_function("catalog_fold", 1, fold_fn, deterministic=True)
+    conn.execute(
+        "UPDATE serving_catalog_records SET search_text_folded=catalog_fold(search_text)"
+    )
+    component_count = _materialise_components(conn)
+    trigram_supported = _fts5_trigram_supported(conn)
+    if trigram_supported:
+        conn.execute(
+            "CREATE VIRTUAL TABLE serving_catalog_record_fts USING fts5(candidate_text,content='',tokenize='trigram')"
+        )
+        conn.execute(
+            "CREATE VIRTUAL TABLE serving_catalog_component_fts USING fts5(candidate_text,content='',tokenize='trigram')"
+        )
+        conn.execute(
+            "INSERT INTO serving_catalog_record_fts(rowid,candidate_text)"
+            " SELECT record_id,search_text_folded FROM serving_catalog_records"
+        )
+        conn.execute(
+            "INSERT INTO serving_catalog_component_fts(rowid,candidate_text)"
+            " SELECT component_id,name_folded FROM serving_catalog_components"
+        )
+        record_mode = component_mode = "fts5-trigram"
+    else:
+        record_mode = component_mode = "gram-intersection"
+    _insert_candidate_grams(conn, trigram_supported=trigram_supported)
+    _verify_search_indexes(conn, trigram_supported=trigram_supported, component_count=component_count)
+
+    modes = {
+        "record": record_mode,
+        "component": component_mode,
+        "short": "short-grams",
+    }
+    conn.execute(
+        "UPDATE serving_catalog_meta SET prepared_families_json=?,search_index_modes_json=? WHERE singleton_id=1",
+        (json.dumps(["KHLCNT"], separators=(",", ":")), json.dumps(modes, sort_keys=True, separators=(",", ":"))),
+    )
+    tables = (
+        "serving_catalog_meta",
+        "serving_catalog_records",
+        "serving_catalog_family_summary",
+        "serving_catalog_time_buckets",
+        "serving_catalog_dimension_memberships",
+        "serving_catalog_dimension_counts",
+        "serving_catalog_components",
+        "serving_catalog_short_grams",
+    )
+    table_counts = {table: _count(conn, table) for table in tables}
+    if trigram_supported:
+        table_counts["serving_catalog_record_fts"] = _count(conn, "serving_catalog_record_fts")
+        table_counts["serving_catalog_component_fts"] = _count(conn, "serving_catalog_component_fts")
+    conn.execute(
+        "UPDATE serving_catalog_meta SET derived_counts_json=? WHERE singleton_id=1",
+        (json.dumps(table_counts, sort_keys=True, separators=(",", ":")),),
+    )
+    family_latest_counts = dict.fromkeys(CATALOG_FAMILIES, 0)
+    family_latest_counts.update(
+        {
+            family: int(count)
+            for family, count in conn.execute(
+                "SELECT family,COUNT(*) FROM record_fields WHERE is_latest=1 GROUP BY family"
+            )
+        }
+    )
+    return CatalogBuild(
+        metadata={
+            "catalog_schema_version": CATALOG_SCHEMA_VERSION,
+            "prepared_families": ["KHLCNT"],
+            "search_index_modes": modes,
+            "snapshot_built_at_utc": snapshot_built_at_utc,
+            "source_projection_version": int(source_projection_version),
+            "family_latest_counts": family_latest_counts,
+            "table_counts": table_counts,
+        },
+        family_latest_counts=family_latest_counts,
+    )
 
 
 def materialise_catalog(
