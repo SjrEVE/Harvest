@@ -129,6 +129,17 @@ def _build_serving_db_impl(warehouse: Path, target: Path) -> PublishResult:
             _materialise_coverage(dest)
         finally:
             _source_of.pop(id(dest), None)
+        built_at = _now()
+        from santhau_studio.storage.catalog_read_model import materialise_catalog
+
+        try:
+            catalog_build = materialise_catalog(
+                dest,
+                snapshot_built_at_utc=built_at,
+                source_projection_version=PROJECTION_VERSION,
+            )
+        except (sqlite3.Error, ValueError) as exc:
+            raise SnapshotRejected(f"catalog read model rejected: {exc}") from exc
         dest.execute(
             "CREATE TABLE IF NOT EXISTS serving_meta ("
             " id INTEGER PRIMARY KEY, snapshot_built_at_utc TEXT NOT NULL,"
@@ -153,12 +164,11 @@ def _build_serving_db_impl(warehouse: Path, target: Path) -> PublishResult:
         # signal is carried as structured JSON there rather than by adding columns. `stale=1`
         # tells the UI "do not present this as current-and-complete"; degraded_reason says why.
         degradation = _degradation(source)
-        built_at = _now()
         dest.execute(
             "INSERT INTO serving_meta (snapshot_built_at_utc, source_warehouse_sha, row_counts_json,"
             " stale, stale_reason) VALUES (?,?,?,?,?)",
             (built_at, _warehouse_sha(warehouse), json.dumps(
-                {**counts, "content_digest": digest}, sort_keys=True),
+                {**counts, "content_digest": digest, "derived_catalog": catalog_build.metadata}, sort_keys=True),
              1 if degradation else 0,
              json.dumps({"kind": "DEGRADED", "counts": degradation}, sort_keys=True) if degradation else None),
         )
@@ -602,10 +612,11 @@ def snapshot_is_current(warehouse: Path, serving: Path) -> bool:
         ) as snap, contextlib.closing(
             sqlite3.connect(warehouse.resolve().as_uri() + "?mode=ro", uri=True)
         ) as source:
+            snap.row_factory = sqlite3.Row
             if not _exists(snap, "serving_meta"):
                 return False
             row = snap.execute(
-                "SELECT row_counts_json FROM serving_meta ORDER BY id DESC LIMIT 1"
+                "SELECT snapshot_built_at_utc,row_counts_json FROM serving_meta ORDER BY id DESC LIMIT 1"
             ).fetchone()
             if row is None:
                 return False
@@ -616,12 +627,61 @@ def snapshot_is_current(warehouse: Path, serving: Path) -> bool:
             ).fetchone()
             if projection is None or int(projection[0]) != PROJECTION_VERSION:
                 return False
-            counts = json.loads(row[0])
+            counts = json.loads(row["row_counts_json"])
             if not isinstance(counts, dict) or not counts:
                 return False
             digest = counts.pop("content_digest", None)
+            derived_catalog = counts.pop("derived_catalog", None)
             if digest is None or _content_digest(source) != digest:
                 return False  # pre-digest manifest or a content flip: rebuild
+            if not isinstance(derived_catalog, dict):
+                return False
+            catalog_tables = derived_catalog.get("table_counts")
+            catalog_families = derived_catalog.get("family_latest_counts")
+            catalog_modes = derived_catalog.get("search_index_modes")
+            if (
+                type(derived_catalog.get("catalog_schema_version")) is not int
+                or derived_catalog["catalog_schema_version"] != 1
+                or derived_catalog.get("snapshot_built_at_utc") != row["snapshot_built_at_utc"]
+                or derived_catalog.get("source_projection_version") != PROJECTION_VERSION
+                or not isinstance(derived_catalog.get("prepared_families"), list)
+                or any(family not in {"TBMT", "YCBG", "DU_AN", "KHLCNT", "KQLCNT", "HOP_DONG"}
+                       for family in derived_catalog["prepared_families"])
+                or not isinstance(catalog_families, dict)
+                or set(catalog_families) != {"TBMT", "YCBG", "DU_AN", "KHLCNT", "KQLCNT", "HOP_DONG"}
+                or any(type(count) is not int or count < 0 for count in catalog_families.values())
+                or not isinstance(catalog_modes, dict)
+                or not isinstance(catalog_tables, dict)
+                or not {"serving_catalog_meta", "serving_catalog_records", "serving_catalog_family_summary",
+                        "serving_catalog_time_buckets", "serving_catalog_dimension_memberships",
+                        "serving_catalog_dimension_counts"} <= set(catalog_tables)
+            ):
+                return False
+            if not _exists(snap, "serving_catalog_meta"):
+                return False
+            catalog_meta = snap.execute("SELECT * FROM serving_catalog_meta WHERE singleton_id=1").fetchone()
+            if (
+                catalog_meta is None
+                or int(catalog_meta["catalog_schema_version"]) != derived_catalog["catalog_schema_version"]
+                or catalog_meta["snapshot_built_at_utc"] != row["snapshot_built_at_utc"]
+                or int(catalog_meta["source_projection_version"]) != PROJECTION_VERSION
+                or json.loads(catalog_meta["prepared_families_json"]) != derived_catalog["prepared_families"]
+                or json.loads(catalog_meta["search_index_modes_json"]) != catalog_modes
+                or json.loads(catalog_meta["derived_counts_json"]) != catalog_tables
+            ):
+                return False
+            if "KHLCNT" in derived_catalog["prepared_families"]:
+                if set(catalog_modes) != {"record", "component", "short"} or catalog_modes.get("short") != "short-grams":
+                    return False
+                if any(catalog_modes.get(scope) not in {"fts5-trigram", "gram-intersection"} for scope in ("record", "component")):
+                    return False
+                if "serving_catalog_short_grams" not in catalog_tables:
+                    return False
+                for scope in ("record", "component"):
+                    if catalog_modes[scope] == "fts5-trigram":
+                        fts_table = f"serving_catalog_{scope}_fts"
+                        if fts_table not in catalog_tables:
+                            return False
             for table, saved in counts.items():
                 # The manifest is written by build_serving_db from SNAPSHOT_TABLES;
                 # refusing unknown names keeps the count query injection-free.
@@ -633,6 +693,25 @@ def snapshot_is_current(warehouse: Path, serving: Path) -> bool:
                     return False
                 # Row MAX(rowid) is not comparable: TEXT-key tables get fresh
                 # rowids on copy. Content equality is owned by the digest above.
+            actual_families = {
+                family: int(count)
+                for family, count in snap.execute(
+                    "SELECT family,COUNT(*) FROM record_fields WHERE is_latest=1 GROUP BY family"
+                )
+            }
+            if {family: catalog_families[family] for family in catalog_families} != {
+                family: actual_families.get(family, 0) for family in catalog_families
+            }:
+                return False
+            for table, saved in catalog_tables.items():
+                if table not in {
+                    "serving_catalog_meta", "serving_catalog_records", "serving_catalog_family_summary",
+                    "serving_catalog_time_buckets", "serving_catalog_dimension_memberships",
+                    "serving_catalog_dimension_counts", "serving_catalog_components",
+                    "serving_catalog_component_fts", "serving_catalog_record_fts",
+                    "serving_catalog_short_grams",
+                } or type(saved) is not int or not _exists(snap, table) or _count(snap, table) != saved:
+                    return False
             if "settings" in counts:
                 left, right = _max_timestamp(source, "settings"), _max_timestamp(snap, "settings")
                 return (left is not _UNREADABLE and right is not _UNREADABLE and left == right)

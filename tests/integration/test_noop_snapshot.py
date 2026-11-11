@@ -44,6 +44,44 @@ def _make_pair(root: Path) -> None:
         conn = sqlite3.connect(root / name)
         conn.executescript(SCHEMA)
         if name == "serving.sqlite":
+            conn.executescript("""
+                CREATE TABLE record_fields(record_id INTEGER PRIMARY KEY,family TEXT,is_latest INTEGER);
+                CREATE TABLE serving_catalog_records(record_id INTEGER PRIMARY KEY,published_epoch REAL,closing_epoch REAL,
+                  signed_epoch REAL,version_known INTEGER,status_display TEXT,winner_names_json TEXT,investor_name TEXT,
+                  participants INTEGER,search_text TEXT);
+                CREATE TABLE serving_catalog_family_summary(family TEXT PRIMARY KEY,total_records INTEGER,known_dates INTEGER,
+                  missing_dates INTEGER,with_winners INTEGER,investor_count INTEGER,positive INTEGER,zero INTEGER,missing INTEGER,
+                  bucket_1 INTEGER,bucket_2 INTEGER,bucket_3_5 INTEGER,bucket_6_plus INTEGER) WITHOUT ROWID;
+                CREATE TABLE serving_catalog_time_buckets(family TEXT,bucket_kind TEXT,bucket_key TEXT,record_count INTEGER,
+                  PRIMARY KEY(family,bucket_kind,bucket_key)) WITHOUT ROWID;
+                CREATE TABLE serving_catalog_dimension_memberships(record_id INTEGER,dimension_kind TEXT,dimension_value TEXT,
+                  PRIMARY KEY(record_id,dimension_kind,dimension_value)) WITHOUT ROWID;
+                CREATE TABLE serving_catalog_dimension_counts(family TEXT,dimension_kind TEXT,dimension_value TEXT,record_count INTEGER,
+                  PRIMARY KEY(family,dimension_kind,dimension_value)) WITHOUT ROWID;
+                CREATE TABLE serving_catalog_meta(singleton_id INTEGER PRIMARY KEY,catalog_schema_version INTEGER,
+                  prepared_families_json TEXT,search_index_modes_json TEXT,snapshot_built_at_utc TEXT,
+                  source_projection_version INTEGER,derived_counts_json TEXT);
+                INSERT INTO serving_catalog_family_summary VALUES('KHLCNT',0,0,0,0,0,0,0,0,0,0,0,0);
+                INSERT INTO serving_catalog_meta VALUES(1,1,'[]','{}','2026-11-06T12:00:00Z',2,
+                  '{"serving_catalog_records":0,"serving_catalog_family_summary":1,"serving_catalog_time_buckets":0,
+                    "serving_catalog_dimension_memberships":0,"serving_catalog_dimension_counts":0,"serving_catalog_meta":1}');
+            """)
+            derived_catalog = {
+                "catalog_schema_version": 1,
+                "prepared_families": [],
+                "search_index_modes": {},
+                "family_latest_counts": dict.fromkeys(("TBMT", "YCBG", "DU_AN", "KHLCNT", "KQLCNT", "HOP_DONG"), 0),
+                "snapshot_built_at_utc": "2026-11-06T12:00:00Z",
+                "source_projection_version": 2,
+                "table_counts": {
+                    "serving_catalog_records": 0,
+                    "serving_catalog_family_summary": 1,
+                    "serving_catalog_time_buckets": 0,
+                    "serving_catalog_dimension_memberships": 0,
+                    "serving_catalog_dimension_counts": 0,
+                    "serving_catalog_meta": 1,
+                },
+            }
             conn.execute(
                 "CREATE TABLE serving_meta (id INTEGER PRIMARY KEY, snapshot_built_at_utc TEXT,"
                 " source_warehouse_sha TEXT, row_counts_json TEXT, stale INTEGER DEFAULT 0,"
@@ -53,7 +91,7 @@ def _make_pair(root: Path) -> None:
                 "INSERT INTO serving_meta (snapshot_built_at_utc, source_warehouse_sha, row_counts_json)"
                 " VALUES (?,?,?)",
                 ("2026-11-06T12:00:00Z", "sha-not-used-by-the-guard",
-                 json.dumps({**counts, "content_digest": _digest(conn)}, sort_keys=True)),
+                 json.dumps({**counts, "content_digest": _digest(conn), "derived_catalog": derived_catalog}, sort_keys=True)),
             )
             conn.execute(
                 "CREATE TABLE serving_projection_meta ("
