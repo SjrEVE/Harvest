@@ -80,6 +80,72 @@ class PublishResult:
     degraded: bool = False
 
 
+_CATALOG_TABLES = {
+    "serving_catalog_meta", "serving_catalog_records", "serving_catalog_family_summary",
+    "serving_catalog_time_buckets", "serving_catalog_dimension_memberships",
+    "serving_catalog_dimension_counts", "serving_catalog_components",
+    "serving_catalog_component_fts", "serving_catalog_record_fts", "serving_catalog_short_grams",
+}
+
+
+def _validate_catalog_candidate(conn: sqlite3.Connection, catalog_build, *, snapshot_built_at_utc: str) -> None:
+    """Fail closed when the catalog marker or any declared derived table is incomplete."""
+    metadata = getattr(catalog_build, "metadata", None)
+    if not isinstance(metadata, dict):
+        raise SnapshotRejected("catalog metadata is missing")
+    prepared = metadata.get("prepared_families")
+    modes = metadata.get("search_index_modes")
+    table_counts = metadata.get("table_counts")
+    family_counts = metadata.get("family_latest_counts")
+    if not isinstance(prepared, list) or not isinstance(modes, dict) or not isinstance(table_counts, dict) or not isinstance(family_counts, dict):
+        raise SnapshotRejected("catalog metadata is malformed")
+    if any(family not in {"TBMT", "YCBG", "DU_AN", "KHLCNT", "KQLCNT", "HOP_DONG"} for family in prepared):
+        raise SnapshotRejected("catalog prepared families are invalid")
+    if type(metadata.get("catalog_schema_version")) is not int or metadata["catalog_schema_version"] != 1:
+        raise SnapshotRejected("catalog schema marker is invalid")
+    if type(metadata.get("source_projection_version")) is not int or metadata["source_projection_version"] != PROJECTION_VERSION:
+        raise SnapshotRejected("catalog projection marker is invalid")
+    if set(family_counts) != {"TBMT", "YCBG", "DU_AN", "KHLCNT", "KQLCNT", "HOP_DONG"}:
+        raise SnapshotRejected("catalog family counts are incomplete")
+    if any(type(value) is not int or value < 0 for value in family_counts.values()):
+        raise SnapshotRejected("catalog family counts are invalid")
+    if any(table not in _CATALOG_TABLES or type(value) is not int or value < 0 for table, value in table_counts.items()):
+        raise SnapshotRejected("catalog derived counts are invalid")
+    if not set(table_counts) >= {
+        "serving_catalog_meta", "serving_catalog_records", "serving_catalog_family_summary",
+        "serving_catalog_time_buckets", "serving_catalog_dimension_memberships",
+        "serving_catalog_dimension_counts",
+    }:
+        raise SnapshotRejected("catalog derived tables are incomplete")
+    if "KHLCNT" in prepared:
+        if set(modes) != {"record", "component", "short"} or modes.get("short") != "short-grams":
+            raise SnapshotRejected("catalog search marker is incomplete")
+        if modes.get("record") not in {"fts5-trigram", "gram-intersection"} or modes.get("component") not in {"fts5-trigram", "gram-intersection"}:
+            raise SnapshotRejected("catalog search marker is invalid")
+    elif modes:
+        raise SnapshotRejected("catalog search marker does not match prepared families")
+    try:
+        marker = conn.execute("SELECT * FROM serving_catalog_meta WHERE singleton_id=1").fetchone()
+        if marker is None:
+            raise SnapshotRejected("catalog meta marker is missing")
+        if (
+            int(marker["catalog_schema_version"]) != int(metadata.get("catalog_schema_version"))
+            or marker["snapshot_built_at_utc"] != snapshot_built_at_utc
+            or int(marker["source_projection_version"]) != int(metadata.get("source_projection_version"))
+            or json.loads(marker["prepared_families_json"]) != prepared
+            or json.loads(marker["search_index_modes_json"]) != modes
+            or json.loads(marker["derived_counts_json"]) != table_counts
+        ):
+            raise SnapshotRejected("catalog meta marker is inconsistent")
+        for table, expected in table_counts.items():
+            if not _exists(conn, table) or _count(conn, table) != expected:
+                raise SnapshotRejected(f"catalog derived count mismatch: {table}")
+    except (sqlite3.Error, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        if isinstance(exc, SnapshotRejected):
+            raise
+        raise SnapshotRejected("catalog meta marker is unreadable") from exc
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
@@ -145,6 +211,7 @@ def _build_serving_db_impl(warehouse: Path, target: Path) -> PublishResult:
                 snapshot_built_at_utc=built_at,
                 source_projection_version=PROJECTION_VERSION,
             )
+            _validate_catalog_candidate(dest, catalog_build, snapshot_built_at_utc=built_at)
         except (sqlite3.Error, ValueError) as exc:
             raise SnapshotRejected(f"catalog read model rejected: {exc}") from exc
         dest.execute(

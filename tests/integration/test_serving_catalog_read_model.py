@@ -246,6 +246,70 @@ def test_catalog_search_rejects_malformed_non_null_component_json(env, tmp_path:
             )
 
 
+def test_candidate_with_missing_catalog_meta_is_rejected(env, tmp_path: Path, monkeypatch) -> None:
+    writer, _, _, data_root = env
+    commit_page(
+        writer,
+        [{"planNo": "PL-META-1", "planVersion": "00", "bidName": ["Meta gate"]}],
+        family="KHLCNT",
+    )
+    original = catalog_read_model.materialise_catalog_search
+
+    def drop_meta(conn, **kwargs):
+        result = original(conn, **kwargs)
+        conn.execute("DROP TABLE serving_catalog_meta")
+        return result
+
+    monkeypatch.setattr(catalog_read_model, "materialise_catalog_search", drop_meta)
+    result = serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")
+    assert not result.published
+    assert "catalog" in (result.reason or "").lower()
+
+
+def test_candidate_with_broken_catalog_meta_marker_is_rejected(env, tmp_path: Path, monkeypatch) -> None:
+    writer, _, _, data_root = env
+    commit_page(
+        writer,
+        [{"planNo": "PL-META-2", "planVersion": "00", "bidName": ["Broken marker"]}],
+        family="KHLCNT",
+    )
+    original = catalog_read_model.materialise_catalog_search
+
+    def corrupt_marker(conn, **kwargs):
+        result = original(conn, **kwargs)
+        conn.execute("UPDATE serving_catalog_meta SET prepared_families_json='[\"EVIL\"]'")
+        return result
+
+    monkeypatch.setattr(catalog_read_model, "materialise_catalog_search", corrupt_marker)
+    result = serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")
+    assert not result.published
+    assert "catalog" in (result.reason or "").lower()
+
+
+def test_rebuilding_the_same_catalog_twice_has_stable_derived_counts(env, tmp_path: Path) -> None:
+    writer, _, _, data_root = env
+    commit_page(
+        writer,
+        [{"planNo": "PL-STABLE-1", "planVersion": "00", "bidName": ["Stable"]}],
+        family="KHLCNT",
+    )
+    first = tmp_path / "first.sqlite"
+    second = tmp_path / "second.sqlite"
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", first).published
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", second).published
+    tables = (
+        "serving_catalog_meta", "serving_catalog_records", "serving_catalog_family_summary",
+        "serving_catalog_time_buckets", "serving_catalog_dimension_memberships",
+        "serving_catalog_dimension_counts", "serving_catalog_components",
+        "serving_catalog_short_grams",
+    )
+    def counts(path):
+        with closing(sqlite3.connect(path)) as db:
+            return {table: db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] for table in tables}
+
+    assert counts(first) == counts(second)
+
+
 def test_snapshot_uses_complete_gram_fallback_when_trigram_is_unavailable(env, tmp_path: Path, monkeypatch) -> None:
     writer, _, _, data_root = env
     commit_page(
