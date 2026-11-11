@@ -51,7 +51,7 @@ jobs:
             tests/integration/test_network_durability.py tests/integration/test_hsmt_semantics.py \
             tests/integration/test_unsupported_adapter.py tests/integration/test_effective_scope.py tests/integration/test_scoped_maintenance.py \
             tests/integration/test_reconcile_drift.py tests/integration/test_linode_form_fixtures.py \
-            tests/integration/test_backup_restore.py tests/integration/test_fault_injection.py
+            tests/integration/test_backup_restore.py tests/integration/test_fault_injection.py \
             tests/integration/test_serving_catalog_read_model.py tests/integration/test_serving_snapshot.py
             tests/integration/test_noop_snapshot.py
       - name: Build standalone collector and packages
