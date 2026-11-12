@@ -27,7 +27,8 @@ def _digest(conn: sqlite3.Connection) -> str:
     return hasher.hexdigest()
 
 SCHEMA = """
-CREATE TABLE source_records (id INTEGER PRIMARY KEY, family TEXT);
+CREATE TABLE source_records (id INTEGER PRIMARY KEY, family TEXT, current_content_version INTEGER);
+CREATE TABLE source_record_versions (source_record_id INTEGER,content_version_seq INTEGER,normalized_json TEXT);
 CREATE TABLE settings (key TEXT PRIMARY KEY, value_json TEXT, updated_at_utc TEXT);
 """
 
@@ -45,6 +46,10 @@ def _make_pair(root: Path) -> None:
         conn.executescript(SCHEMA)
         if name == "serving.sqlite":
             conn.executescript("""
+                CREATE TABLE market_relation_edges(id INTEGER PRIMARY KEY,from_record_id INTEGER,to_record_id INTEGER,source_record_id INTEGER,relation TEXT,basis TEXT,join_key TEXT,party_tax_id TEXT);
+                CREATE INDEX ix_mre_party_tax_id ON market_relation_edges(party_tax_id);
+                CREATE TABLE serving_organization_meta(singleton_id INTEGER PRIMARY KEY,organization_schema_version INTEGER,snapshot_built_at_utc TEXT,source_projection_version INTEGER,winning_membership_count INTEGER);
+                INSERT INTO serving_organization_meta VALUES(1,1,'2026-11-06T12:00:00Z',2,0);
                 CREATE TABLE record_fields(record_id INTEGER PRIMARY KEY,family TEXT,is_latest INTEGER,sectors_json TEXT,listing_public_date,market_fields_json TEXT NOT NULL DEFAULT '{}');
                 CREATE INDEX ix_rf_listing_family_date ON record_fields(family,listing_public_date DESC,record_id DESC);
                 CREATE INDEX ix_rf_listing_date ON record_fields(listing_public_date DESC,record_id DESC);
@@ -96,6 +101,8 @@ def _make_pair(root: Path) -> None:
                 " VALUES (?,?,?)",
                 ("2026-11-06T12:00:00Z", "sha-not-used-by-the-guard",
                  json.dumps({**counts, "content_digest": _digest(conn), "derived_catalog": derived_catalog,
+                             "derived_organizations": {"organization_schema_version": 1, "source_projection_version": 2,
+                                                       "snapshot_built_at_utc": "2026-11-06T12:00:00Z", "winning_membership_count": 0},
                              "derived_listing": {"listing_schema_version": 1, "record_count": 0,
                                                  "snapshot_built_at_utc": "2026-11-06T12:00:00Z"}}, sort_keys=True)),
             )
