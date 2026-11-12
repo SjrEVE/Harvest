@@ -8,6 +8,7 @@ retry machinery, so what is asserted is the production code path, not a stand-in
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 
 import httpx
 import pytest
@@ -60,7 +61,13 @@ def ok(body: dict | None = None) -> httpx.Response:
     return httpx.Response(200, json=body if body is not None else {"page": {"content": [], "totalElements": 0}})
 
 
-def lane_for(recorder: Recorder, *, sleeps: list[float], max_attempts: int = 3) -> FetchLane:
+def lane_for(
+    recorder: Recorder,
+    *,
+    sleeps: list[float],
+    max_attempts: int = 3,
+    pacing_sleeper: Callable[[float], None] | None = None,
+) -> FetchLane:
     """Backoff sleeps are recorded; pacing waits are observed through Attempt.wait_seconds."""
     return FetchLane(
         url=URL,
@@ -68,7 +75,7 @@ def lane_for(recorder: Recorder, *, sleeps: list[float], max_attempts: int = 3) 
         client=recorder.client(),
         retry=network_policy.RetryPolicy(max_attempts=max_attempts, jitter_fraction=0),
         sleeper=sleeps.append,
-        pacing_sleeper=_consume,
+        pacing_sleeper=pacing_sleeper or _consume,
     )
 
 
@@ -78,15 +85,32 @@ def _consume(seconds: float) -> None:
 
 # ------------------------------------------------------------------ pacing
 
-def test_two_families_on_one_host_share_one_limiter() -> None:
+def test_two_families_on_one_host_share_one_limiter(monkeypatch) -> None:
     """The source repo's per-adapter limiter let six lanes fire at one host 6x faster."""
+    clock = [100.0]
+    issued: list[float] = []
+    original_handler = Recorder.handler
+
+    def advance(seconds: float) -> None:
+        clock[0] += seconds
+
+    def handler(recorder: Recorder, request: httpx.Request) -> httpx.Response:
+        issued.append(clock[0])
+        response = original_handler(recorder, request)
+        advance(0.006)
+        return response
+
+    monkeypatch.setattr(network_policy.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(Recorder, "handler", handler)
     first, second = Recorder(ok()), Recorder(ok())
-    lane_a, lane_b = lane_for(first, sleeps=[]), lane_for(second, sleeps=[])
+    lane_a = lane_for(first, sleeps=[], pacing_sleeper=advance)
+    lane_b = lane_for(second, sleeps=[], pacing_sleeper=advance)
     assert lane_a.limiter is lane_b.limiter, "the limiter is keyed by host, not by adapter instance"
 
     a, b = lane_a.post([{}]), lane_b.post([{}])
     assert a.attempts[0].wait_seconds == 0.0, "an idle host fires immediately"
-    assert b.attempts[0].wait_seconds >= 0.015, "the second lane waited for the host slot, not its own floor"
+    assert b.attempts[0].wait_seconds == pytest.approx(0.014)
+    assert issued[1] >= issued[0] + 0.02, "families share the full host pacing interval"
     assert len(first.requests) == 1 and len(second.requests) == 1
 
 

@@ -45,7 +45,11 @@ def _make_pair(root: Path) -> None:
         conn.executescript(SCHEMA)
         if name == "serving.sqlite":
             conn.executescript("""
-                CREATE TABLE record_fields(record_id INTEGER PRIMARY KEY,family TEXT,is_latest INTEGER);
+                CREATE TABLE record_fields(record_id INTEGER PRIMARY KEY,family TEXT,is_latest INTEGER,sectors_json TEXT,listing_public_date,market_fields_json TEXT NOT NULL DEFAULT '{}');
+                CREATE INDEX ix_rf_listing_family_date ON record_fields(family,listing_public_date DESC,record_id DESC);
+                CREATE INDEX ix_rf_listing_date ON record_fields(listing_public_date DESC,record_id DESC);
+                CREATE TABLE serving_listing_meta(singleton_id INTEGER PRIMARY KEY,listing_schema_version INTEGER,record_count INTEGER,snapshot_built_at_utc TEXT);
+                INSERT INTO serving_listing_meta VALUES(1,1,0,'2026-11-06T12:00:00Z');
                 CREATE TABLE serving_catalog_records(record_id INTEGER PRIMARY KEY,published_epoch REAL,closing_epoch REAL,
                   signed_epoch REAL,version_known INTEGER,status_display TEXT,winner_names_json TEXT,investor_name TEXT,
                   participants INTEGER,search_text TEXT);
@@ -91,7 +95,9 @@ def _make_pair(root: Path) -> None:
                 "INSERT INTO serving_meta (snapshot_built_at_utc, source_warehouse_sha, row_counts_json)"
                 " VALUES (?,?,?)",
                 ("2026-11-06T12:00:00Z", "sha-not-used-by-the-guard",
-                 json.dumps({**counts, "content_digest": _digest(conn), "derived_catalog": derived_catalog}, sort_keys=True)),
+                 json.dumps({**counts, "content_digest": _digest(conn), "derived_catalog": derived_catalog,
+                             "derived_listing": {"listing_schema_version": 1, "record_count": 0,
+                                                 "snapshot_built_at_utc": "2026-11-06T12:00:00Z"}}, sort_keys=True)),
             )
             conn.execute(
                 "CREATE TABLE serving_projection_meta ("
