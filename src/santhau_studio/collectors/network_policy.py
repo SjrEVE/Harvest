@@ -12,6 +12,7 @@ Two defects in the source repo are fixed structurally here rather than by conven
 
 from __future__ import annotations
 
+import random
 import re
 import threading
 import time
@@ -180,15 +181,23 @@ def classify(status: int, *, retry_after: float | None = None, body_snippet: str
 class RetryPolicy:
     """Bounded retry. A retry is a new attempt, never a new request (§3.3)."""
 
-    max_attempts: int = 3
+    max_attempts: int = 4
     backoff_seconds: tuple[float, ...] = (3.0, 9.0, 27.0)
     respect_retry_after: bool = True
+    jitter_fraction: float = 0.2
+
+    def __post_init__(self):
+        if type(self.max_attempts) is not int or not 1 <= self.max_attempts <= 5:
+            raise ValueError("max_attempts must be 1..5")
+        if not 0 <= self.jitter_fraction <= 1 or not self.backoff_seconds or any(s < 0 for s in self.backoff_seconds):
+            raise ValueError("Invalid bounded backoff policy")
 
     def delay_for(self, attempt_no: int, retry_after: float | None) -> float:
         if self.respect_retry_after and retry_after is not None:
             return max(0.0, retry_after)
         index = min(max(attempt_no - 1, 0), len(self.backoff_seconds) - 1)
-        return self.backoff_seconds[index]
+        delay = self.backoff_seconds[index]
+        return delay * (1 + self.jitter_fraction * random.random())
 
     def exhausted(self, attempt_no: int) -> bool:
         return attempt_no >= self.max_attempts

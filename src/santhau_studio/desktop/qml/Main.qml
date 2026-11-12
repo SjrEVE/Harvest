@@ -60,7 +60,7 @@ Window {
         target: backend
         function onReadReady(key, serial, text) {
             if (key === "workspace") root.workspace = root.parse(text)
-            var pages = {page1:page1,page2:page2,page3:page3,page4:page4,page5:page5,page8:page8,page9:page9,page10:page10}
+            var pages = {page1:page1,page2:page2,page3:page3,page4:page4,page5:page5,page9:page9,page10:page10}
             if (pages[key]) pages[key].state = root.parse(text)
             if (key === "integrityRaw") { evidenceText.text=T.rawPreview(root.parse(text)); evidenceDialog.open() }
             if (key === "proof") { evidenceText.text = T.pretty(root.parse(text)); evidenceDialog.open() }
@@ -314,78 +314,11 @@ Window {
                 }
 
                 // ------------------------------------------------ UI-08 Deep Collection
-                Item {
+                DeepQueuePage {
                     id: page8
-                    property var state: ({ rows: [], summary: {} })
-                    onVisibleChanged: if (visible) reload()
-                    function reload() { backend.requestRead("page8", "deep_queue", "{}") }
-
-                    ScrollView {
-                        anchors.fill: parent; anchors.margins: 18; clip: true
-                        contentWidth: availableWidth
-                        ColumnLayout {
-                        width: parent.width
-                        spacing: 6
-
-                        Text {
-                            text: {
-                                var lanes = page8.state.lanes || []
-                                return lanes.length
-                                    ? "Nội dung thu thập: " + lanes.map(function (l) { return T.label(l.lane) + ": " + T.label(l.state) }).join(" · ")
-                                    : ""
-                            }
-                            color: "#526477"
-                            font.pixelSize: 13
-                            wrapMode: Text.WrapAnywhere
-                        }
-                        Text {
-                            text: page8.state.scope ? page8.state.scope + "\nĐã lấy: " + (page8.state.summary.FETCHED||0)
-                                  + " · Nguồn rỗng: " + (page8.state.summary.SOURCE_EMPTY||0)
-                                  + " · Lỗi parse: " + (page8.state.summary.PARSE_ERROR||0)
-                                  + " · Bị chặn: " + (page8.state.summary.BLOCKED||0)
-                                  + " · Lỗi lấy: " + (page8.state.summary.FAILED||0)
-                                  + " · Chưa lấy: " + (page8.state.summary.NOT_COLLECTED||0)
-                                  : "Đầy đủ: " + ((page8.state.summary || {}).FULL || 0)
-                                  + " · Chưa đầy đủ: " + ((page8.state.summary || {}).PARTIAL || 0)
-                                  + " · Chưa thu thập: " + ((page8.state.summary || {}).NOT_COLLECTED || 0)
-                                  + " · Cần cập nhật: " + ((page8.state.summary || {}).stale || 0)
-                            color: "#526477"
-                            font.pixelSize: 13
-                        }
-                        Repeater {
-                            model: page8.state.rows || []
-                            delegate: Rectangle {
-                                required property var modelData
-                                Layout.fillWidth: true
-                                height: 30
-                                color: "#ffffff"
-                                radius: 4
-                                Row {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.left: parent.left
-                                    anchors.leftMargin: 10
-                                    spacing: 18
-                                    Text { text: T.familyShort(modelData.family); color: "#172b3a"; font.pixelSize: 13; width: 70 }
-                                    Text { text: modelData.natural_key; color: "#334d60"; font.pixelSize: 13; width: 200 }
-                                    Text { text: T.label(modelData.lane); color: "#526477"; font.pixelSize: 13; width: 170 }
-                                    Text {
-                                        text: T.label(modelData.completeness)
-                                        color: modelData.completeness === "FULL" ? "#087f75" : "#965a08"
-                                        font.pixelSize: 13; width: 110
-                                    }
-                                    Text {
-                                        text: modelData.state ? T.label(modelData.state) : modelData.stale ? ("Cần cập nhật: " + T.message(modelData.stale_reason))
-                                             : (modelData.needs_refresh ? "cần cập nhật" : "đã cập nhật")
-                                        color: modelData.stale || modelData.needs_refresh ? "#965a08" : "#087f75"
-                                        font.pixelSize: 13; width: 170
-                                    }
-                                    Text { text: "Thu thập lúc " + modelData.captured_at_utc; color: "#526477"; font.pixelSize: 13 }
-                                }
-                            }
-                        }
-                        Item { Layout.preferredHeight: 8 }
-                        }
-                    }
+                    objectName: "deepQueuePage"
+                    bridge: backend
+                    onRecordRequested: function(recordId) { root.detailRecordId=recordId; root.pageIndex=6 }
                 }
 
                 // ------------------------------------------------ UI-09 Data Integrity

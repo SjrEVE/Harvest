@@ -51,7 +51,7 @@ def collect(root, calls, *, first=date(2026, 10, 27), now=NOW, fault=None, drift
         return pages
 
     loop = WorkerLoop(root, page_source_builder=builder, clock=clock or (lambda: now),
-        idle_exit_seconds=.01, poll_seconds=.001)
+        idle_exit_seconds=.01, poll_seconds=.001, publish_serving=False)
     loop.run()
     assert loop.exit_code == 0, loop.last_error
     with closing(connect_read_only(root / "warehouse.sqlite")) as conn:

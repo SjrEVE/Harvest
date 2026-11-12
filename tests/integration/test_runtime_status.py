@@ -4,10 +4,10 @@ from contextlib import closing
 from test_worker_ipc import job_request, portal_builder
 
 from santhau_studio.desktop.backend import StudioBackend
+from santhau_studio.storage import serving as snapshot_store
 from santhau_studio.storage.rawstore import RawObjectStore
 from santhau_studio.storage.serving import build_serving_db
 from santhau_studio.storage.warehouse import WarehouseWriter
-from santhau_studio.workers import jobs
 from santhau_studio.workers.jobs import WorkerController, WorkerLoop, claim_next_job, enqueue_job
 
 
@@ -16,7 +16,7 @@ def test_ping_exposes_recovery_snapshot_and_idle_phases(tmp_path, monkeypatch):
     controller = WorkerController(loop)
     phases = []
     recover = RawObjectStore.recover
-    build = jobs.build_serving_db
+    build = snapshot_store.build_serving_db
     def recovering(store, conn):
         phases.append(controller({"op": "ping"}, "test")["runtime"]["phase"])
         return recover(store, conn)
@@ -24,7 +24,7 @@ def test_ping_exposes_recovery_snapshot_and_idle_phases(tmp_path, monkeypatch):
         phases.append(controller({"op": "ping"}, "test")["runtime"]["phase"])
         return build(*args)
     monkeypatch.setattr(RawObjectStore, "recover", recovering)
-    monkeypatch.setattr(jobs, "build_serving_db", building)
+    monkeypatch.setattr(snapshot_store, "build_serving_db", building)
     loop.run()
     assert loop.exit_code == 0, loop.last_error
     assert phases == ["RECOVERING", "PUBLISHING_SNAPSHOT"]

@@ -2,12 +2,17 @@
 
 // Presentation only. Stored values, command names and original source bytes stay unchanged.
 var words = {
-    PUBLIC_CGTTRG:"Nguồn công khai · chỉ CGTTRG",FETCHED:"Đã lấy",SOURCE_EMPTY:"Đã lấy · nguồn rỗng",
+    STRUCTURED_ITEMS:"Bảng hàng hóa có cấu trúc",NOTICE_METADATA:"Thông tin thông báo",
+    DOCUMENT_ONLY:"Chỉ có tài liệu · chưa có bảng hàng hóa",STRUCTURED_ITEMS_UNAVAILABLE:"Chưa có dữ liệu hàng hóa có cấu trúc",
+    UNVERIFIED_FORM:"Biểu mẫu chưa được xác minh",UNSUPPORTED_PROCESS_APPLY:"Quy trình chưa được hỗ trợ",
+    UNSUPPORTED_BID_FORM:"Hình thức chưa được hỗ trợ",UNSUPPORTED_ADAPTER:"Bộ thu thập chưa hỗ trợ",
+    UNVERIFIED_LISTING:"Định danh danh sách cần kiểm tra",IDENTITY_QUARANTINE:"Định danh không khớp · cần kiểm tra",
+    PUBLIC_CGTTRG:"Nguồn công khai · chỉ CGTTRG",FETCHED:"Đã lấy",SOURCE_EMPTY:"Đã lấy · chưa có mục bổ sung",
     PARSE_ERROR:"Lỗi phân tích dữ liệu",REFERENCE_ONLY:"Chỉ có tham chiếu file",DOWNLOADED:"Đã tải và kiểm tra file",
     TESTED_OFFLINE:"Đã kiểm tra bằng dữ liệu giả lập",
     ALL:"Tất cả 6 loại hồ sơ",
     BACKFILL:"Thu thập theo khoảng ngày", INCREMENTAL:"Cập nhật tự động đến hiện tại", RECONCILE:"Đối chiếu lại dữ liệu",
-    INDEX:"Lập chỉ mục", DETAIL:"Chi tiết hồ sơ", HSMT:"Hồ sơ mời thầu", REOFFER:"Lịch sử chào lại",
+    INDEX:"Lập chỉ mục", DETAIL:"Chi tiết hồ sơ", HSMT:"Hồ sơ mời thầu", REOFFER:"Thông tin chào giá",
     KQLCNT_FULL:"Kết quả đầy đủ", BOQ:"Bảng khối lượng", OTHER:"Khác", VERIFY:"Kiểm tra", IMPORT:"Nhập dữ liệu",
     EXPORT:"Xuất dữ liệu", BACKUP:"Sao lưu", PAUSE:"Tạm dừng", RESUME:"Tiếp tục",
     STOP_GRACEFUL:"Dừng an toàn", FORCE_TERMINATE:"Tắt bộ thu thập",

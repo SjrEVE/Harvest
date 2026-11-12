@@ -54,6 +54,7 @@ def egp_page_source(
 
     if budget is not None:
         page_source.remaining_capacity = lambda: (budget.remaining_pages(pacing_seconds or 3), None)
+        page_source.set_stop_check = lambda callback: setattr(budget, "stop_requested", callback)
     return page_source
 
 

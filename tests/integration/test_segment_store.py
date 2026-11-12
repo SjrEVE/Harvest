@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from santhau_studio.storage import backup
+from santhau_studio.storage import rawstore as rawstore_module
 from santhau_studio.storage.rawstore import (
     LAYOUT_OBJECTS,
     LAYOUT_SEGMENTS,
@@ -200,6 +201,47 @@ def test_recover_reconciles_segment_objects_against_rows(root: Path) -> None:
             "SELECT integrity_status FROM raw_objects WHERE sha256=?", (ref.sha256,)
         ).fetchone()[0]
         assert status == "CORRUPT"
+    finally:
+        writer.close()
+
+
+def test_recover_classifies_missing_rows_with_constant_time_membership(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Recovery must keep the missing-row membership lookup out of its write loop."""
+    writer = WarehouseWriter.open(root, create_schema=True, raw_layout=LAYOUT_OBJECTS)
+    try:
+        missing = writer.store.put(b"missing row")
+        present = writer.store.put(b"present but unreadable")
+        writer.register_object(missing)
+        writer.register_object(present)
+        writer.conn.commit()
+        (root / missing.storage_rel_path).unlink()
+
+        class TrackingList(list[str]):
+            contains_calls = 0
+
+            def __contains__(self, value: object) -> bool:
+                type(self).contains_calls += 1
+                return super().__contains__(value)
+
+        original_sorted = sorted
+        first_sorted = True
+
+        def tracking_sorted(iterable, *args, **kwargs):
+            nonlocal first_sorted
+            result = original_sorted(iterable, *args, **kwargs)
+            if first_sorted:
+                first_sorted = False
+                return TrackingList(result)
+            return result
+
+        monkeypatch.setattr(rawstore_module, "sorted", tracking_sorted, raising=False)
+        monkeypatch.setattr(writer.store, "verify", lambda _sha: (False, "synthetic corruption"))
+
+        writer.store.recover(writer.conn)
+
+        assert TrackingList.contains_calls == 0
     finally:
         writer.close()
 

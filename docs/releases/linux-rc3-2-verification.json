@@ -1,0 +1,66 @@
+{
+  "status": "PASS",
+  "source_commit": "d33296e36d2d6a7430436f46ee876b651c90091a",
+  "source_inputs_checked": 97,
+  "standalone_files_checked": 691,
+  "artifact_hashes": {
+    "santhau-collector_0.0.1~rc3-2_amd64.deb": "99cec83bcc2381c250ea44feaa6e7b604608acc9bba65f26a9473f532456a8fe",
+    "santhau-collector-0.0.1-RC3-2-linux-x86_64.tar.gz": "317da951474a892df1bbecbee446884fcd8c32972132e02c2309fe0a242d35fa"
+  },
+  "artifact_bytes": {
+    "santhau-collector_0.0.1~rc3-2_amd64.deb": 22293706,
+    "santhau-collector-0.0.1-RC3-2-linux-x86_64.tar.gz": 29339601
+  },
+  "installed_file_bytes": 75530009,
+  "package_version": "0.0.1~rc3-2",
+  "qt_and_zstandard_absent": true,
+  "ci_url": "https://github.com/SjrEVE/Harvest/actions/runs/41988456300",
+  "artifact_url": "https://github.com/SjrEVE/Harvest/actions/runs/41988456300/artifacts/13397317934",
+  "tests": {
+    "tests": 449,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 1,
+    "passed": 448,
+    "seconds": 34.97,
+    "skipped_details": [
+      {
+        "class": "tests.integration.test_backup_restore",
+        "name": "test_restore_over_an_open_warehouse_reports_the_real_blocker",
+        "reason": "Win32 open-handle rename semantics; writer-lock refusal tested separately"
+      }
+    ]
+  },
+  "jobs": [
+    {
+      "name": "build",
+      "conclusion": "success",
+      "url": "https://github.com/SjrEVE/Harvest/actions/runs/41988456300/job/127114940638"
+    },
+    {
+      "name": "install-test (ubuntu:24.04, ubuntu-24.04)",
+      "conclusion": "success",
+      "url": "https://github.com/SjrEVE/Harvest/actions/runs/41988456300/job/127117134033"
+    },
+    {
+      "name": "install-test (ubuntu:22.04, ubuntu-22.04)",
+      "conclusion": "success",
+      "url": "https://github.com/SjrEVE/Harvest/actions/runs/41988456300/job/127117134034"
+    }
+  ],
+  "tests_xml_sha256": "524525440e2ebcc5143b232a51cac7a6fea53a5d235a19ef2e13feb92f9051df",
+  "scope": [
+    "Ubuntu 22.04/24.04 x86-64",
+    "offline fixtures; no source canary",
+    "deb install/run/reinstall/remove with data hashes preserved",
+    "portable tar install/run/remove",
+    "packaged systemd user service enable/start/status/restart/stop on both Ubuntu VMs"
+  ],
+  "not_tested": [
+    "actual Linode host and reboot",
+    "live E-GP from target server",
+    "ARM/Alpine"
+  ],
+  "review": "author self-review; no independent reviewer",
+  "storage_format": "unchanged; no serving snapshot; no subsecond persistence migration"
+}

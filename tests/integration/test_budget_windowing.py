@@ -146,7 +146,8 @@ def test_worker_summary_reconciles_parent_probe_with_observations(tmp_path):
     import json
     from contextlib import closing
 
-    from test_worker_ipc import _insert_rule, job_request
+    from test_collector_runtime import insert_rule as _insert_rule
+    from test_collector_runtime import job_request
 
     from santhau_studio.storage.warehouse import connect_read_only
     from santhau_studio.workers.jobs import WorkerLoop, enqueue_job
@@ -156,7 +157,7 @@ def test_worker_summary_reconciles_parent_probe_with_observations(tmp_path):
         return hourly_source(calls)
     request = job_request(request_limits={"max_pages": 8})
     enqueue_job(tmp_path, request)
-    loop = WorkerLoop(tmp_path, page_source_builder=builder, idle_exit_seconds=.01)
+    loop = WorkerLoop(tmp_path, page_source_builder=builder, publish_serving=False, idle_exit_seconds=.01)
     loop.run()
     assert loop.exit_code == 0, loop.last_error
     with closing(connect_read_only(tmp_path / "warehouse.sqlite")) as conn:

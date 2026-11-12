@@ -2,9 +2,11 @@
 
 Two boundaries this module keeps:
 
-* **The GUI never opens the warehouse for reading and never writes warehouse state.** Data comes
-  from `serving.sqlite` through `connect_read_only`; job requests are the one document the GUI
-  publishes, by writing a file into `jobs/queued/` that the worker claims by atomic rename (§2.3).
+* **The GUI never writes warehouse state.** Read-model/search data comes from `serving.sqlite`
+  through `connect_read_only`; since RC3-8 the audit/provenance tables live only in the
+  warehouse, and the GUI reads them **read-only** through `desktop.warehouse_reader`.
+  Job requests are the one document the GUI publishes, by writing a file into `jobs/queued/`
+  that the worker claims by atomic rename (§2.3).
 * **Worker truth comes from the worker.** Liveness is the data-root lock holder plus a pipe
   ping; progress is the worker's own `GET_STATUS` answer, not a re-derivation from files.
 
@@ -45,7 +47,7 @@ from santhau_studio.workers.jobs import JOB_KINDS, JobError, JobRequest, enqueue
 
 DISK_SCAN_LIMIT = 50_000
 SEARCH_LIMIT_MAX = 200
-APP_VERSION = "0.0.1-RC3"
+APP_VERSION = "0.0.1-RC3-9"
 _PROBE_LOCK = threading.Lock()
 
 _TITLE_KEYS = ("title", "bidName", "planName", "projectName", "contractName", "name")
@@ -239,6 +241,8 @@ class StudioBackend:
                 if state == "active":
                     active_job = entry
         selected_job = active_job or (payload["done"][-1] if payload["done"] else None)
+        from santhau_studio.desktop.warehouse_reader import WarehouseReader
+
         conn = self._serving()
         if conn is not None:
             with closing(conn):
@@ -247,11 +251,10 @@ class StudioBackend:
                                   for entry in payload[state] if isinstance(entry.get("job_id"), str)})
                 # Weekly child runs are audit history, not queue entries. A global limit
                 # lets them hide the parent, including its eventual COMPLETED status.
-                for row in conn.execute(
-                    "SELECT job_id,lifecycle,status FROM runs"
-                    " WHERE job_id IN (SELECT value FROM json_each(?))"
-                    " ORDER BY started_at_utc DESC,rowid DESC", (json.dumps(job_ids),)):
-                    latest.setdefault(row["job_id"], dict(row))
+                # `runs` lives in the warehouse (worker truth), never in the snapshot.
+                with WarehouseReader(self.data_root) as reader:
+                    for row in reader.latest_run_states(job_ids):
+                        latest.setdefault(row["job_id"], dict(row))
                 for state in ("queued", "active", "done"):
                     for entry in payload[state]:
                         entry.update(latest.get(entry.get("job_id"), {}))
@@ -436,7 +439,7 @@ class StudioBackend:
             try:
                 counts = _materialised_family_counts(conn)
                 if counts is None:
-                    counts = _family_counts(conn)
+                    counts = _family_counts(conn, warehouse_root=self.data_root)
                     payload["counts_source"] = "LIVE_GROUP_BY"
                 else:
                     payload["counts_source"] = "SERVING_SNAPSHOT"
@@ -505,7 +508,7 @@ class StudioBackend:
                 return {"present": True, "error": str(exc), "registry": [], "boundary_rules": []}
         with closing(self._serving()) as conn:
             from santhau_studio.desktop.diagnostics import source_evidence
-            extra = source_evidence(conn)
+            extra = source_evidence(conn, warehouse_db=self.data_root / "warehouse.sqlite")
         return {"present": True, "registry": registry, "boundary_rules": rules, **extra}
 
     # ------------------------------------------------------------------ UI-05 coverage
@@ -655,32 +658,15 @@ class StudioBackend:
                 if record is None:
                     return {"present": False}
                 key = record["identity_key"]
+                from santhau_studio.desktop.warehouse_reader import read_provenance
+
+                provenance = read_provenance(self.data_root, int(record_id), key, record["source_key"])
                 detail = {
                     "present": True,
                     "record": dict(record),
-                    "versions": [
-                        dict(row)
-                        for row in conn.execute(
-                            "SELECT content_version_seq, content_hash, change_kind, fetched_at_utc,"
-                            "       normalize_schema, normalized_json"
-                            " FROM source_record_versions WHERE source_record_id=?"
-                            " ORDER BY content_version_seq DESC LIMIT 50",
-                            (record_id,),
-                        )
-                    ],
-                    "raw_revisions": [
-                        dict(row)
-                        for row in conn.execute(
-                            "SELECT revision_no, record_object_sha, reason, first_observed_at_utc, run_id"
-                            " FROM raw_revisions WHERE source_record_id=? ORDER BY revision_no DESC LIMIT 50",
-                            (record_id,),
-                        )
-                    ],
-                    "observations": conn.execute(
-                        "SELECT COUNT(*) FROM observations o JOIN fetch_attempts a ON a.id=o.attempt_id"
-                        " JOIN fetch_requests q ON q.id=a.request_id WHERE o.observation_key=? AND q.source_key=?",
-                        (f"SR:{key}", record["source_key"]),
-                    ).fetchone()[0],
+                    "versions": provenance["versions"],
+                    "raw_revisions": provenance["raw_revisions"],
+                    "observations": provenance["observations"],
                     "deep_captures": [
                         dict(row)
                         for row in conn.execute(
@@ -702,7 +688,7 @@ class StudioBackend:
                         dict(row)
                         for row in conn.execute(
                             "SELECT row_ordinal, name, specification, unit, quantity_presence, quantity,"
-                            "       quantity_raw FROM goods_rows WHERE source_record_id=? ORDER BY row_ordinal",
+                            "       quantity_raw FROM goods_rows WHERE source_record_id=? ORDER BY row_ordinal LIMIT 100",
                             (record_id,),
                         )
                     ],
@@ -745,62 +731,26 @@ class StudioBackend:
                     ],
                 }
                 from santhau_studio.desktop.history import HISTORY
-                detail["history_counts"] = {name: conn.execute(
-                    f"SELECT COUNT(*) FROM {table} WHERE source_record_id=?", (record_id,)).fetchone()[0]
-                    for name, (table, _) in HISTORY.items()}
-                detail["aliases"] = [dict(r) for r in conn.execute(
-                    "SELECT alias_kind,alias_value,evidence_json FROM source_aliases WHERE source_record_id=? LIMIT 100", (record_id,))]
-                detail["identity_audit"] = [dict(r) for r in conn.execute(
-                    "SELECT id,action,target_ref,actor_sid,reason,undo_action_id,acted_at_utc FROM identity_audit_actions ORDER BY id DESC LIMIT 50")]
+                from santhau_studio.desktop.warehouse_reader import WarehouseReader
+
+                with WarehouseReader(self.data_root) as reader:
+                    detail["history_counts"] = reader.history_counts(int(record_id), HISTORY)
+                    detail["aliases"] = reader.aliases(int(record_id))
+                    detail["identity_audit"] = reader.identity_actions()
                 detail["legacy_unverified"] = record["source_key"].startswith("legacy:")
+                from santhau_studio.desktop.deep_status import states
+                detail["deep_states"] = states(conn, record_id)
+                with WarehouseReader(self.data_root) as reader:
+                    detail["relation_edges"] = reader.relation_edges(int(record_id))
             except sqlite3.Error as exc:
                 return {"present": True, "error": f"{type(exc).__name__}: {exc}"}
         from santhau_studio.desktop.data_quality import source_fields
         detail["source_fields"] = source_fields(self.data_root, detail["record"]["current_record_object_sha"])
-        if detail.get('present'):
-            from santhau_studio.desktop.deep_status import states
-            state_conn = self._serving()
-            if state_conn is not None:
-                with closing(state_conn):
-                    detail['deep_states'] = states(state_conn, record_id)
-                    detail['relation_edges'] = [dict(row) for row in state_conn.execute(
-                        "SELECT DISTINCT e.* FROM relation_edges e JOIN entity_source_links l "
-                        "ON l.entity_id=e.from_entity OR l.entity_id=e.to_entity WHERE l.source_record_id=?",(record_id,))]
         return detail
 
     def enqueue_deep(self, payload):
-        import os
-
-        from santhau_studio.collectors.offline_acceptance import enabled
-        offline = enabled(self.data_root) and os.environ.get("SANTHAU_OFFLINE_ACCEPTANCE_ROOT") == str(self.data_root.resolve())
-        try:
-            record_id = int(payload["record_id"])
-            detail = self.record_detail(record_id)
-            if not detail.get("record"):
-                raise ValueError("Không có hồ sơ")
-            family = detail["record"]["family"]
-            lane = payload.get("lane", "DETAIL")
-            if lane not in ("DETAIL","HSMT","REOFFER"):
-                raise ValueError("Lane không hỗ trợ")
-            if not offline:
-                from santhau_studio.storage.rawstore import RawObjectStore
-                with closing(RawObjectStore(self.data_root,read_only=True)) as store:
-                    raw=json.loads(store.read(detail['record']['current_record_object_sha']))
-                if family!='TBMT' or raw.get('bidForm')!='CGTTRG':
-                    raise ValueError('Chỉ xác minh nguồn công khai cho TBMT/CGTTRG')
-                worker=self.worker_status()
-                if worker.get('running') and 'public-cgttrg-deep-v1' not in worker.get('capabilities',[]):
-                    raise ValueError('Cần cập nhật worker hỗ trợ public-cgttrg-deep-v1 trước khi chạy chi tiết')
-            rule = self._verified_rule("egp_home", family)
-            if not rule:
-                raise ValueError("Không có rule")
-            request = JobRequest(job_id="deep-"+uuid.uuid4().hex[:12],job_kind=lane,requested_by="gui",
-                sources=({**rule,"family":family},),scope={"record_ids":[record_id],"force_refresh":bool(payload.get('force_refresh'))},
-                request_limits={"max_requests":5,"max_seconds":120,"pacing_seconds":3},created_at=_now())
-            enqueue_job(self.data_root,request)
-            return {"ok":True,"job_id":request.job_id,"profile":"SYNTHETIC_OFFLINE" if offline else "PUBLIC_CGTTRG"}
-        except (KeyError,ValueError) as exc:
-            return {"ok":False,"error":str(exc)}
+        from santhau_studio.desktop.deep_actions import enqueue
+        return enqueue(self, payload)
 
     def coverage_proof(self, proof_id):
         from santhau_studio.desktop.diagnostics import proof
@@ -816,7 +766,7 @@ class StudioBackend:
         if conn is None:
             return {"rows": [], "error": "Chưa có snapshot."}
         with closing(conn):
-            return history(conn, payload)
+            return history(conn, payload, warehouse_root=self.data_root)
 
     def raw_object(self, sha: str) -> dict:
         from santhau_studio.desktop.history import raw_preview
@@ -828,14 +778,14 @@ class StudioBackend:
 
     # ------------------------------------------------------------------ UI-08 deep queue
 
-    def deep_queue(self) -> dict[str, Any]:
+    def deep_queue(self, payload=None) -> dict[str, Any]:
         conn = self._serving()
         if conn is None:
             return {"present": False, "rows": [], "summary": {}}
         with closing(conn):
             if not self.workspace_identity()['synthetic']:
                 from santhau_studio.desktop.deep_status import queue
-                return queue(conn)
+                return {**queue(conn, payload), "snapshot": serving_state(self.serving_path)}
             try:
                 rows = [
                     dict(row)
@@ -880,48 +830,47 @@ class StudioBackend:
             return {"present": False, "raw_objects": {}, "quarantine": [], "unresolved": {}, "gaps": [], "markers": []}
         with closing(conn):
             try:
-                raw = {
-                    row["integrity_status"]: row["count"]
-                    for row in conn.execute(
-                        "SELECT integrity_status, COUNT(*) AS count FROM raw_objects GROUP BY integrity_status"
-                    )
-                }
-                quarantine = [
-                    dict(row)
-                    for row in conn.execute(
-                        "SELECT failure, response_object_sha, detail, substr(response_object_sha, 1, 12) AS sha12, quarantined_at_utc"
-                        " FROM quarantined_responses ORDER BY quarantined_at_utc DESC LIMIT 50"
-                    )
-                ]
-                unresolved = {
-                    "open": conn.execute(
-                        "SELECT COUNT(*) FROM unresolved_records WHERE resolved_at_utc IS NULL"
-                    ).fetchone()[0],
-                    "resolved": conn.execute(
-                        "SELECT COUNT(*) FROM unresolved_records WHERE resolved_at_utc IS NOT NULL"
-                    ).fetchone()[0],
-                }
-                gaps = [
-                    dict(row)
-                    for row in conn.execute(
-                        "SELECT kind, COUNT(*) AS count FROM reconcile_gaps"
-                        " WHERE acknowledged_at_utc IS NULL GROUP BY kind ORDER BY kind"
-                    )
-                ]
-                quarantine_total = conn.execute("SELECT COUNT(*) FROM quarantined_responses").fetchone()[0]
-                inspection = {
-                    "unresolved": [dict(r) for r in conn.execute("SELECT id,family,reason,record_object_sha FROM unresolved_records WHERE resolved_at_utc IS NULL LIMIT 50")],
-                    "raw_failures": [dict(r) for r in conn.execute("SELECT sha256,integrity_status FROM raw_objects WHERE integrity_status<>'OK' LIMIT 50")],
-                    "legacy_imports": [dict(r) for r in conn.execute("SELECT batch_key,rows_seen,rows_imported,rows_rejected,state FROM import_batches ORDER BY id DESC LIMIT 20")],
-                    "legacy_rejections": [json.loads(r[0]) for r in conn.execute("SELECT value_json FROM settings WHERE key LIKE 'legacy:rejected:%' LIMIT 20")],
-                }
-                markers = [
-                    dict(row)
-                    for row in conn.execute(
-                        "SELECT key, value_json, updated_at_utc FROM settings"
-                        " WHERE key IN ('serving_stale','last_integrity_scan') OR key LIKE 'legacy:coverage:%' ORDER BY key LIMIT 50"
-                    )
-                ]
+                from santhau_studio.desktop.warehouse_reader import WarehouseReader
+
+                with WarehouseReader(self.data_root) as reader:
+                    raw_stats, raw_failures = reader.raw_integrity_summary()
+                    raw = {row["integrity_status"]: row["count"] for row in raw_stats}
+                    quarantine = [
+                        dict(row)
+                        for row in conn.execute(
+                            "SELECT failure, response_object_sha, detail, substr(response_object_sha, 1, 12) AS sha12, quarantined_at_utc"
+                            " FROM quarantined_responses ORDER BY quarantined_at_utc DESC LIMIT 50"
+                        )
+                    ]
+                    unresolved = {
+                        "open": conn.execute(
+                            "SELECT COUNT(*) FROM unresolved_records WHERE resolved_at_utc IS NULL"
+                        ).fetchone()[0],
+                        "resolved": conn.execute(
+                            "SELECT COUNT(*) FROM unresolved_records WHERE resolved_at_utc IS NOT NULL"
+                        ).fetchone()[0],
+                    }
+                    gaps = [
+                        dict(row)
+                        for row in conn.execute(
+                            "SELECT kind, COUNT(*) AS count FROM reconcile_gaps"
+                            " WHERE acknowledged_at_utc IS NULL GROUP BY kind ORDER BY kind"
+                        )
+                    ]
+                    quarantine_total = conn.execute("SELECT COUNT(*) FROM quarantined_responses").fetchone()[0]
+                    inspection = {
+                        "unresolved": [dict(r) for r in conn.execute("SELECT id,family,reason,record_object_sha FROM unresolved_records WHERE resolved_at_utc IS NULL LIMIT 50")],
+                        "raw_failures": raw_failures,
+                        "legacy_imports": reader.legacy_imports(),
+                        "legacy_rejections": [json.loads(r[0]) for r in conn.execute("SELECT value_json FROM settings WHERE key LIKE 'legacy:rejected:%' LIMIT 20")],
+                    }
+                    markers = [
+                        dict(row)
+                        for row in conn.execute(
+                            "SELECT key, value_json, updated_at_utc FROM settings"
+                            " WHERE key IN ('serving_stale','last_integrity_scan') OR key LIKE 'legacy:coverage:%' ORDER BY key LIMIT 50"
+                        )
+                    ]
             except sqlite3.Error as exc:
                 return {"present": True, "error": str(exc), "raw_objects": {}, "quarantine": [],
                         "unresolved": {}, "gaps": [], "markers": []}
@@ -979,7 +928,7 @@ class StudioBackend:
             return 0
 
 
-def _family_counts(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
+def _family_counts(conn: sqlite3.Connection, warehouse_root=None) -> dict[str, dict[str, Any]]:
     families: dict[str, dict[str, Any]] = {}
 
     def bump(family: str, field: str, value: int) -> None:
@@ -994,13 +943,20 @@ def _family_counts(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
         " GROUP BY sr.family"
     ):
         bump(row[0], "versions", row[1])
-    for row in conn.execute(
-        "SELECT sr.family, COUNT(*) FROM raw_revisions r JOIN source_records sr ON sr.id = r.source_record_id"
-        " GROUP BY sr.family"
-    ):
-        bump(row[0], "raw_revisions", row[1])
-    for row in conn.execute("SELECT family, COUNT(*) FROM observations GROUP BY family"):
-        bump(row[0], "observations", row[1])
+    if warehouse_root is not None:  # RC3-8: audit tables live in the warehouse only
+        from pathlib import Path as _Path
+
+        db = _Path(warehouse_root)
+        db = db if db.name == "warehouse.sqlite" else db / "warehouse.sqlite"
+        if db.exists():
+            from santhau_studio.desktop.warehouse_reader import WarehouseReader
+
+            with WarehouseReader(db) as reader:
+                _records, revisions, observations = reader.family_totals()
+            for family, count in revisions.items():
+                bump(family, "raw_revisions", count)
+            for family, count in observations.items():
+                bump(family, "observations", count)
     for row in conn.execute(
         "SELECT family, MAX(verified_at_utc) FROM coverage_proofs GROUP BY family"
     ):

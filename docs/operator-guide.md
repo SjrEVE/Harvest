@@ -19,9 +19,7 @@ từ tuần mới nhất lùi dần về trước; tuần cuối có thể ngắ
 Nếu chọn đến hôm nay, bộ thu thập lấy dữ liệu hiện có của hôm nay cho cả sáu loại,
 giữ trạng thái chưa chốt đủ ngày rồi tiếp tục các ngày đã kết thúc. Hôm nay có thể
 còn phát sinh hồ sơ, nên tác vụ vẫn ghi Chưa đầy đủ cùng lý do rõ ràng; chạy cập nhật
-hoặc chạy lại sau khi hết ngày để đối chiếu và chốt bằng chứng. Nếu lượt thu thập
-lịch sử kéo dài qua nửa đêm, tác vụ tự lấy lại ngày vừa khép sau phần lịch sử;
-chỉ chốt đầy đủ khi lượt lấy mới đủ bằng chứng. Lỗi mạng, CAPTCHA
+hoặc chạy lại sau khi hết ngày để đối chiếu và chốt bằng chứng. Lỗi mạng, CAPTCHA
 và giới hạn không được bỏ qua theo cơ chế này.
 
 Một tác vụ tự xử lý sáu loại trong từng tuần. Ngày đã được xác nhận đủ bằng chứng được
@@ -37,17 +35,6 @@ Chọn đúng tác vụ trong danh sách trước khi **Tạm dừng**, **Tiếp
 Đóng GUI vẫn để bộ thu thập chạy. **Tắt bộ thu thập** dùng khi cần bảo trì hoặc nâng cấp.
 Không sửa hoặc xóa thủ công tệp hàng đợi trong khi bộ thu thập đang giữ kho.
 
-Trạng thái trên trang **Kho dữ liệu**, thanh trên và trang **Thu thập dữ liệu**
-dùng cùng phản hồi trực tiếp của bộ thu thập. **Đang cập nhật dữ liệu hiển thị**
-là bước dựng bản tra cứu, trong bước này chưa lấy trang mới. **Đang tạm dừng**
-hoặc **Đang tắt bộ thu thập** nghĩa là đã nhận lệnh và đang chờ lưu xong bước hiện tại.
-Chỉ **Đã tạm dừng** hoặc **Đã tắt bộ thu thập** mới xác nhận bước đó hoàn tất.
-
-Quá 10 giây chưa có phản hồi mới, giao diện báo **Chưa nhận được trạng thái mới**
-và khóa các nút điều khiển phụ thuộc trạng thái. Thời điểm nhận trang gần nhất
-giúp phân biệt kết nối worker còn hoạt động với việc nguồn chưa trả trang mới.
-Không dùng số dòng của tác vụ trước để suy ra tác vụ đang chạy.
-
 **Cập nhật tự động** dùng mốc đã thu thập và khoảng kiểm tra chồng lấn để tìm chỉnh sửa gần đây.
 **Đối chiếu dữ liệu** kiểm tra lại khoảng đã có bằng chứng. Các chế độ này khác với việc
 chạy bù một khoảng ngày lịch sử.
@@ -58,12 +45,6 @@ chạy bù một khoảng ngày lịch sử.
 ngày đủ bằng chứng theo tháng/tuần/ngày. Tổng nguồn chưa đo đủ hoặc bị giới hạn 10.000
 không được coi là số chính xác. Bảng dùng dữ liệu hiển thị được công bố theo từng lượt,
 có thời điểm cập nhật; số lượng đạt 100% không thay thế bằng chứng thu thập đầy đủ.
-
-Với tác vụ tuần, bản hiển thị được gom cập nhật sau mỗi nhóm tối đa sáu lượt con
-và khi tác vụ kết thúc. Trong lúc chờ, số hồ sơ tra cứu có thể thấp hơn kho đang thu
-thập; giao diện đánh dấu rõ bản hiển thị còn cũ. Tiến độ trực tiếp vẫn cập nhật qua
-worker. Cơ chế này giảm số lần dựng toàn bộ kho, không bảo đảm một thời gian cập
-nhật cố định nếu từng lượt con kéo dài.
 
 Ngày thống kê theo từng loại phải khớp ngày nguồn dùng để lọc. Kết quả lựa chọn nhà thầu
 dùng ngày công bố kết quả, không cộng vào tháng công bố thông báo mời thầu. Tổng sáu loại

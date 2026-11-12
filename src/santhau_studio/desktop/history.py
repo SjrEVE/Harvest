@@ -9,13 +9,17 @@ from santhau_studio.storage.rawstore import ObjectCorruptError, RawObjectStore
 HISTORY = {
     "versions": ("source_record_versions", "content_version_seq"),
     "raw_revisions": ("raw_revisions", "revision_no"),
-    "lots": ("lots", "id"), "goods_rows": ("goods_rows", "id"),
+    "lots": ("lots", "id"), "goods_rows": ("(SELECT g.*,l.lot_no_raw,l.lot_label FROM goods_rows g LEFT JOIN lots l ON l.id=g.lot_id)", "id"),
     "documents": ("documents", "id"), "contractor_memberships": ("contractor_memberships", "id"),
     "deep_history": ("(SELECT h.*,d.source_record_id,d.lane,d.endpoint_kind FROM deep_capture_history h JOIN deep_captures d ON d.id=h.deep_capture_id)", "id"),
 }
 
 
-def history(conn, payload: dict) -> dict:
+# Kinds whose tables live in the warehouse since RC3-8 (audit/provenance).
+WAREHOUSE_KINDS = frozenset(("versions", "raw_revisions"))
+
+
+def history(conn, payload: dict, warehouse_root=None) -> dict:
     kind = payload.get("kind", "versions")
     if kind not in HISTORY:
         return {"rows": [], "error_code": "INVALID_HISTORY", "error": "Loại lịch sử không hợp lệ."}
@@ -25,19 +29,35 @@ def history(conn, payload: dict) -> dict:
         limit = min(100, max(1, int(payload.get("limit", 50))))
         before = int(payload.get("before") or 2**63 - 1)
     except (ValueError, TypeError):
+        # Validate BEFORE opening any warehouse reader so no connection leaks.
         return {"rows": [], "error_code": "INVALID_HISTORY", "error": "Trang lịch sử không hợp lệ."}
-    rows = [dict(r) for r in conn.execute(
-        f"SELECT * FROM {table} WHERE source_record_id=? AND {sequence}<? ORDER BY {sequence} DESC LIMIT ?",
-        (record_id, before, limit + 1))]
+    lookup = conn
+    reader = None
+    if kind in WAREHOUSE_KINDS and warehouse_root is not None:
+        from santhau_studio.desktop.warehouse_reader import WarehouseReader
+
+        reader = WarehouseReader(warehouse_root)
+        reader.__enter__()
+        lookup = reader._conn
+    try:
+        rows = [dict(r) for r in lookup.execute(
+            f"SELECT * FROM {table} WHERE source_record_id=? AND {sequence}<? ORDER BY {sequence} DESC LIMIT ?",
+            (record_id, before, limit + 1))]
+    finally:
+        if reader is not None:
+            reader.__exit__(None, None, None)
     more = len(rows) > limit
     rows = rows[:limit]
     return {"rows": rows, "has_more": more, "before": rows[-1][sequence] if more else None, "kind": kind}
 
 
-def raw_preview(root, conn, sha: str) -> dict:
+def raw_preview(root, _conn, sha: str) -> dict:
     if not re.fullmatch(r"[0-9a-f]{64}", sha):
         return {"error_code": "INVALID_HASH", "error": "SHA256 không hợp lệ."}
-    row = conn.execute("SELECT byte_len,integrity_status FROM raw_objects WHERE sha256=?", (sha,)).fetchone()
+    from santhau_studio.desktop.warehouse_reader import WarehouseReader
+    with WarehouseReader(root) as reader:
+        status = reader.raw_object_status(sha)
+    row = (status["byte_len"], status["integrity_status"]) if status else None
     if row is None:
         return {"error_code": "NOT_FOUND", "error": "Object không thuộc snapshot này."}
     # Avoid allocating an arbitrarily large response on a UI preview request.

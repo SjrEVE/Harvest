@@ -13,6 +13,7 @@ def test_host_lease_serializes_processes_and_preserves_cooldown(tmp_path: Path, 
     from santhau_studio.platform_win.host_gate import HostRequestGate
 
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
     script = (
         "import time\n"
         "from santhau_studio.platform_win.host_gate import HostRequestGate\n"

@@ -1,0 +1,131 @@
+name: Linux collector
+on:
+  push:
+    branches: [codex/linux-collector]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: linux-collector-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Install build dependencies without Qt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y patchelf ccache gcc make
+          python -m pip install --require-hashes -r packaging/linux/requirements.txt
+      - name: Lint and secret gate
+        run: |
+          python -m ruff check src tests tools
+          python tools/secret_scan.py src tests tools packaging docs --fail-on-findings
+      - name: Collector and Linux runtime regression (offline)
+        env:
+          PYTHONPATH: src
+        run: |
+          mkdir -p build/linux
+          python -m pytest -q -o addopts='' --junitxml=build/linux/tests.xml \
+            tests/contract tests/unit/test_boundary.py tests/unit/test_ddl_contract.py \
+            tests/unit/test_linux_config.py tests/unit/test_sanitizer.py tests/unit/test_schema_path.py \
+            tests/unit/test_secret_gate.py tests/unit/test_weekly_order.py tests/integration/test_boundary_contract.py \
+            tests/integration/test_canary_state.py tests/integration/test_coverage_store.py \
+            tests/integration/test_budget_windowing.py tests/integration/test_collector_runtime.py \
+            tests/integration/test_writer_contract.py tests/integration/test_segment_store.py \
+            tests/integration/test_runner_modes.py tests/integration/test_public_tables.py \
+            tests/integration/test_migrations.py tests/integration/test_http_lane.py \
+            tests/integration/test_egp_lane.py tests/integration/test_egp_date_wire.py \
+            tests/integration/test_data_root_lock.py tests/integration/test_host_gate.py \
+            tests/integration/test_headless_worker.py tests/integration/test_weekly_open_day.py tests/integration/test_linux_cli.py \
+            tests/integration/test_linux_control.py tests/integration/test_live_worker_builder.py \
+            tests/integration/test_linux_deep.py tests/integration/test_public_deep.py tests/integration/test_auto_deep.py \
+            tests/integration/test_network_durability.py tests/integration/test_hsmt_semantics.py \
+            tests/integration/test_unsupported_adapter.py tests/integration/test_effective_scope.py tests/integration/test_scoped_maintenance.py \
+            tests/integration/test_reconcile_drift.py tests/integration/test_linode_form_fixtures.py \
+            tests/integration/test_backup_restore.py tests/integration/test_fault_injection.py \
+            tests/integration/test_serving_catalog_read_model.py tests/integration/test_serving_snapshot.py \
+            tests/integration/test_noop_snapshot.py
+      - name: Build standalone collector and packages
+        env:
+          PYTHONPATH: src
+        run: python tools/build_linux.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: linux-collector-rc3
+          path: |
+            build/linux/*.deb
+            build/linux/*.tar.gz
+            build/linux/SHA256SUMS
+            build/linux/release-manifest.json
+            build/linux/tests.xml
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: failure()
+        with:
+          name: linux-failure-evidence
+          path: |
+            build/linux/tests.xml
+            nuitka-crash-report.xml
+  catalog-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies without Qt
+        run: python -m pip install --require-hashes -r packaging/linux/requirements.txt
+      - name: Lint producer sources and tests
+        run: python -m ruff check src tests tools
+      - name: Catalog, serving snapshot and no-op regression
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m pytest -q -o addopts='' \
+            tests/integration/test_serving_catalog_read_model.py \
+            tests/integration/test_serving_snapshot.py \
+            tests/integration/test_noop_snapshot.py
+  install-test:
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - base: ubuntu:22.04
+            runner: ubuntu-22.04
+          - base: ubuntu:24.04
+            runner: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: linux-collector-rc3
+          path: packages
+      - name: Verify package hashes
+        working-directory: packages
+        run: sha256sum -c SHA256SUMS
+      - name: Prepare clean target without Python or Qt
+        run: docker build --build-arg BASE=${{ matrix.base }} -f packaging/linux/Dockerfile.smoke -t santhau-linux-smoke .
+      - name: Install, run, upgrade and remove offline
+        run: docker run --rm --network none -v "$PWD/packages:/packages:ro" santhau-linux-smoke
+      - name: Packaged systemd service on Ubuntu VM (offline fixture)
+        run: sh packaging/linux/systemd-smoke.sh "$PWD/packages"

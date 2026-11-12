@@ -264,21 +264,25 @@ def test_snapshot_is_marked_stale_for_each_family_after_previous_publish(studio)
 
 
 def test_weekly_coalesces_snapshots_and_publishes_terminal_parent(studio, monkeypatch):
-    from santhau_studio.workers import jobs
-    original = jobs.build_serving_db
+    from santhau_studio.storage import serving as snapshot_store
+    original = snapshot_store.build_serving_db
     published = []
     def measured(warehouse, target):
         result = original(warehouse, target)
         assert result.published, result.reason
         published.append(result.snapshot_rows["source_records"])
         return result
-    monkeypatch.setattr(jobs, "build_serving_db", measured)
+    monkeypatch.setattr(snapshot_store, "build_serving_db", measured)
     request = queue(studio)
     run(studio, fast_builder([]))
     # 12 child runs: one batch of six, then a final snapshot with parent outcome.
     assert published == [6, 48]
+    from santhau_studio.desktop.warehouse_reader import WarehouseReader
+
+    with WarehouseReader(studio.data_root) as reader:
+        states = reader.latest_run_states([request["job_id"]])
+    assert states and states[0]["status"] == "COMPLETED"
     with closing(connect_read_only(studio.serving_path)) as conn:
-        assert conn.execute("SELECT status FROM runs WHERE job_id=?", (request["job_id"],)).fetchone()[0] == "COMPLETED"
         assert conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
 
 

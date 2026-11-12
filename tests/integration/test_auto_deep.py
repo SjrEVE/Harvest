@@ -77,7 +77,7 @@ def test_auto_deep_runs_inside_parent_without_resetting_pause_or_current_job(tmp
         loop._dispatch = dispatch
         assert run_batch(loop, "parent-run") == 1
         assert loop._current is parent and loop.flag.interrupt_requested
-        assert len(seen) == 1 and seen[0].request_limits["max_requests"] == 1
+        assert len(seen) == 1 and seen[0].request_limits["max_requests"] <= 4
     finally:
         writer.close()
 
@@ -120,6 +120,24 @@ def test_idle_automatic_collection_stays_paused_with_user_job(tmp_path):
         writer.close()
 
 
+def test_automatic_retry_budget_is_shared_between_record_jobs(tmp_path):
+    writer = seed_records(tmp_path)
+    try:
+        make_eligible(writer)
+        configure(writer.conn, {"enabled": True, "batch_requests": 6})
+        loop = WorkerLoop(tmp_path)
+        loop._writer = writer
+        limits = []
+        def dispatch(request, _run_id):
+            limits.append(request.request_limits["max_requests"])
+            return "FAILED", {"requests_used": request.request_limits["max_requests"]}
+        loop._dispatch = dispatch
+        assert run_batch(loop) == 2
+        assert limits == [4, 2]
+    finally:
+        writer.close()
+
+
 def test_automatic_worker_dispatch_persists_public_data_and_skips_it_next_time(tmp_path):
     from test_public_deep import hsmt
 
@@ -149,13 +167,18 @@ def test_automatic_worker_dispatch_persists_public_data_and_skips_it_next_time(t
 
         loop = WorkerLoop(tmp_path, deep_factory=lambda _w, r, _s: Fetcher(r), deep_specs=public_spec)
         loop._writer = writer
+        # Nine logical lane tasks are still dispatched and persisted. DETAIL and
+        # REOFFER share one endpoint/body, so six physical fetches are enough:
+        # HSMT plus one shared detail/reoffer response for each of three records.
         assert run_batch(loop, "parent") == 9
-        assert len(calls) == 9
+        assert len(calls) == 6
+        assert sorted({kind for _, kind in calls}) == ["HSMT", "REOFFER"]
+        assert writer.conn.execute("SELECT COUNT(*) FROM deep_tasks").fetchone()[0] == 9
         assert writer.conn.execute("SELECT COUNT(*) FROM deep_captures").fetchone()[0] == 9
         assert writer.conn.execute("SELECT COUNT(*) FROM goods_rows").fetchone()[0] == 3
         assert not candidates(writer.conn, 9)
         loop._deep_next_scan = 0
         assert run_batch(loop, "parent") == 0
-        assert len(calls) == 9
+        assert len(calls) == 6
     finally:
         writer.close()

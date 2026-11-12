@@ -7,11 +7,13 @@
 #
 # Usage: powershell -ExecutionPolicy Bypass -File packaging/nuitka/build_standalone.ps1
 
+param([string]$PythonExecutable = '')
+
 $ErrorActionPreference = 'Stop'
 $Repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $Repo
 
-$Py = Join-Path $Repo '.venv\Scripts\python.exe'
+$Py = if ($PythonExecutable) { $PythonExecutable } else { Join-Path $Repo '.venv\Scripts\python.exe' }
 if (-not (Test-Path $Py)) { throw "missing venv python: $Py" }
 & $Py tools/release_manifest.py capture
 if ($LASTEXITCODE -ne 0) { throw 'source manifest capture failed' }
@@ -40,14 +42,15 @@ foreach ($stale in @('app_main.dist', 'service.dist', 'worker_main.dist', 'SanTh
 Write-Host '--- building SanThauDataStudio.exe (Qt Quick/QML) ---'
 & $Py -m nuitka `
     --standalone `
+    --jobs=4 `
     --assume-yes-for-downloads `
     --enable-plugin=pyside6 `
     --windows-console-mode=disable `
     --windows-company-name='Gia Su AI' `
     --windows-product-name='San Thau Data Studio' `
-    --windows-file-version=0.0.1.3 `
-    --windows-product-version=0.0.1.3 `
-    --windows-file-description='San Thau Data Studio 0.0.1-RC3' `
+    --windows-file-version=0.0.1.9 `
+    --windows-product-version=0.0.1.9 `
+    --windows-file-description='San Thau Data Studio 0.0.1-RC3-9' `
     --include-qt-plugins=qml,platforms,imageformats,styles `
     --include-data-dir=src/santhau_studio/desktop/qml=qml `
     --output-dir=$Out `
@@ -59,16 +62,21 @@ if ($LASTEXITCODE -ne 0) { throw "nuitka app build failed: $LASTEXITCODE" }
 Write-Host '--- building SanThauCollector.exe (headless worker) ---'
 & $Py -m nuitka `
     --standalone `
+    --jobs=4 `
     --assume-yes-for-downloads `
     --enable-plugin=no-qt `
     --windows-console-mode=disable `
     --windows-company-name='Gia Su AI' `
     --windows-product-name='San Thau Data Studio Collector' `
-    --windows-file-version=0.0.1.3 `
-    --windows-product-version=0.0.1.3 `
-    --windows-file-description='San Thau Data Studio Collector 0.0.1-RC3' `
+    --windows-file-version=0.0.1.9 `
+    --windows-product-version=0.0.1.9 `
+    --windows-file-description='San Thau Data Studio Collector 0.0.1-RC3-9' `
     --include-data-files=docs/ddl/g0_b_proposed.sql=docs/ddl/g0_b_proposed.sql `
     --include-data-files=docs/ddl/002_public_deep.sql=docs/ddl/002_public_deep.sql `
+    --include-data-files=docs/ddl/003_attempt_telemetry.sql=docs/ddl/003_attempt_telemetry.sql `
+    --include-data-files=docs/ddl/004_deep_parser_metadata.sql=docs/ddl/004_deep_parser_metadata.sql `
+    --include-data-files=docs/ddl/005_scoped_maintenance.sql=docs/ddl/005_scoped_maintenance.sql `
+    --include-data-files=docs/ddl/006_missing_only_policy.sql=docs/ddl/006_missing_only_policy.sql `
     --output-dir=$Out `
     --output-filename=SanThauCollector.exe `
     --remove-output `

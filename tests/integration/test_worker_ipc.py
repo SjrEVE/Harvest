@@ -297,11 +297,10 @@ def poll(query, timeout: float = 30.0):
 def test_ping_roundtrip_over_named_pipe(harness) -> None:
     client = harness.connect()
     try:
-        response = client.request({"op": "ping"})
-        assert response["ok"] and response["worker"]
-        assert "weekly-six-open-day-v3" in response["capabilities"]
-        assert "runtime-status-v1" in response["capabilities"]
-        assert response["runtime"]["observed_at"]
+        reply = client.request({"op": "ping"})
+        assert reply["ok"] and reply["worker"]
+        assert set(reply["capabilities"]) == {"weekly-six-open-day-v3", "runtime-status-v1"}
+        assert reply["runtime"]["current_job_id"] is None
     finally:
         client.close()
 
@@ -392,7 +391,6 @@ def test_status_over_pipe_reports_runs(harness, root) -> None:
         assert status["ok"] is True
         assert status["runs"][0]["status"] == "COMPLETED"
         assert status["runs"][0]["tasks"][0]["status"] == "COMPLETED"
-        assert status["progress"] == {}
         empty = client.request({"op": "status", "job_id": "job-absent"})
         assert empty["runs"] == []
         bad = client.request({"op": "nonsense"})

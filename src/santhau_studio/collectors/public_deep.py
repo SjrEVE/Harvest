@@ -10,6 +10,14 @@ from santhau_studio.collectors.deep import DeepResponse, DetailShapeError
 from santhau_studio.collectors.http_client import AccessBlocked, FetchLane
 from santhau_studio.collectors.network_policy import RetryPolicy
 
+ADAPTER_VERSION = 2
+
+
+class UnsupportedAdapter(DetailShapeError):
+    def __init__(self, reason, capability="UNSUPPORTED_ADAPTER"):
+        super().__init__(reason)
+        self.capability = capability
+
 
 class PublicDeepFetcher:
     blocked_endpoints: ClassVar[set[str]] = set()
@@ -18,10 +26,11 @@ class PublicDeepFetcher:
         self.writer, self.request, self.stop_requested = writer, request, stop_requested
         limits = request.request_limits
         self.budget = RequestBudget(
-            min(30, limits.get("max_requests", 30)), limits.get("max_seconds", 300)
+            min(30, limits.get("max_requests", 30)), limits.get("max_seconds", 300), stop_requested=stop_requested,
         )
         self.pacing = max(3, limits.get("pacing_seconds", 3))
-        self.retry = RetryPolicy(max_attempts=min(3, limits.get("max_attempts", 3)))
+        self.retry = RetryPolicy(max_attempts=limits.get("max_attempts", 4))
+        self.connect_timeout_seconds = limits.get("connect_timeout_seconds", 15)
         self.receipt = {}
 
     def fetch_record(self, record):
@@ -31,12 +40,14 @@ class PublicDeepFetcher:
         if public_spec(record["family"], self.request.job_kind) is None:
             raise DetailShapeError("UNVERIFIED_PUBLIC_SCOPE")
         raw = json.loads(self.writer.store.read(record["current_record_object_sha"]))
-        if (
-            raw.get("bidForm") != "CGTTRG"
-            or raw.get("notifyNo") != record["natural_key"]
-            or raw.get("processApply") not in (None, "LDT")
-        ):
-            raise DetailShapeError("UNVERIFIED_PUBLIC_SCOPE")
+        self.receipt = {"source_record_id": record["id"], "listing_object_sha": record["current_record_object_sha"],
+                        "processApply": raw.get("processApply"), "adapter_version": ADAPTER_VERSION, "attempts": []}
+        if raw.get("bidForm") != "CGTTRG":
+            raise UnsupportedAdapter("UNSUPPORTED_BID_FORM:" + str(raw.get("bidForm")), "UNSUPPORTED_BID_FORM")
+        if raw.get("notifyNo") != record["natural_key"]:
+            raise UnsupportedAdapter("LISTING_IDENTITY_MISMATCH", "UNVERIFIED_LISTING")
+        if raw.get("processApply") not in (None, "LDT"):
+            raise UnsupportedAdapter("UNSUPPORTED_PROCESS_APPLY:" + str(raw.get("processApply")), "UNSUPPORTED_PROCESS_APPLY")
         notify_id = raw.get("notifyId") or raw.get("id")
         if not isinstance(notify_id, str) or not notify_id:
             raise DetailShapeError("NOTIFY_ID_MISSING")
@@ -54,7 +65,8 @@ class PublicDeepFetcher:
             "expected_version": raw.get("notifyVersion"),
         }
         with FetchLane(
-            url=endpoint, source_key="egp_public_cgttrg", budget=self.budget, retry=self.retry
+            url=endpoint, source_key="egp_public_cgttrg", budget=self.budget, retry=self.retry,
+            connect_timeout_seconds=self.connect_timeout_seconds,
         ) as lane:
             try:
                 result = lane.post(body, min_interval=self.pacing)

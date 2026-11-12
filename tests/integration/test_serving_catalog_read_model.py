@@ -1,0 +1,341 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+from contextlib import closing
+from pathlib import Path
+
+import pytest
+from test_serving_snapshot import commit_page
+
+from santhau_studio.domain.text import fold_vietnamese
+from santhau_studio.storage import catalog_read_model, serving
+
+pytest_plugins = ("test_serving_snapshot",)
+
+
+def test_snapshot_materializes_exact_khlcnt_catalog_aggregates(env, tmp_path: Path) -> None:
+    writer, _, _, data_root = env
+    commit_page(
+        writer,
+        [
+            {
+                "planNo": "PL-CAT-1",
+                "planVersion": "00",
+                "bidName": ["Gói thầu A", "Gói thầu A"],
+                "publicDate": "2026-11-02T00:00:00",
+                "investorName": "Chủ đầu tư A",
+                "investField": ["XL"],
+                "provinceName": "Thành phố Hà Nội",
+                "numBidderJoin": 2,
+                "status": "01",
+            },
+            {
+                "planNo": "PL-CAT-2",
+                "planVersion": "00",
+                "bidName": ["Gói thầu B"],
+                "numBidderJoin": 0,
+            },
+        ],
+        family="KHLCNT",
+    )
+    commit_page(
+        writer,
+        [{"notifyNo": "TB-CAT-1", "notifyVersion": "00", "bidName": "TBMT ngoài catalog"}],
+    )
+
+    result = serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")
+    assert result.published, result.reason
+
+    with closing(sqlite3.connect(tmp_path / "serving.sqlite")) as db:
+        db.row_factory = sqlite3.Row
+        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        assert {
+            "serving_catalog_meta",
+            "serving_catalog_records",
+            "serving_catalog_family_summary",
+            "serving_catalog_time_buckets",
+            "serving_catalog_dimension_memberships",
+            "serving_catalog_dimension_counts",
+        } <= tables
+
+        meta = db.execute("SELECT * FROM serving_catalog_meta").fetchone()
+        assert meta["singleton_id"] == 1
+        assert meta["catalog_schema_version"] == 1
+        assert meta["prepared_families_json"] == '["KHLCNT"]'
+        assert meta["source_projection_version"] == serving.PROJECTION_VERSION
+        serving_meta = json.loads(
+            db.execute("SELECT row_counts_json FROM serving_meta LIMIT 1").fetchone()[0]
+        )
+        assert serving_meta["derived_catalog"]["family_latest_counts"] == {
+            "TBMT": 1,
+            "YCBG": 0,
+            "DU_AN": 0,
+            "KHLCNT": 2,
+            "KQLCNT": 0,
+            "HOP_DONG": 0,
+        }
+
+        source_latest = db.execute(
+            "SELECT COUNT(*) FROM record_fields WHERE family='KHLCNT' AND is_latest=1"
+        ).fetchone()[0]
+        assert db.execute("SELECT COUNT(*) FROM serving_catalog_records").fetchone()[0] == source_latest == 2
+
+        summary = db.execute(
+            "SELECT * FROM serving_catalog_family_summary WHERE family='KHLCNT'"
+        ).fetchone()
+        assert summary["total_records"] == 2
+        assert summary["known_dates"] == 1
+        assert summary["missing_dates"] == 1
+        assert summary["with_winners"] == 0
+        assert summary["investor_count"] == 1
+        assert (summary["positive"], summary["zero"], summary["missing"]) == (1, 1, 0)
+        assert (summary["bucket_1"], summary["bucket_2"], summary["bucket_3_5"], summary["bucket_6_plus"]) == (0, 1, 0, 0)
+
+        time_buckets = db.execute(
+            "SELECT bucket_key,record_count FROM serving_catalog_time_buckets"
+            " WHERE family='KHLCNT' AND bucket_kind='month'"
+        ).fetchall()
+        assert [(row["bucket_key"], row["record_count"]) for row in time_buckets] == [("2026-11", 1)]
+
+        dimensions = {
+            (row["dimension_kind"], row["dimension_value"]): row["record_count"]
+            for row in db.execute(
+                "SELECT dimension_kind,dimension_value,record_count"
+                " FROM serving_catalog_dimension_counts WHERE family='KHLCNT'"
+            )
+        }
+        assert dimensions == {
+            ("sector", "UNKNOWN"): 1,
+            ("sector", "XL"): 1,
+            ("province", "Chưa rõ địa bàn"): 1,
+            ("province", "Hà Nội"): 1,
+            ("investor", "Chưa rõ đơn vị"): 1,
+            ("investor", "Chủ đầu tư A"): 1,
+        }
+        assert db.execute(
+            "SELECT COUNT(*) FROM serving_catalog_records r"
+            " JOIN serving_catalog_dimension_memberships d ON d.record_id=r.record_id"
+            " WHERE d.dimension_kind='sector' AND d.dimension_value='XL'"
+        ).fetchone()[0] == 1
+
+
+def test_catalog_projection_does_not_change_source_snapshot_counts(env, tmp_path: Path) -> None:
+    writer, warehouse, _, data_root = env
+    commit_page(
+        writer,
+        [{"planNo": "PL-CAT-3", "planVersion": "00", "bidName": ["Thiết bị"]}],
+        family="KHLCNT",
+    )
+    result = serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")
+    assert result.published, result.reason
+    assert result.snapshot_rows["source_records"] == warehouse.execute("SELECT COUNT(*) FROM source_records").fetchone()[0]
+
+
+def test_snapshot_is_current_rejects_derived_catalog_count_drift(env, tmp_path: Path) -> None:
+    writer, _, _, data_root = env
+    commit_page(
+        writer,
+        [{"planNo": "PL-CAT-4", "planVersion": "00", "bidName": ["Snapshot parity"]}],
+        family="KHLCNT",
+    )
+    warehouse = data_root / "warehouse.sqlite"
+    target = tmp_path / "serving.sqlite"
+    result = serving.build_serving_db(warehouse, target)
+    assert result.published, result.reason
+    assert serving.snapshot_is_current(warehouse, target)
+
+    with closing(sqlite3.connect(target)) as db:
+        db.execute("DELETE FROM serving_catalog_records")
+        db.commit()
+
+    assert not serving.snapshot_is_current(warehouse, target)
+
+
+def test_snapshot_indexes_record_text_and_ordered_duplicate_components(env, tmp_path: Path) -> None:
+    writer, _, _, data_root = env
+    commit_page(
+        writer,
+        [{
+            "planNo": "PL-SEARCH-1",
+            "planVersion": "00",
+            "bidName": ["Do not index old version"],
+        }],
+        family="KHLCNT",
+    )
+    commit_page(
+        writer,
+        [{
+            "planNo": "PL-SEARCH-1",
+            "planVersion": "01",
+            "bidName": ["Sửa chữa đường", "Sửa chữa đường", "Thiết bị y tế"],
+            "investorName": "Chủ đầu tư A",
+            "publicDate": "2026-11-02T00:00:00",
+        }],
+        family="KHLCNT",
+        page_no=1,
+    )
+    commit_page(
+        writer,
+        [{"notifyNo": "TB-SEARCH-1", "notifyVersion": "00", "bidName": "Other family"}],
+        family="TBMT",
+        page_no=2,
+    )
+
+    result = serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")
+    assert result.published, result.reason
+
+    with closing(sqlite3.connect(tmp_path / "serving.sqlite")) as db:
+        db.row_factory = sqlite3.Row
+        meta = db.execute("SELECT * FROM serving_catalog_meta WHERE singleton_id=1").fetchone()
+        assert json.loads(meta["prepared_families_json"]) == ["KHLCNT"]
+        modes = json.loads(meta["search_index_modes_json"])
+        assert modes["record"] in {"fts5-trigram", "gram-intersection"}
+        assert modes["component"] in {"fts5-trigram", "gram-intersection"}
+        assert modes["short"] == "short-grams"
+
+        components = db.execute(
+            "SELECT component_id,record_id,component_ordinal,name_original,name_folded"
+            " FROM serving_catalog_components ORDER BY component_ordinal"
+        ).fetchall()
+        assert [(row["component_ordinal"], row["name_original"]) for row in components] == [
+            (0, "Sửa chữa đường"), (1, "Sửa chữa đường"), (2, "Thiết bị y tế")
+        ]
+        assert all(row["name_folded"] == fold_vietnamese(row["name_original"]) for row in components)
+        assert len({row["component_id"] for row in components}) == 3
+        assert db.execute("SELECT COUNT(*) FROM serving_catalog_records").fetchone()[0] == 1
+
+        if modes["component"] == "fts5-trigram":
+            hits = {
+                row[0]
+                for row in db.execute(
+                    "SELECT rowid FROM serving_catalog_component_fts WHERE serving_catalog_component_fts MATCH ?",
+                    ('"sua chua duong"',),
+                )
+            }
+            expected = {row["component_id"] for row in components if "sua chua duong" in row["name_folded"]}
+            assert hits == expected
+            record_hits = db.execute(
+                "SELECT rowid FROM serving_catalog_record_fts WHERE serving_catalog_record_fts MATCH ?",
+                ('"search"',),
+            ).fetchall()
+            assert len(record_hits) == 1
+        else:
+            assert db.execute(
+                "SELECT COUNT(*) FROM serving_catalog_short_grams"
+                " WHERE scope='component' AND gram='sua'"
+            ).fetchone()[0] == 2
+
+
+def test_catalog_search_rejects_malformed_non_null_component_json(env, tmp_path: Path) -> None:
+    writer, _, _, data_root = env
+    commit_page(
+        writer,
+        [{"planNo": "PL-SEARCH-2", "planVersion": "00", "bidName": ["Valid"]}],
+        family="KHLCNT",
+    )
+    result = serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "base.sqlite")
+    assert result.published, result.reason
+    with closing(sqlite3.connect(tmp_path / "base.sqlite")) as db:
+        db.row_factory = sqlite3.Row
+        built_at = db.execute("SELECT snapshot_built_at_utc FROM serving_catalog_meta").fetchone()[0]
+        db.execute("UPDATE record_fields SET components_json='not-json' WHERE family='KHLCNT'")
+        with pytest.raises(ValueError, match="components_json"):
+            catalog_read_model.materialise_catalog_search(
+                db, snapshot_built_at_utc=built_at, source_projection_version=2
+            )
+
+
+def test_candidate_with_missing_catalog_meta_is_rejected(env, tmp_path: Path, monkeypatch) -> None:
+    writer, _, _, data_root = env
+    commit_page(
+        writer,
+        [{"planNo": "PL-META-1", "planVersion": "00", "bidName": ["Meta gate"]}],
+        family="KHLCNT",
+    )
+    original = catalog_read_model.materialise_catalog_search
+
+    def drop_meta(conn, **kwargs):
+        result = original(conn, **kwargs)
+        conn.execute("DROP TABLE serving_catalog_meta")
+        return result
+
+    monkeypatch.setattr(catalog_read_model, "materialise_catalog_search", drop_meta)
+    result = serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")
+    assert not result.published
+    assert "catalog" in (result.reason or "").lower()
+
+
+def test_candidate_with_broken_catalog_meta_marker_is_rejected(env, tmp_path: Path, monkeypatch) -> None:
+    writer, _, _, data_root = env
+    commit_page(
+        writer,
+        [{"planNo": "PL-META-2", "planVersion": "00", "bidName": ["Broken marker"]}],
+        family="KHLCNT",
+    )
+    original = catalog_read_model.materialise_catalog_search
+
+    def corrupt_marker(conn, **kwargs):
+        result = original(conn, **kwargs)
+        conn.execute("UPDATE serving_catalog_meta SET prepared_families_json='[\"EVIL\"]'")
+        return result
+
+    monkeypatch.setattr(catalog_read_model, "materialise_catalog_search", corrupt_marker)
+    result = serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")
+    assert not result.published
+    assert "catalog" in (result.reason or "").lower()
+
+
+def test_rebuilding_the_same_catalog_twice_has_stable_derived_counts(env, tmp_path: Path) -> None:
+    writer, _, _, data_root = env
+    commit_page(
+        writer,
+        [{"planNo": "PL-STABLE-1", "planVersion": "00", "bidName": ["Stable"]}],
+        family="KHLCNT",
+    )
+    first = tmp_path / "first.sqlite"
+    second = tmp_path / "second.sqlite"
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", first).published
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", second).published
+    tables = (
+        "serving_catalog_meta", "serving_catalog_records", "serving_catalog_family_summary",
+        "serving_catalog_time_buckets", "serving_catalog_dimension_memberships",
+        "serving_catalog_dimension_counts", "serving_catalog_components",
+        "serving_catalog_short_grams",
+    )
+    def counts(path):
+        with closing(sqlite3.connect(path)) as db:
+            return {table: db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] for table in tables}
+
+    assert counts(first) == counts(second)
+
+
+def test_snapshot_uses_complete_gram_fallback_when_trigram_is_unavailable(env, tmp_path: Path, monkeypatch) -> None:
+    writer, _, _, data_root = env
+    commit_page(
+        writer,
+        [{"planNo": "PL-FALLBACK", "planVersion": "00", "bidName": ["Sửa chữa", "Sửa chữa"]}],
+        family="KHLCNT",
+    )
+    monkeypatch.setattr(catalog_read_model, "_fts5_trigram_supported", lambda _conn: False)
+
+    result = serving.build_serving_db(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")
+    assert result.published, result.reason
+
+    with closing(sqlite3.connect(tmp_path / "serving.sqlite")) as db:
+        db.row_factory = sqlite3.Row
+        meta = db.execute("SELECT * FROM serving_catalog_meta WHERE singleton_id=1").fetchone()
+        modes = json.loads(meta["search_index_modes_json"])
+        assert modes == {"component": "gram-intersection", "record": "gram-intersection", "short": "short-grams"}
+        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        assert "serving_catalog_component_fts" not in tables
+        assert "serving_catalog_record_fts" not in tables
+        assert db.execute(
+            "SELECT COUNT(*) FROM serving_catalog_short_grams"
+            " WHERE scope='component' AND gram='sua'"
+        ).fetchone()[0] == 2
+        assert db.execute(
+            "SELECT COUNT(*) FROM serving_catalog_short_grams"
+            " WHERE scope='component' AND gram='su'"
+        ).fetchone()[0] == 2
+        assert serving.snapshot_is_current(data_root / "warehouse.sqlite", tmp_path / "serving.sqlite")

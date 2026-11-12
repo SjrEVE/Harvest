@@ -14,7 +14,10 @@ from santhau_studio.collectors.deep import (
     _presence_number,
     _text,
 )
+from santhau_studio.collectors.hsmt_forms import read_form
 from santhau_studio.domain.identity import record_object_sha
+
+PARSER_VERSION = 3
 
 PREFIX = "https://muasamcong.mof.gov.vn/o/egp-portal-contractor-selection-v2/services/"
 ENDPOINTS = {
@@ -34,6 +37,7 @@ def public_spec(family, lane):
         ("notifyVersion",),
         requires_session=False,
         parser_kind=lane,
+        parser_version=PARSER_VERSION,
     )
 
 
@@ -46,8 +50,9 @@ def _hsmt(payload):
     if "bidoInvBiddingDTO" not in payload or (forms is not None and not isinstance(forms, list)):
         raise DetailShapeError("HSMT_FORMS_MISSING_OR_INVALID")
     lots, unallotted, problems, versions, schemas = [], [], [], [], []
+    warnings, documents, kinds = [], [], []
     ordinal = 0
-    for fi, form in enumerate(forms or []):
+    for form in forms or []:
         if not isinstance(form, dict) or form.get("bidForm") != "CGTTRG":
             raise DetailShapeError("UNVERIFIED_HSMT_FORM")
         versions.append(
@@ -57,16 +62,13 @@ def _hsmt(payload):
             }
         )
         schemas.append({k: v for k, v in form.items() if k != "formValue"})
-        try:
-            data = (
-                json.loads(form["formValue"])
-                if isinstance(form.get("formValue"), str)
-                else form.get("formValue")
-            )
-        except ValueError as exc:
-            raise DetailShapeError(f"FORM_{fi}_INVALID_JSON") from exc
-        if not isinstance(data, dict) or not isinstance(data.get("Table"), list):
-            problems.append(f"FORM_{fi}_TABLE_MISSING_OR_INVALID")
+        content = read_form(form)
+        data = content.data
+        kinds.append(content.kind)
+        warnings.extend(content.warnings)
+        problems.extend(content.problems)
+        documents.extend(content.documents)
+        if content.kind not in ("STRUCTURED", "UNVERIFIED_STRUCTURED") or not isinstance(data.get("Table"), list):
             continue
         headers = {}
         for i, row in enumerate(data["Table"]):
@@ -85,7 +87,7 @@ def _hsmt(payload):
                 continue
             raw = row
             if not isinstance(row, dict):
-                problems.append(f"FORM_{fi}_ROW_{i}_NOT_OBJECT")
+                problems.append(f"FORM_{content.code}_ROW_{i}_NOT_OBJECT")
                 row = {}
             presence, qty, qty_raw = _presence_number(row, ("qty",))
             if isinstance(row.get("qty"), str) and re.fullmatch(
@@ -95,7 +97,7 @@ def _hsmt(payload):
             if qty is not None and not math.isfinite(qty):
                 presence, qty, qty_raw = "UNPARSABLE", None, str(row.get("qty"))
             if presence != "KNOWN" or not row.get("name"):
-                problems.append(f"FORM_{fi}_ROW_{i}_INVALID_FIELDS")
+                problems.append(f"FORM_{content.code}_ROW_{i}_INVALID_FIELDS")
             good = ParsedGoodsRow(
                 ordinal,
                 _text(row, ("name",)),
@@ -112,7 +114,7 @@ def _hsmt(payload):
                 headers[str(parent)][1].append(good)
             else:
                 if parent not in (None, 0, "0", ""):
-                    problems.append(f"FORM_{fi}_ROW_{i}_UNKNOWN_PARENT_{parent}")
+                    problems.append(f"FORM_{content.code}_ROW_{i}_UNKNOWN_PARENT_{parent}")
                 unallotted.append(good)
         for row, goods, _ in headers.values():
             lots.append(
@@ -120,6 +122,13 @@ def _hsmt(payload):
                     str(row["lotNo"]), row["lotName"], form.get("notifyVersion"), tuple(goods), row
                 )
             )
+    capability = "STRUCTURED_ITEMS"
+    if "UNVERIFIED_STRUCTURED" in kinds or "UNVERIFIED" in kinds or "INVALID" in kinds:
+        capability = "UNVERIFIED_FORM"
+    elif "DOCUMENT" in kinds:
+        capability = "DOCUMENT_ONLY" if "STRUCTURED" not in kinds and documents else "STRUCTURED_ITEMS_UNAVAILABLE"
+    elif kinds and "STRUCTURED" not in kinds:
+        capability = "STRUCTURED_ITEMS_UNAVAILABLE"
     return ParsedDetail(
         _json({"forms": versions}),
         {"forms": schemas},
@@ -127,6 +136,7 @@ def _hsmt(payload):
         (),
         tuple(problems),
         tuple(unallotted),
+        documents=tuple(documents), warnings=tuple(sorted(set(warnings))), capability=capability, parser_version=PARSER_VERSION,
     )
 
 
@@ -134,7 +144,8 @@ def _reoffer(payload):
     if payload.get("bidForm") != "CGTTRG" or not payload.get("notifyNo"):
         raise DetailShapeError("UNVERIFIED_REOFFER_SHAPE")
     problems, grouped = [], {}
-    rows = payload.get("contractorsResult") or []
+    rows = payload.get("contractorsResult")
+    rows = [] if rows is None else rows
     if not isinstance(rows, list):
         raise DetailShapeError("OFFERORS_NOT_LIST")
     for i, row in enumerate(rows):
@@ -162,7 +173,10 @@ def _reoffer(payload):
                 len(members) + 1,
             )
         )
-    plan = payload.get("bidPlan") or {}
+    plan = payload.get("bidPlan")
+    plan = {} if plan is None else plan
+    if not isinstance(plan, dict):
+        raise DetailShapeError("BID_PLAN_NOT_OBJECT")
     documents, relations = [], []
     plan_no = plan.get("planNo") or payload.get("planNo")
     if plan_no:
@@ -202,6 +216,7 @@ def _reoffer(payload):
         (),
         tuple(documents),
         tuple(relations),
+        capability="NOTICE_METADATA", parser_version=PARSER_VERSION,
     )
 
 

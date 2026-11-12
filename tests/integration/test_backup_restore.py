@@ -11,6 +11,8 @@ import gzip
 import hashlib
 import json
 import sqlite3
+import sys
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -107,6 +109,7 @@ def test_restore_twice_into_the_same_root_does_not_duplicate_objects(env, tmp_pa
         assert conn.execute("SELECT COUNT(*) FROM raw_objects").fetchone()[0] == objects_after_first
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Win32 open-handle rename semantics; writer-lock refusal tested separately")
 def test_restore_over_an_open_warehouse_reports_the_real_blocker(env) -> None:
     """Win32 will not rename a database another handle holds; the failure must name the cause."""
     writer, conn, _, data_root = env
@@ -116,6 +119,14 @@ def test_restore_over_an_open_warehouse_reports_the_real_blocker(env) -> None:
     assert not report.restored
     assert "held open" in report.reason and "Stop the collector worker" in report.reason
     assert scalar(conn, "SELECT COUNT(*) FROM source_records") == 1, "the live database is still the live one"
+
+
+def test_restore_refuses_a_production_writer_lock(tmp_path) -> None:
+    root = tmp_path / 'locked-root'
+    with closing(WarehouseWriter.open(root, create_schema=True)):
+        saved = backup.create_backup(root, tmp_path / 'backup')
+        report = backup.restore_backup(saved.path, root)
+        assert not report.restored and 'held by' in report.reason
 
 
 def test_verify_backup_writes_nothing(env) -> None:
