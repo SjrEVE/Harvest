@@ -199,6 +199,12 @@ def _build_serving_db_impl(warehouse: Path, target: Path) -> PublishResult:
         finally:
             _source_of.pop(id(dest), None)
         built_at = _now()
+        from santhau_studio.storage.organization_read_model import materialise_organizations
+
+        try:
+            organization_build = materialise_organizations(dest, snapshot_built_at_utc=built_at)
+        except (sqlite3.Error, ValueError) as exc:
+            raise SnapshotRejected(f"organization read model rejected: {exc}") from exc
         from santhau_studio.storage.listing_read_model import materialise_listing
 
         try:
@@ -252,7 +258,7 @@ def _build_serving_db_impl(warehouse: Path, target: Path) -> PublishResult:
             " stale, stale_reason) VALUES (?,?,?,?,?)",
             (built_at, _warehouse_sha(warehouse), json.dumps(
                 {**counts, "content_digest": digest, "derived_catalog": catalog_build.metadata,
-                 "derived_listing": listing_build}, sort_keys=True),
+                 "derived_listing": listing_build, "derived_organizations": organization_build}, sort_keys=True),
              1 if degradation else 0,
              json.dumps({"kind": "DEGRADED", "counts": degradation}, sort_keys=True) if degradation else None),
         )
@@ -302,6 +308,79 @@ def _build_serving_db_impl(warehouse: Path, target: Path) -> PublishResult:
         return PublishResult(published=True, snapshot_rows=counts, degraded=bool(degradation))
     finally:
         source.close()
+
+
+def upgrade_organization_snapshot(candidate: Path) -> dict:
+    """Finalize a private v2 candidate without rebuilding or refreshing source data.
+
+    The caller must supply an unpublished candidate. This entrypoint does not publish,
+    touch a warehouse, or replace the snapshot's original build/source identity.
+    """
+    from santhau_studio.storage.catalog_read_model import CatalogBuild
+    from santhau_studio.storage.listing_read_model import validate_listing
+    from santhau_studio.storage.organization_read_model import materialise_organizations
+
+    def derived_writes_only(action, table, _column, _database, _trigger):
+        if (action in {sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE}
+                and table not in {"market_relation_edges", "serving_organization_meta", "serving_meta",
+                                  "sqlite_stat1", "sqlite_master"}):
+            return sqlite3.SQLITE_DENY
+        if action in {sqlite3.SQLITE_DROP_TABLE, sqlite3.SQLITE_DROP_INDEX,
+                      sqlite3.SQLITE_ALTER_TABLE, sqlite3.SQLITE_DROP_TRIGGER}:
+            return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+
+    with contextlib.closing(sqlite3.connect(candidate.resolve().as_uri() + "?mode=rw", uri=True)) as conn:
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            rows = conn.execute("SELECT * FROM serving_meta").fetchall()
+            if len(rows) != 1:
+                raise SnapshotRejected("organization finalizer requires one base serving marker")
+            marker = dict(rows[0])
+            stamp = marker["snapshot_built_at_utc"]
+            projection = conn.execute("SELECT projection_version,snapshot_built_at_utc FROM serving_projection_meta WHERE id=1").fetchone()
+            if projection is None or tuple(projection) != (PROJECTION_VERSION, stamp):
+                raise SnapshotRejected("organization finalizer requires a consistent v2 base")
+            manifest = json.loads(marker["row_counts_json"])
+            if not isinstance(manifest, dict):
+                raise SnapshotRejected("organization finalizer base manifest is invalid")
+            counts = {t: _count(conn, t) for t in SNAPSHOT_TABLES if _exists(conn, t)}
+            saved_counts = {k: v for k, v in manifest.items() if k in SNAPSHOT_TABLES}
+            if counts != saved_counts or any(type(v) is not int for v in saved_counts.values()):
+                raise SnapshotRejected("organization finalizer base row count mismatch")
+            digest = _content_digest(conn)
+            if manifest.get("content_digest") != digest:
+                raise SnapshotRejected("organization finalizer base content digest mismatch")
+            if validate_listing(conn, stamp, check_values=True) != manifest.get("derived_listing"):
+                raise SnapshotRejected("organization finalizer base listing mismatch")
+            _validate_catalog_candidate(conn, CatalogBuild(manifest.get("derived_catalog"), {}), snapshot_built_at_utc=stamp)
+            for check in ("integrity_check", "quick_check"):
+                if conn.execute(f"PRAGMA {check}").fetchone()[0] != "ok":
+                    raise SnapshotRejected(f"organization finalizer base {check} failed")
+            conn.set_authorizer(derived_writes_only)
+            metadata = materialise_organizations(conn, snapshot_built_at_utc=stamp)
+            manifest["derived_organizations"] = metadata
+            conn.execute("UPDATE serving_meta SET row_counts_json=? WHERE id=?",
+                         (json.dumps(manifest, sort_keys=True), marker["id"]))
+            if _content_digest(conn) != digest or counts != {t: _count(conn, t) for t in counts}:
+                raise SnapshotRejected("organization finalizer changed canonical sources")
+            after = dict(conn.execute("SELECT * FROM serving_meta WHERE id=?", (marker["id"],)).fetchone())
+            if {k: v for k, v in after.items() if k != "row_counts_json"} != {k: v for k, v in marker.items() if k != "row_counts_json"}:
+                raise SnapshotRejected("organization finalizer changed source identity")
+            for check in ("integrity_check", "quick_check"):
+                if conn.execute(f"PRAGMA {check}").fetchone()[0] != "ok":
+                    raise SnapshotRejected(f"organization finalizer {check} failed")
+            conn.commit()
+            return metadata
+        except (sqlite3.Error, ValueError, KeyError, TypeError) as exc:
+            conn.rollback()
+            raise SnapshotRejected(f"organization finalizer rejected: {exc}") from exc
+        except BaseException:
+            conn.rollback()
+            raise
+        finally:
+            conn.set_authorizer(None)
 
 
 def _copy_schema_and_rows(source: sqlite3.Connection, dest: sqlite3.Connection) -> None:
@@ -717,6 +796,11 @@ def snapshot_is_current(warehouse: Path, serving: Path) -> bool:
             digest = counts.pop("content_digest", None)
             derived_catalog = counts.pop("derived_catalog", None)
             derived_listing = counts.pop("derived_listing", None)
+            derived_organizations = counts.pop("derived_organizations", None)
+            from santhau_studio.storage.organization_read_model import validate_organizations
+
+            if validate_organizations(snap, row["snapshot_built_at_utc"]) != derived_organizations:
+                return False
             from santhau_studio.storage.listing_read_model import validate_listing
 
             if validate_listing(snap, row["snapshot_built_at_utc"]) != derived_listing:
