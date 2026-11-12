@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 
 from santhau_studio.domain.text import fold_vietnamese
+from santhau_studio.storage.listing_read_model import market_fields_json
 
 
 def _first(fields: dict, *keys: str):
@@ -270,7 +271,8 @@ def materialise_records(conn: sqlite3.Connection, raw_root=None) -> None:
       closing_epoch REAL,
       signed_epoch REAL,
       is_latest INTEGER NOT NULL DEFAULT 0,
-      status_display TEXT)""")
+      status_display TEXT,
+      market_fields_json TEXT NOT NULL)""")
     cursor = conn.execute("SELECT r.id,r.source_key,r.family,r.natural_key,r.version_state,r.version_raw,r.last_seen_at_utc,v.normalized_json,r.current_record_object_sha,r.current_content_hash"
                           " FROM source_records r LEFT JOIN source_record_versions v ON v.source_record_id=r.id"
                           " AND v.content_version_seq=r.current_content_version ORDER BY r.id")
@@ -324,15 +326,15 @@ def materialise_records(conn: sqlite3.Connection, raw_root=None) -> None:
                 # Epochs mirror v1 project()'s str-only text() (an array date is missing to the
                 # catalog), not _first_scalar, so v2 active()/date filters cannot diverge from v1.
                 published_epoch, _epoch(_text(f, "bidCloseDate", "closeDate", "quoteDeadline")),
-                _epoch(_text(f, "contractSignDate")), 0, _text(f, "status")))
+                _epoch(_text(f, "contractSignDate")), 0, _text(f, "status"), market_fields_json(f)))
         conn.executemany(
             "INSERT INTO record_fields (record_id,source_key,family,natural_key,version_state,version_raw,"
             "title_display,investor_display,last_seen_at_utc,published_date,province,tax_id,procurement_type,"
             "bid_price,award_price,currency,title_sort,investor_sort,province_fold,collection_date,"
             "status_raw,status_normalized,winning_codes_json,award_prices_json,gia_trung,price_status,price_provenance_json,"
             "plan_no,notify_no,notify_version,sectors_json,participants,qualified,close_date,sign_date,components_json,"
-            "investor_name,winner_names_json,search_text,provinces_json,published_epoch,closing_epoch,signed_epoch,is_latest,status_display)"
-            " VALUES(" + ",".join("?" * 45) + ")", output)
+            "investor_name,winner_names_json,search_text,provinces_json,published_epoch,closing_epoch,signed_epoch,is_latest,status_display,market_fields_json)"
+            " VALUES(" + ",".join("?" * 46) + ")", output)
         conn.executemany("INSERT INTO record_provinces VALUES(?,?,?,?)", locations)
     if store:
         store.close()

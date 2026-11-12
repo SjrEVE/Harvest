@@ -54,7 +54,7 @@ jobs:
             tests/integration/test_reconcile_drift.py tests/integration/test_linode_form_fixtures.py \
             tests/integration/test_backup_restore.py tests/integration/test_fault_injection.py \
             tests/integration/test_serving_catalog_read_model.py tests/integration/test_serving_snapshot.py \
-            tests/integration/test_noop_snapshot.py
+            tests/integration/test_noop_snapshot.py tests/integration/test_serving_listing.py
       - name: Build standalone collector and packages
         env:
           PYTHONPATH: src
@@ -99,7 +99,7 @@ jobs:
           python -m pytest -q -o addopts='' \
             tests/integration/test_serving_catalog_read_model.py \
             tests/integration/test_serving_snapshot.py \
-            tests/integration/test_noop_snapshot.py
+            tests/integration/test_noop_snapshot.py tests/integration/test_serving_listing.py
   install-test:
     needs: build
     runs-on: ${{ matrix.runner }}

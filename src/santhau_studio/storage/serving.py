@@ -185,7 +185,10 @@ def _build_serving_db_impl(warehouse: Path, target: Path) -> PublishResult:
         _build_search_index(dest)
         from santhau_studio.storage.read_model import materialise_records
 
-        materialise_records(dest, warehouse.parent)
+        try:
+            materialise_records(dest, warehouse.parent)
+        except ValueError as exc:
+            raise SnapshotRejected(f"record projection rejected: {exc}") from exc
         _build_market_relationships(dest)
         # Optional audit counts come from the warehouse. The family-stats step keeps its
         # 1-arg monkeypatch seam, so the source connection rides on the dest connection.
@@ -196,6 +199,12 @@ def _build_serving_db_impl(warehouse: Path, target: Path) -> PublishResult:
         finally:
             _source_of.pop(id(dest), None)
         built_at = _now()
+        from santhau_studio.storage.listing_read_model import materialise_listing
+
+        try:
+            listing_build = materialise_listing(dest, snapshot_built_at_utc=built_at)
+        except (sqlite3.Error, ValueError) as exc:
+            raise SnapshotRejected(f"listing read model rejected: {exc}") from exc
         from santhau_studio.storage.catalog_read_model import materialise_catalog
 
         try:
@@ -242,7 +251,8 @@ def _build_serving_db_impl(warehouse: Path, target: Path) -> PublishResult:
             "INSERT INTO serving_meta (snapshot_built_at_utc, source_warehouse_sha, row_counts_json,"
             " stale, stale_reason) VALUES (?,?,?,?,?)",
             (built_at, _warehouse_sha(warehouse), json.dumps(
-                {**counts, "content_digest": digest, "derived_catalog": catalog_build.metadata}, sort_keys=True),
+                {**counts, "content_digest": digest, "derived_catalog": catalog_build.metadata,
+                 "derived_listing": listing_build}, sort_keys=True),
              1 if degradation else 0,
              json.dumps({"kind": "DEGRADED", "counts": degradation}, sort_keys=True) if degradation else None),
         )
@@ -706,6 +716,11 @@ def snapshot_is_current(warehouse: Path, serving: Path) -> bool:
                 return False
             digest = counts.pop("content_digest", None)
             derived_catalog = counts.pop("derived_catalog", None)
+            derived_listing = counts.pop("derived_listing", None)
+            from santhau_studio.storage.listing_read_model import validate_listing
+
+            if validate_listing(snap, row["snapshot_built_at_utc"]) != derived_listing:
+                return False
             if digest is None or _content_digest(source) != digest:
                 return False  # pre-digest manifest or a content flip: rebuild
             if not isinstance(derived_catalog, dict):
