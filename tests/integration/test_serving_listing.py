@@ -5,9 +5,11 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
+import pytest
 from test_serving_snapshot import commit_page
 
 from santhau_studio.storage import read_model, serving
+from santhau_studio.storage.listing_read_model import materialise_listing_search
 
 pytest_plugins = ("test_serving_snapshot",)
 
@@ -41,6 +43,24 @@ def test_snapshot_listing_keeps_all_versions_and_indexes_the_legacy_public_date(
         assert not any("TEMP B-TREE" in row[3] for row in plan)
         all_plan = db.execute("EXPLAIN QUERY PLAN SELECT record_id FROM record_fields ORDER BY listing_public_date DESC,record_id DESC LIMIT 1").fetchall()
         assert any("COVERING INDEX ix_rf_listing_date" in row[3] for row in all_plan)
+        search_plan = db.execute("EXPLAIN QUERY PLAN SELECT COUNT(*) FROM record_fields "
+                                 "INDEXED BY ix_rf_listing_search WHERE title_display LIKE '%Synthetic%'").fetchall()
+        assert any("COVERING INDEX ix_rf_listing_search" in row[3] for row in search_plan)
+        page_plan = db.execute("EXPLAIN QUERY PLAN SELECT record_id FROM record_fields "
+                               "INDEXED BY ix_rf_listing_search WHERE title_display LIKE '%' "
+                               "ORDER BY listing_public_date DESC,record_id DESC LIMIT 1").fetchall()
+        assert not any("TEMP B-TREE" in row[3] for row in page_plan)
+
+
+def test_listing_search_helper_rejects_wrong_collation():
+    with closing(sqlite3.connect(":memory:")) as db:
+        db.execute("CREATE TABLE record_fields(listing_public_date,record_id,family,title_display,"
+                   "natural_key,version_raw,investor_display,province,sectors_json)")
+        db.execute("CREATE INDEX ix_rf_listing_search ON record_fields(listing_public_date DESC,"
+                   "record_id DESC,family,title_display COLLATE NOCASE,natural_key,version_raw,"
+                   "investor_display,province,sectors_json)")
+        with pytest.raises(ValueError, match="listing search index is invalid"):
+            materialise_listing_search(db)
 
 
 def test_noop_rebuilds_when_the_listing_projection_is_missing(env, tmp_path: Path):

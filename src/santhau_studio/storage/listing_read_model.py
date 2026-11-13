@@ -24,6 +24,21 @@ _INDEXES = {
     "ix_rf_listing_family_date": [("family", 0), ("listing_public_date", 1), ("record_id", 1)],
     "ix_rf_listing_date": [("listing_public_date", 1), ("record_id", 1)],
 }
+SEARCH_COLUMNS = (("listing_public_date", 1), ("record_id", 1), ("family", 0),
+                  ("title_display", 0), ("natural_key", 0), ("version_raw", 0),
+                  ("investor_display", 0), ("province", 0), ("sectors_json", 0))
+
+
+def materialise_listing_search(conn: sqlite3.Connection) -> None:
+    """Add a covering index without changing source or derived row values."""
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_rf_listing_search ON record_fields(" +
+                 ",".join(column + (" DESC" if descending else "")
+                          for column, descending in SEARCH_COLUMNS) + ")")
+    shape = [(row[2], row[3], row[4]) for row in conn.execute("PRAGMA index_xinfo(ix_rf_listing_search)") if row[5]]
+    partial = next(row[4] for row in conn.execute("PRAGMA index_list(record_fields)")
+                   if row[1] == "ix_rf_listing_search")
+    if shape != [(column, descending, "BINARY") for column, descending in SEARCH_COLUMNS] or partial:
+        raise ValueError("listing search index is invalid")
 
 
 def validate_listing(conn: sqlite3.Connection, built_at: str, *, check_values: bool = False) -> dict:
@@ -58,6 +73,7 @@ def materialise_listing(conn: sqlite3.Connection, *, snapshot_built_at_utc: str)
         "AND v.content_version_seq=r.current_content_version WHERE r.id=f.record_id)")
     conn.execute("CREATE INDEX ix_rf_listing_family_date ON record_fields(family,listing_public_date DESC,record_id DESC)")
     conn.execute("CREATE INDEX ix_rf_listing_date ON record_fields(listing_public_date DESC,record_id DESC)")
+    materialise_listing_search(conn)
     conn.execute("ANALYZE record_fields")
     conn.execute("CREATE TABLE serving_listing_meta(singleton_id INTEGER PRIMARY KEY CHECK(singleton_id=1),"
         "listing_schema_version INTEGER NOT NULL,record_count INTEGER NOT NULL,snapshot_built_at_utc TEXT NOT NULL)")
