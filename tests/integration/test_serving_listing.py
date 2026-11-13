@@ -41,6 +41,9 @@ def test_snapshot_listing_keeps_all_versions_and_indexes_the_legacy_public_date(
         assert not any("TEMP B-TREE" in row[3] for row in plan)
         all_plan = db.execute("EXPLAIN QUERY PLAN SELECT record_id FROM record_fields ORDER BY listing_public_date DESC,record_id DESC LIMIT 1").fetchall()
         assert any("COVERING INDEX ix_rf_listing_date" in row[3] for row in all_plan)
+        search_plan = db.execute("EXPLAIN QUERY PLAN SELECT COUNT(*) FROM record_fields "
+                                 "INDEXED BY ix_rf_listing_search WHERE title_display LIKE '%Synthetic%'").fetchall()
+        assert any("COVERING INDEX ix_rf_listing_search" in row[3] for row in search_plan)
 
 
 def test_noop_rebuilds_when_the_listing_projection_is_missing(env, tmp_path: Path):
