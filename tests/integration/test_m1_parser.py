@@ -1,7 +1,10 @@
-"""M1 lane: per-item winning prices in KQLCNT (parser v5, migration 008).
+"""M1 lane: per-item winning prices in KQLCNT (parser v6, migration 008).
 
-Fixtures are SYNTHETIC, modeled on the two live canary captures (2026-11-13,
-IB2600073112 goodsList encoding and IB2600363545 lotResultItems encoding).
+Fixtures are SYNTHETIC, modeled on the live captures: the two 2026-11-13
+canary records (IB2600073112 goodsList/Table encoding and IB2600363545
+lotResultItems encoding) plus the flat goodsList encoding from the 2026-11-12
+deploy canary (7 records, e.g. IB2600597038, IB2600599802: entries carry the
+item inline with formValue null and priceUnit as the unit price).
 No live payload is copied into the repo.
 """
 
@@ -156,6 +159,76 @@ def money_by_role(parsed):
     return {(m.role, m.owner_ref): m for m in parsed.money}
 
 
+def flat_goodslist_payload(notify_no="IB-0"):
+    """Flat goodsList encoding (parser v6): the entry itself is the item.
+
+    Modeled on the 7 live records from the 2026-11-12 deploy canary
+    (e.g. IB2600597038, IB2600599802): entries carry name/quantity/unit/
+    description/origin/priceUnit with formValue null and no lotContent;
+    lotResultItems is null. priceUnit is the winning unit price.
+    """
+    return {
+        "bideContractorInputResultDTO": {
+            "id": RESULT_ID,
+            "notifyNo": notify_no,
+            "notifyVersion": "00",
+            "resultVersion": "00",
+            "bidPriceUnit": "VND",
+            "lotResultDTO": [
+                {
+                    "id": "lot-uuid-flat",
+                    "lotNo": "BP2600000001",
+                    "lotName": "Flat lot",
+                    "lotPrice": 317876794,
+                    "lotEstimatePrice": None,
+                    "winningCode": "vn0000000001",
+                    "goodsList": json.dumps(
+                        [
+                            {
+                                "id": "flat-item-1",
+                                "name": "Flat widget",
+                                "code": "Flat widget",
+                                "lableGood": "Acme",  # server's own misspelling, kept verbatim
+                                "yearGood": 2026,
+                                "manufacturer": "Acme",
+                                "quantity": 2,
+                                "unit": "Cái",
+                                "description": "A flat widget",
+                                "origin": "Việt Nam",
+                                "priceUnit": 45000000,
+                                "cperiodText": "30 ngày",
+                                "formValue": None,
+                            },
+                            {
+                                "id": "flat-item-2",
+                                "name": "Flat gas",
+                                "code": "N/A",
+                                "lableGood": "Petrolimex",
+                                "yearGood": "2026",
+                                "manufacturer": "Petrolimex",
+                                "maHS": "",
+                                "quantity": 5034.06,  # float quantity, as in the live LPG record
+                                "unit": "kg",
+                                "description": "Flat gas",
+                                "origin": "Việt Nam",
+                                "priceUnit": 45267,
+                                "note": "",
+                                "cperiodText": "10 tháng",
+                                "formValue": None,
+                            },
+                        ]
+                    ),
+                    "contractorList": [
+                        {"taxCode": "0000000001", "bidWiningPrice": 317876794, "bidResult": 1}
+                    ],
+                }
+            ],
+            "lotResultItems": None,
+        },
+        "bidpPlanDetailDTO": None,
+    }
+
+
 def seed_kqlcnt_record(root, *, with_input_result_id=False):
     """One KQLCNT record, seeded via the TBMT helper then re-familied.
 
@@ -192,7 +265,7 @@ def seed_kqlcnt_record(root, *, with_input_result_id=False):
 
 def test_m1_goodslist_encoding_writes_lot_and_item_winning_price():
     parsed = parse_detail(public_spec("KQLCNT", "M1"), goodslist_payload())
-    assert parsed.parser_version == 5
+    assert parsed.parser_version == 6
     assert parsed.capability == "STRUCTURED_ITEMS"
     assert parsed.problems == ()
     assert len(parsed.lots) == 1
@@ -266,6 +339,69 @@ def test_m1_both_encodings_prefers_lot_result_items_and_warns():
     assert any("BOTH_ENCODINGS" in w for w in parsed.warnings)
 
 
+# ---------------------------------------------------------------- parser: flat goodsList encoding (parser v6)
+
+def test_m1_flat_goodslist_entries_parse_with_price_unit():
+    parsed = parse_detail(public_spec("KQLCNT", "M1"), flat_goodslist_payload())
+    assert parsed.parser_version == 6
+    assert parsed.capability == "STRUCTURED_ITEMS"
+    assert parsed.problems == ()
+    assert len(parsed.lots) == 1
+    lot = parsed.lots[0]
+    assert len(lot.goods) == 2
+    widget, gas = lot.goods
+    assert widget.name == "Flat widget"
+    assert widget.unit == "Cái"
+    assert widget.quantity == 2
+    assert widget.specification == "A flat widget"
+    assert gas.quantity == pytest.approx(5034.06)
+    by_role = money_by_role(parsed)
+    assert by_role[("ITEM_WINNING_PRICE", "0")].value == 45000000
+    assert by_role[("ITEM_WINNING_PRICE", "1")].value == 45267
+    assert by_role[("ITEM_WINNING_PRICE", "1")].source_path.endswith(".priceUnit")
+    assert sum(
+        g.quantity * by_role[("ITEM_WINNING_PRICE", str(g.row_ordinal))].value
+        for g in lot.goods
+    ) == pytest.approx(317876794.02, abs=1.0)  # == the winner's bidWiningPrice
+
+
+def test_m1_flat_entry_without_price_is_warning_not_error():
+    payload = flat_goodslist_payload()
+    entries = json.loads(payload["bideContractorInputResultDTO"]["lotResultDTO"][0]["goodsList"])
+    del entries[1]["priceUnit"]
+    payload["bideContractorInputResultDTO"]["lotResultDTO"][0]["goodsList"] = json.dumps(entries)
+    parsed = parse_detail(public_spec("KQLCNT", "M1"), payload)
+    assert parsed.problems == ()
+    assert len(parsed.lots[0].goods) == 2  # the priceless row is still captured
+    by_role = money_by_role(parsed)
+    assert ("ITEM_WINNING_PRICE", "0") in by_role
+    assert ("ITEM_WINNING_PRICE", "1") not in by_role
+    assert any("FLAT_NO_ITEM_PRICE" in w for w in parsed.warnings)
+
+
+def test_m1_goodslist_entry_without_name_or_table_stays_a_problem():
+    payload = flat_goodslist_payload()
+    entries = json.loads(payload["bideContractorInputResultDTO"]["lotResultDTO"][0]["goodsList"])
+    entries[1] = {"id": "nameless", "quantity": 1, "formValue": None}
+    payload["bideContractorInputResultDTO"]["lotResultDTO"][0]["goodsList"] = json.dumps(entries)
+    parsed = parse_detail(public_spec("KQLCNT", "M1"), payload)
+    assert any("NO_TABLE" in p for p in parsed.problems)
+    assert len(parsed.lots[0].goods) == 1  # the named flat row still parses
+
+
+def test_m1_table_and_flat_lots_coexist():
+    payload = goodslist_payload()
+    flat_lot = flat_goodslist_payload()["bideContractorInputResultDTO"]["lotResultDTO"][0]
+    payload["bideContractorInputResultDTO"]["lotResultDTO"].append(flat_lot)
+    parsed = parse_detail(public_spec("KQLCNT", "M1"), payload)
+    assert parsed.problems == ()
+    assert [len(lot.goods) for lot in parsed.lots] == [1, 2]
+    by_role = money_by_role(parsed)
+    assert by_role[("ITEM_WINNING_PRICE", "0")].value == 92500000  # Table lot
+    assert by_role[("ITEM_WINNING_PRICE", "1")].value == 45000000  # flat lot
+    assert by_role[("ITEM_WINNING_PRICE", "2")].value == 45267
+
+
 # ---------------------------------------------------------------- parser: empty / damaged shapes
 
 def test_m1_no_items_is_notice_metadata_not_an_error():
@@ -312,7 +448,7 @@ def test_m1_missing_currency_is_unparsable_not_guessed():
 
 def test_m1_public_spec_is_kqlcnt_only():
     assert public_spec("KQLCNT", "M1") is not None
-    assert public_spec("KQLCNT", "M1").parser_version == PARSER_VERSION == 5
+    assert public_spec("KQLCNT", "M1").parser_version == PARSER_VERSION == 6
     assert public_spec("TBMT", "M1") is None
     assert public_spec("KQLCNT", "HSMT") is None
 
@@ -355,6 +491,38 @@ def test_m1_dispatch_projects_lots_goods_and_money(tmp_path: Path):
             r[0] for r in writer.conn.execute("SELECT role FROM money_amounts")
         }
         assert {"LOT_PRICE", "LOT_ESTIMATE_PRICE", "ITEM_WINNING_PRICE"} <= roles
+        state = writer.conn.execute(
+            "SELECT state FROM deep_tasks WHERE source_record_id=? AND lane='M1'",
+            (record_id,),
+        ).fetchone()[0]
+        assert state == "FETCHED"
+    finally:
+        writer.close()
+
+
+def test_m1_flat_dispatch_projects_goods_and_money(tmp_path: Path):
+    from santhau_studio.collectors.deep import DeepResponse
+    from santhau_studio.workers.deep_run import run_deep_batch
+
+    writer = seed_kqlcnt_record(tmp_path / "data")
+    try:
+        record_id = writer.conn.execute(
+            "SELECT id FROM source_records WHERE natural_key='IB-0'"
+        ).fetchone()[0]
+        payload = flat_goodslist_payload()
+        result = run_deep_batch(
+            writer, run_id="run-m1-flat", family="KQLCNT", lane="M1",
+            scope={"record_ids": [record_id]},
+            fetcher=lambda _f, _k: DeepResponse(payload, payload),
+            spec_provider=public_spec,
+        )
+        assert result.status == "COMPLETED", result.detail
+        assert result.detail["captured"] == 1
+        assert writer.conn.execute("SELECT COUNT(*) FROM goods_rows").fetchone()[0] == 2
+        roles = {
+            r[0] for r in writer.conn.execute("SELECT role FROM money_amounts")
+        }
+        assert "ITEM_WINNING_PRICE" in roles
         state = writer.conn.execute(
             "SELECT state FROM deep_tasks WHERE source_record_id=? AND lane='M1'",
             (record_id,),

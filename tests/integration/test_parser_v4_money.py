@@ -312,7 +312,7 @@ def test_replay_covers_all_old_parser_captures_and_fills_money(tmp_path):
     with connect_read_only(tmp_path / "warehouse.sqlite") as conn:
         assert conn.execute("SELECT COUNT(*) FROM money_amounts").fetchone()[0] == 11
         assert conn.execute(
-            "SELECT COUNT(*) FROM deep_capture_parse_metadata WHERE parser_version=5"
+            "SELECT COUNT(*) FROM deep_capture_parse_metadata WHERE parser_version=6"
         ).fetchone()[0] == 3
         assert conn.execute(
             "SELECT COUNT(DISTINCT state) FROM deep_tasks WHERE state='FETCHED'"
@@ -320,5 +320,5 @@ def test_replay_covers_all_old_parser_captures_and_fills_money(tmp_path):
     assert replay_deep(tmp_path, execute=False, limit=100)["eligible"] == 0
 
 
-def test_parser_version_is_5():
-    assert PARSER_VERSION == 5
+def test_parser_version_is_6():
+    assert PARSER_VERSION == 6

@@ -18,7 +18,7 @@ from santhau_studio.collectors.deep import (
 from santhau_studio.collectors.hsmt_forms import read_form
 from santhau_studio.domain.identity import record_object_sha
 
-PARSER_VERSION = 5
+PARSER_VERSION = 6
 
 PREFIX = "https://muasamcong.mof.gov.vn/o/egp-portal-contractor-selection-v2/services/"
 ENDPOINTS = {
@@ -394,14 +394,14 @@ def _reoffer(payload, lane):
 
 
 def _m1(payload):
-    """Per-item winning prices for one KQLCNT result (parser v5).
+    """Per-item winning prices for one KQLCNT result (parser v6).
 
     Response envelope (canaried 2026-11-13 on two live records, IB2600073112
     and IB2600363545): ``{bideContractorInputResultDTO, bidpPlanDetailDTO}``.
     The DTO carries ``lotResultDTO[]`` (one entry per lot: lotNo, lotName,
     lotPrice, winningCode, contractorList with the winner's bidWiningPrice)
-    and the per-item rows in TWO alternative encodings, mutually exclusive in
-    both captures:
+    and the per-item rows in THREE alternative encodings, mutually exclusive
+    per lot:
 
     * ``lotResultDTO[].goodsList`` — JSON-encoded string, one entry per lot,
       ``formValue.lotContent.Table[]``; each item's ``bidPrice`` is the
@@ -413,10 +413,21 @@ def _m1(payload):
       ``lotWiningPrice`` (== ``bidPrice`` == the item's ``lotPrice`` field in
       every observed row) plus ``codeGood`` (model), ``labelGood`` (brand),
       ``origin``, ``manufacturer``, ``yearManufacture``.
+    * ``lotResultDTO[].goodsList`` flat rows (live 2026-11-12, LCNT_DB/CDTRG
+      lots): the entry itself is the item — name/quantity/unit/description/
+      origin/``priceUnit`` with ``formValue`` null and no ``lotContent``.
+      ``priceUnit`` is the winning unit price (verified: qty x priceUnit
+      sums to the winner's bidWiningPrice in 6/7 captures; the 7th differs
+      by 0.00009% on a float quantity). ``lotResultItems`` is null for these
+      records, so no fallback exists. A flat entry with a name but no usable
+      price is still a goods row: the missing price is a warning, never a
+      record failure (parser v6; the v5 ``NO_TABLE`` problem for these rows
+      dropped 144 items across 7 records).
 
-    Both encodings carry the WINNER's items only (contractorCode ==
-    winningCode in every observed entry), so the unit price IS the winning
-    unit price. ``ITEM_BID_PRICE`` is emitted only when ``bidPrice`` and
+    All three encodings carry the WINNER's items only: the first two have
+    contractorCode == winningCode in every observed entry, and the flat
+    encoding's prices are verified as winning prices by the qty x priceUnit
+    sum against bidWiningPrice — so the unit price IS the winning unit price. ``ITEM_BID_PRICE`` is emitted only when ``bidPrice`` and
     ``lotWiningPrice`` are both present and differ — otherwise the two would
     be duplicate rows for the same price. Currency is the DTO's own
     ``bidPriceUnit`` (``VND`` in both captures); without a 3-letter code the
@@ -444,23 +455,37 @@ def _m1(payload):
     ordinal = 0
 
     def item_rows(row, source_path):
-        """One item dict -> (ParsedGoodsRow, money rows)."""
+        """One item dict -> (ParsedGoodsRow, money rows).
+
+        Field names differ per encoding: the Table/lotResultItems rows use
+        qty/uom/feature/bidPrice, the flat goodsList rows (parser v6) use
+        quantity/unit/description/priceUnit. ``priceUnit`` is the winning
+        unit price in the flat encoding (verified: qty x priceUnit sums to
+        the winner's bidWiningPrice); it is only consulted when ``bidPrice``
+        is absent, and the money row's source_path names the field actually
+        read.
+        """
         nonlocal ordinal
-        presence, qty, qty_raw = _presence_number(row, ("qty",))
+        presence, qty, qty_raw = _presence_number(row, ("qty", "quantity"))
         if presence != "KNOWN" or not _text(row, ("name",)):
             problems.append(f"M1_ITEM_{ordinal}_INVALID_FIELDS")
         good = ParsedGoodsRow(
             ordinal,
             _text(row, ("name",)),
-            _text(row, ("feature",)),
-            _text(row, ("uom",)),
+            _text(row, ("feature", "description")),
+            _text(row, ("uom", "unit")),
             presence,
             qty,
             qty_raw,
             row,
         )
         win_presence, win_value, _ = _presence_number(row, ("lotWiningPrice",))
-        bid_presence, bid_value, _ = _presence_number(row, ("bidPrice",))
+        bid_field, bid_presence, bid_value = None, "MISSING", None
+        for candidate in ("bidPrice", "priceUnit"):
+            candidate_presence, candidate_value, _ = _presence_number(row, (candidate,))
+            if candidate_presence == "KNOWN":
+                bid_field, bid_presence, bid_value = candidate, candidate_presence, candidate_value
+                break
         if win_presence == "KNOWN":
             field, role = "lotWiningPrice", "ITEM_WINNING_PRICE"
             amount = _money_amount(
@@ -473,18 +498,18 @@ def _m1(payload):
                 money.append(amount)
             if bid_presence == "KNOWN" and bid_value != win_value:
                 amount = _money_amount(
-                    row, "bidPrice", role="ITEM_BID_PRICE", owner_kind="GOODS_ROW",
+                    row, bid_field, role="ITEM_BID_PRICE", owner_kind="GOODS_ROW",
                     owner_ref=str(ordinal),
-                    source_path=f"{source_path}.bidPrice",
+                    source_path=f"{source_path}.{bid_field}",
                     currency_code=currency,
                 )
                 if amount is not None:
                     money.append(amount)
         elif bid_presence == "KNOWN":
             amount = _money_amount(
-                row, "bidPrice", role="ITEM_WINNING_PRICE", owner_kind="GOODS_ROW",
+                row, bid_field, role="ITEM_WINNING_PRICE", owner_kind="GOODS_ROW",
                 owner_ref=str(ordinal),
-                source_path=f"{source_path}.bidPrice",
+                source_path=f"{source_path}.{bid_field}",
                 currency_code=currency,
             )
             if amount is not None:
@@ -584,17 +609,33 @@ def _m1(payload):
                 continue
             form_value = entry.get("formValue")
             table = form_value.get("lotContent", {}).get("Table") if isinstance(form_value, dict) else None
-            if not isinstance(table, list):
-                problems.append(f"M1_LOT_{lot_index}_GOODSLIST_ENTRY_{entry_index}_NO_TABLE")
+            if isinstance(table, list):
+                for item_index, row in enumerate(table):
+                    if not isinstance(row, dict):
+                        problems.append(f"M1_LOT_{lot_index}_GOODSLIST_ROW_{item_index}_NOT_OBJECT")
+                        continue
+                    lot_goods[lot_no].append(item_rows(
+                        row,
+                        f"bideContractorInputResultDTO.lotResultDTO[{lot_index}].goodsList[{entry_index}].formValue.lotContent.Table[{item_index}]",
+                    ))
                 continue
-            for item_index, row in enumerate(table):
-                if not isinstance(row, dict):
-                    problems.append(f"M1_LOT_{lot_index}_GOODSLIST_ROW_{item_index}_NOT_OBJECT")
-                    continue
+            # Flat encoding (live 2026-11-12, LCNT_DB/CDTRG lots): the entry
+            # itself is the item row — name/quantity/unit/description/origin/
+            # priceUnit with formValue null and no lotContent.Table. priceUnit
+            # is the winning unit price (verified against bidWiningPrice);
+            # lotResultItems is null for these records, so no fallback exists.
+            # An entry with a name but no usable price is still a goods row:
+            # the missing price is a warning, never a record failure.
+            if _text(entry, ("name",)) is not None:
+                money_before = len(money)
                 lot_goods[lot_no].append(item_rows(
-                    row,
-                    f"bideContractorInputResultDTO.lotResultDTO[{lot_index}].goodsList[{entry_index}].formValue.lotContent.Table[{item_index}]",
+                    entry,
+                    f"bideContractorInputResultDTO.lotResultDTO[{lot_index}].goodsList[{entry_index}]",
                 ))
+                if len(money) == money_before:
+                    warnings.append(f"M1_LOT_{lot_no}_GOODSLIST_FLAT_NO_ITEM_PRICE")
+                continue
+            problems.append(f"M1_LOT_{lot_index}_GOODSLIST_ENTRY_{entry_index}_NO_TABLE")
     parsed_lots = tuple(
         ParsedLot(lot_no, _text(lot, ("lotName",)), _text(dto, ("resultVersion",)),
                   tuple(lot_goods.get(lot_no, ())), lot)

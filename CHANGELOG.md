@@ -3,6 +3,30 @@
 Chỉ ghi thay đổi quan trọng tới hợp đồng kỹ thuật. Spec nền: **Master Spec Consolidated v1.3**
 (không đổi; mọi mục dưới là cụ thể hoá hoặc sửa đổi cần owner phê chuẩn).
 
+## RC3-11.1 — Parser v6, sửa lỗi M1 NO_TABLE cho goodsList phẳng (13/11/2026)
+
+- **Parser v6** (`PARSER_VERSION` 5→6): `goodsList` có thêm dạng hàng phẳng thứ ba
+  (lot LCNT_DB/CDTRG): entry tự là mặt hàng — `name`/`quantity`/`unit`/`description`/
+  `origin`/`priceUnit`, `formValue` null, không có `lotContent.Table` — và `lotResultItems`
+  null, nên không có đường fallback. `priceUnit` chính là đơn giá trúng thầu (đã kiểm chứng
+  trên 7 record live: qty × priceUnit cộng lại đúng bằng `bidWiningPrice` của nhà thầu trúng
+  ở 6/7; record còn lại lệch 206đ = 0,00009% do quantity float 5034.06 làm tròn ở nguồn).
+  Parser v5 báo `M1_LOT_*_GOODSLIST_ENTRY_*_NO_TABLE` cho mỗi entry và fail cả record,
+  làm rơi 144 mặt hàng + 144 `ITEM_WINNING_PRICE` (lot + `LOT_PRICE` vẫn được ghi).
+  Parser v6 parse entry phẳng thành hàng hóa + `ITEM_WINNING_PRICE` từ `priceUnit`
+  (source_path ghi đúng `.priceUnit`); entry phẳng có tên nhưng không có giá vẫn ghi hàng
+  hóa, chỉ cảnh báo `GOODSLIST_FLAT_NO_ITEM_PRICE`, không fail record. Parser bump kích hoạt
+  chọn lại 7 task PARSE_ERROR từ raw đã lưu (không gọi lại E-GP).
+- **Không đổi**: không có migration mới (008/009 của RC3-11 đã đủ); M2/M3 vẫn RC3-12 sau.
+- **Kiểm chứng**: parser v6 chạy trên cả 7 raw live: 0 problems, 144/144 hàng hóa +
+  144/144 `ITEM_WINNING_PRICE`; CI pytest subset 536 passed, 4 skipped, 1 failed
+  (`test_budget_windowing::test_early_split...` — fail sẵn y hệt trên baseline RC3-11
+  sạch trong môi trường này, do httpx parse proxy env, không liên quan M1); chạy mở rộng
+  (CI subset + test_m1_parser + test_deep_run + test_parser_v4_money + test_deep_retry +
+  test_deep_capture + test_deep_reuse) 604 passed, 4 skipped, cùng 1 fail có sẵn đó;
+  5 test hồi quy mới cho dạng phẳng (parse, không giá → cảnh báo, entry không tên vẫn lỗi,
+  lot Table + lot phẳng cùng tồn tại, dispatch end-to-end ra FETCHED).
+
 ## RC3-11 — Lane M1, giá trúng thầu theo mặt hàng KQLCNT (13/11/2026)
 
 - **Lane M1 mới** (`PARSER_VERSION` 4→5): giá trúng thầu theo từng mặt hàng trong KQLCNT
