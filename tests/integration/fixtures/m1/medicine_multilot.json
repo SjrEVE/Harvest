@@ -1,0 +1,109 @@
+{
+ "bideContractorInputResultDTO": {
+  "id": "eae31f4d-21f7-4174-bd1c-1706e2ca9859",
+  "notifyNo": "DC2600107839",
+  "notifyVersion": "00",
+  "resultVersion": "00",
+  "bidPriceUnit": "VND",
+  "lotResultDTO": [
+   {
+    "id": "e617d0dc-6279-4459-a385-eb8ebad835ad",
+    "lotNo": "PP2600482322",
+    "lotName": "Cao khô Actisô EP (Extractum Cynarae siccus), Cao khô rau đắng đất 8:1 (Extractum Herba Glini oppositifolii siccus), Cao khô Bìm bìm ( Extractum Semen Pharbitidis siccus)",
+    "lotPrice": 2600000,
+    "lotEstimatePrice": null,
+    "winningCode": "vn3200630276",
+    "goodsList": "[{\"lotNo\":\"PP2600482322\",\"lotName\":\"Cao khô Actisô EP (Extractum Cynarae siccus), Cao khô rau đắng đất 8:1 (Extractum Herba Glini oppositifolii siccus), Cao khô Bìm bìm ( Extractum Semen Pharbitidis siccus)\",\"winContractors\":[{\"bidResult\":1,\"ventureName\":null,\"contractorCode\":\"vn3200630276\",\"bidWiningPrice\":2600000,\"role\":1,\"contractorName\":\"CÔNG TY TRÁCH NHIỆM HỮU HẠN DƯỢC ĐỒNG TÂM \",\"recEmail\":\"duocdongtamqt@gmail.com\",\"taxCode\":\"3200630276\",\"taxNation\":\"26 Hải Thượng Lãn Ông  Phường Nam Đông Hà Tỉnh Quảng Trị\"}],\"falseContractors\":[],\"lotEstimatePrice\":null,\"medicineCode\":null,\"tenThuoc\":null,\"tenHoatChat\":\"Cao khô Actisô EP (Extractum Cynarae siccus), Cao khô rau đắng đất 8:1 (Extractum Herba Glini oppositifolii siccus), Cao khô Bìm bìm ( Extractum Semen Pharbitidis siccus)\",\"nongDo\":\"85mg; 64mg; 6,4mg\",\"gdklh\":\"VD-19790-13\",\"duongDung\":\"Uống \",\"dangBaoChe\":\"Viên bao phim\",\"csSanXuat\":\"Công ty cổ phần công nghệ cao Traphaco\",\"nuocSanXuat\":\"Việt Nam\",\"quyCach\":\"Hộp 1 túi x 5 vỉ x 20 viên\",\"uom\":\"Viên\",\"quantity\":4000,\"donGia\":650,\"amount\":2600000,\"groupMedicine\":\"Nhóm 1\",\"tienDo\":\"12 tháng\",\"cperiod\":\"12 tháng \",\"origin\":null,\"coSoSanXuat\":null,\"coSoCungCap\":null,\"status\":1,\"rowspan\":1,\"medicineType\":null,\"isPersonalContractor\":0,\"medicineTypeSelected\":null},{\"lotNo\":\"PP2600482323\",\"lotName\":\"Cao rễ Đinh lăng 5:1 (Extractum Radix Polysciacis) + Cao lá Bạch quả (Extractum Folii Ginkgo) (Hàm lượng Flavonoid toàn phần ≥ 24%)\",\"winContractors\":[{\"bidResult\":1,\"ventureName\":null,\"contractorCode\":\"vn3200630276\",\"bidWiningPrice\":32000000,\"role\":1,\"contractorName\":\"CÔNG TY TRÁCH NHIỆM HỮU HẠN DƯỢC ĐỒNG TÂM \",\"recEmail\":\"duocdongtamqt@gmail.com\",\"taxCode\":\"3200630276\",\"taxNation\":\"26 Hải Thượng Lãn Ông  Phường Nam Đông Hà Tỉnh Quảng Trị\"}],\"falseContractors\":[],\"lotEstimatePrice\":null,\"medicineCode\":null,\"tenThuoc\":null,\"tenHoatChat\":\"Cao rễ Đinh lăng 5:1 (Extractum Radix Polysciacis) + Cao lá Bạch quả (Extractum Folii Ginkgo) (Hàm lượng Flavonoid toàn phần ≥ 24%)\",\"nongDo\":\"150mg + 5mg\",\"gdklh\":\"VD-27363-17\",\"duongDung\":\"Uống \",\"dangBaoChe\":\"Viên nén bao đường\",\"csSanXuat\":\"Công ty cổ phần công nghệ cao Traphaco\",\"nuocSanXuat\":\"Việt Nam\",\"quyCach\":\"Hộp 5 vỉ x 20 viên\",\"uom\":\"Viên\",\"quantity\":40000,\"donGia\":800,\"amount\":32000000,\"groupMedicine\":\"Nhóm 2\",\"tienDo\":\"12 tháng\",\"cperiod\":\"12 tháng \",\"origin\":null,\"coSoSanXuat\":null,\"coSoCungCap\":null,\"status\":1,\"rowspan\":1,\"medicineType\":null,\"isPersonalContractor\":0},{\"lotNo\":\"PP2600482324\",\"lotName\":\"Ô đầu, Địa liền, Đại hồi, Quế nhục, Thiên niên kiện, Uy linh tiên, Mã tiền, Huyết giác, Xuyên khung, Tế tân, Methylsalicylat\",\"winContractors\":[{\"bidResult\":1,\"ventureName\":null,\"contractorCode\":\"vn3200630276\",\"bidWiningPrice\":5400000,\"role\":1,\"contractorName\":\"CÔNG TY TRÁCH NHIỆM HỮU HẠN DƯỢC ĐỒNG TÂM \",\"recEmail\":\"duocdongtamqt@gmail.com\",\"taxCode\":\"3200630276\",\"taxNation\":\"26 Hải Thượng Lãn Ông  Phường Nam Đông Hà Tỉnh Quảng Trị\"}],\"falseContractors\":[],\"lotEstimatePrice\":null,\"medicineCode\":null,\"tenThuoc\":null,\"tenHoatChat\":\"Ô đầu, Địa liền, Đại hồi, Quế nhục, Thiên niên kiện, Uy linh tiên, Mã tiền, Huyết giác, Xuyên khung, Tế tân, Methylsalicylat\",\"nongDo\":\"Mỗi 50 ml chứa: Ô đầu 500mg; địa liền 500mg; đại hồi 500mg; quế nhục 500mg; thiên niên kiện 500mg; uy linh tiên 500mg; mã tiền 500mg; huyết giác 500mg; xuyên khung 500mg; tế tân 500mg; methyl salicylat 5ml\",\"gdklh\":\"893110307200\\r\\n(VD- 21803-14)\",\"duongDung\":\"Dùng ngoài \",\"dangBaoChe\":\"Cồn xoa bóp\",\"csSanXuat\":\"Công ty cổ phần công nghệ cao Traphaco\",\"nuocSanXuat\":\"Việt Nam\",\"quyCach\":\"Hộp 1 lọ xịt 50ml\",\"uom\":\"Lọ\",\"quantity\":300,\"donGia\":18000,\"amount\":5400000,\"groupMedicine\":\"Nhóm 3\",\"tienDo\":\"12 tháng\",\"cperiod\":\"12 tháng \",\"origin\":null,\"coSoSanXuat\":null,\"coSoCungCap\":null,\"status\":1,\"rowspan\":1,\"medicineType\":null,\"isPersonalContractor\":0},{\"lotNo\":\"PP2600482325\",\"lotName\":\"Thục địa, Hoài sơn (bột), Đương quy ( bột), Cao đặc rễ Trạch tả, Cao đặc rễ Hà thủ ô đỏ, Cao đặc hoa Cúc hoa vàng, Cao đặc hạt Thảo quyết minh, Cao đặc quả Hạ khô thảo\",\"winContractors\":[{\"bidResult\":1,\"ventureName\":null,\"contractorCode\":\"vn3200630276\",\"bidWiningPrice\":6500000,\"role\":1,\"contractorName\":\"CÔNG TY TRÁCH NHIỆM HỮU HẠN DƯỢC ĐỒNG TÂM \",\"recEmail\":\"duocdongtamqt@gmail.com\",\"taxCode\":\"3200630276\",\"taxNation\":\"26 Hải Thượng Lãn Ông  Phường Nam Đông Hà Tỉnh Quảng Trị\"}],\"falseContractors\":[],\"lotEstimatePrice\":null,\"medicineCode\":null,\"tenThuoc\":null,\"tenHoatChat\":\"Thục địa, Hoài sơn (bột), Đương quy ( bột), Cao đặc rễ Trạch tả, Cao đặc rễ Hà thủ ô đỏ, Cao đặc hoa Cúc hoa vàng, Cao đặc hạt Thảo quyết minh, Cao đặc quả Hạ khô thảo\",\"nongDo\":\"Thục địa 125mg; Hoài sơn (bột) 160mg; Đương quy (bột) 160mg; Cao đặc rễ Trạch tả 40mg tương đương 100mg Trạch tả;\\r\\n Cao đặc rễ Hà thủ ô đỏ 40 mg tương đương với 200mg Hà thủ ô đỏ; Cao đặc hoa Cúc hoa vàng 24mg tương đương với\\r\\n 200mg Cúc hoa vàng; Cao đặc hạt Thảo quyết minh 50mg tương đương với 500mg Thảo quyết minh;\\r\\n Cao đặc quả Hạ khô thảo 12,5mg tương đương với 125mg Hạ khô thảo\",\"gdklh\":\"VD-24070-16\",\"duongDung\":\"Uống \",\"dangBaoChe\":\"Viên nang cứng\",\"csSanXuat\":\"Công ty cổ phần công nghệ cao Traphaco\",\"nuocSanXuat\":\"Việt Nam\",\"quyCach\":\"Hộp 1 vỉ, 10 vỉ x10 viên\",\"uom\":\"Viên\",\"quantity\":10000,\"donGia\":650,\"amount\":6500000,\"groupMedicine\":\"Nhóm 3\",\"tienDo\":\"12 tháng\",\"cperiod\":\"12 tháng \",\"origin\":null,\"coSoSanXuat\":null,\"coSoCungCap\":null,\"status\":1,\"rowspan\":1,\"medicineType\":null,\"isPersonalContractor\":0},{\"lotNo\":\"PP2600482326\",\"lotName\":\"Cao cam thảo 3,5:1; Cao hoàng liên 5,5:1;Cao kha tử 2,5:1; Cao bạch thược 3,5:1; Bột mộc hương; Bột bạch truật\",\"winContractors\":[{\"bidResult\":1,\"ventureName\":null,\"contractorCode\":\"vn3200630276\",\"bidWiningPrice\":1350000,\"role\":1,\"contractorName\":\"CÔNG TY TRÁCH NHIỆM HỮU HẠN DƯỢC ĐỒNG TÂM \",\"recEmail\":\"duocdongtamqt@gmail.com\",\"taxCode\":\"3200630276\",\"taxNation\":\"26 Hải Thượng Lãn Ông  Phường Nam Đông Hà Tỉnh Quảng Trị\"}],\"falseContractors\":[],\"lotEstimatePrice\":null,\"medicineCode\":null,\"tenThuoc\":null,\"tenHoatChat\":\"Cao cam thảo 3,5:1; Cao hoàng liên 5,5:1;Cao kha tử 2,5:1; Cao bạch thược 3,5:1; Bột mộc hương; Bột bạch truật\",\"nongDo\":\"24mg; 52mg; 260mg; 18mg; 250mg; 50mg\",\"gdklh\":\"VD-24477-16\",\"duongDung\":\"Uống \",\"dangBaoChe\":\"Viên nang cứng\",\"csSanXuat\":\"Công ty cổ phần công nghệ cao Traphaco\",\"nuocSanXuat\":\"Việt Nam\",\"quyCach\":\"Hộp 2 vỉ x 10 viên\",\"uom\":\"Viên\",\"quantity\":1000,\"donGia\":1350,\"amount\":1350000,\"groupMedicine\":\"Nhóm 3\",\"tienDo\":\"12 tháng\",\"cperiod\":\"12 tháng \",\"origin\":null,\"coSoSanXuat\":null,\"coSoCungCap\":null,\"status\":1,\"rowspan\":1,\"medicineType\":null,\"isPersonalContractor\":0}]",
+    "contractorList": [
+     {
+      "orgCode": "vn3200630276",
+      "bidWiningPrice": 2600000,
+      "bidResult": 1,
+      "adjustPrice": null,
+      "lotOpenPrice": null,
+      "lotFinalPrice": 0,
+      "discountPercent": null
+     }
+    ]
+   },
+   {
+    "id": "8db80440-5962-4a8f-8881-8c4e97f3de88",
+    "lotNo": "PP2600482323",
+    "lotName": "Cao rễ Đinh lăng 5:1 (Extractum Radix Polysciacis) + Cao lá Bạch quả (Extractum Folii Ginkgo) (Hàm lượng Flavonoid toàn phần ≥ 24%)",
+    "lotPrice": 32000000,
+    "lotEstimatePrice": null,
+    "winningCode": "vn3200630276",
+    "contractorList": [
+     {
+      "orgCode": "vn3200630276",
+      "bidWiningPrice": 32000000,
+      "bidResult": 1,
+      "adjustPrice": null,
+      "lotOpenPrice": null,
+      "lotFinalPrice": 0,
+      "discountPercent": null
+     }
+    ]
+   },
+   {
+    "id": "5759fdf1-4faf-4d52-a0f1-8fd0307764c3",
+    "lotNo": "PP2600482324",
+    "lotName": "Ô đầu, Địa liền, Đại hồi, Quế nhục, Thiên niên kiện, Uy linh tiên, Mã tiền, Huyết giác, Xuyên khung, Tế tân, Methylsalicylat",
+    "lotPrice": 5400000,
+    "lotEstimatePrice": null,
+    "winningCode": "vn3200630276",
+    "contractorList": [
+     {
+      "orgCode": "vn3200630276",
+      "bidWiningPrice": 5400000,
+      "bidResult": 1,
+      "adjustPrice": null,
+      "lotOpenPrice": null,
+      "lotFinalPrice": 0,
+      "discountPercent": null
+     }
+    ]
+   },
+   {
+    "id": "9b2ad0f3-179e-4e06-83ed-cd4c5433663a",
+    "lotNo": "PP2600482325",
+    "lotName": "Thục địa, Hoài sơn (bột), Đương quy ( bột), Cao đặc rễ Trạch tả, Cao đặc rễ Hà thủ ô đỏ, Cao đặc hoa Cúc hoa vàng, Cao đặc hạt Thảo quyết minh, Cao đặc quả Hạ khô thảo",
+    "lotPrice": 6500000,
+    "lotEstimatePrice": null,
+    "winningCode": "vn3200630276",
+    "contractorList": [
+     {
+      "orgCode": "vn3200630276",
+      "bidWiningPrice": 6500000,
+      "bidResult": 1,
+      "adjustPrice": null,
+      "lotOpenPrice": null,
+      "lotFinalPrice": 0,
+      "discountPercent": null
+     }
+    ]
+   },
+   {
+    "id": "fedee992-e344-4bd2-a132-bb019fe85a23",
+    "lotNo": "PP2600482326",
+    "lotName": "Cao cam thảo 3,5:1; Cao hoàng liên 5,5:1;Cao kha tử 2,5:1; Cao bạch thược 3,5:1; Bột mộc hương; Bột bạch truật",
+    "lotPrice": 1350000,
+    "lotEstimatePrice": null,
+    "winningCode": "vn3200630276",
+    "contractorList": [
+     {
+      "orgCode": "vn3200630276",
+      "bidWiningPrice": 1350000,
+      "bidResult": 1,
+      "adjustPrice": null,
+      "lotOpenPrice": null,
+      "lotFinalPrice": 0,
+      "discountPercent": null
+     }
+    ]
+   }
+  ],
+  "lotResultItems": []
+ },
+ "bidpPlanDetailDTO": null
+}

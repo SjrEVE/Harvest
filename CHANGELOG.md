@@ -3,6 +3,46 @@
 Chỉ ghi thay đổi quan trọng tới hợp đồng kỹ thuật. Spec nền: **Master Spec Consolidated v1.3**
 (không đổi; mọi mục dưới là cụ thể hoá hoặc sửa đổi cần owner phê chuẩn).
 
+## RC3-11.2 — Parser v7, sửa lỗi M1 INVALID_JSON / NO_TABLE / INVALID_FIELDS (13/11/2026)
+
+- **Parser v7** (`PARSER_VERSION` 6→7): `goodsList` có thêm 3 dạng phát hiện trong
+  58 record `PARSE_ERROR` của đợt quét bù M1 đang chạy. (1) Object danh sách dịch
+  vụ: chuỗi JSON parse được nhưng là dict, không phải list — 5 key
+  (`listTG`/`listDG`/`listKQDR`/`listTLPT`/`listTTG`), mỗi key một danh sách hàng
+  (`serviceCategory`/`description`, `qty`, `uom`, `bidPrice`, `intoMoney`,
+  `orgCode`); hàng `parent: 0` có con là tiêu đề nhóm (bỏ qua, chỉ hàng lá là
+  mặt hàng — cộng cả hàng cha sẽ đếm trùng); hàng trống ở tất cả các list là
+  record thật sự không có mặt hàng, không còn lỗi. (2) `dsDvKqTg`: bảng giá theo
+  từng nhà thầu + lot (`dsHH` trong mỗi unit), chỉ lấy unit của nhà thầu trúng,
+  hàng gắn vào lot mà `lotNo` của unit chỉ định (không phải lot đang mang
+  `goodsList`). (3) Hàng thuốc: entry không có `formValue`/`name`, có `tenThuoc`/
+  `donGia`/`winContractors` — `donGia` là đơn giá trúng, `tenThuoc` là tên
+  (fallback `lotName`), hàng gắn vào lot theo `lotNo` của entry; `winContractors`
+  xác nhận nhà thầu trúng theo từng entry. Tên mặt hàng nhận thêm
+  `serviceCategory`/`description`/`tenThuoc`/`lotName`, nên hàng dịch vụ trong
+  `Table` không có key `name` cũng parse được (sửa bucket `INVALID_FIELDS`).
+  Entry `Table` lặp lại theo từng nhà thầu chỉ parse bảng của nhà thầu trúng;
+  bảng giống hệt nhau chỉ parse một lần (cảnh báo
+  `GOODSLIST_DUPLICATE_TABLE_SKIPPED`).
+- **Đính chính claim của parser v6**: đơn giá trúng theo mặt hàng là đơn giá
+  chào của nhà thầu trúng. Tổng qty × đơn giá bằng tổng chào thầu của nhà thầu
+  trúng (`lotOpenPrice`/`adjustPrice`) khi bảng phủ hết lot — không phải lúc nào
+  cũng bằng `bidWiningPrice` sau hiệu chỉnh (có thể thấp hơn, vd 1499902:
+  chào 50.849.700.000 vs trúng 47.310.000.000) và không phải lúc nào cũng bằng
+  tổng lot (có bảng chỉ phủ một phần lot, vd 1499740). Parser vẫn ghi đơn giá
+  chào làm `ITEM_WINNING_PRICE`, không bịa tổng để ép khớp.
+- **Không đổi**: không có migration mới (008/009 của RC3-11 đã đủ); M2/M3 vẫn
+  RC3-12 sau.
+- **Kiểm chứng**: parser v7 chạy trên 10 fixture (bản rút gọn, đã che PII, của
+  raw live 58 record lỗi): 0 problems ở cả 10; CI pytest subset 536 passed,
+  4 skipped, 1 failed (`test_budget_windowing::test_early_split...` — fail sẵn
+  y hệt trên baseline RC3-11.1 sạch trong môi trường này, do httpx parse proxy
+  env, không liên quan M1); chạy mở rộng (CI subset + test_m1_parser +
+  test_deep_run + test_parser_v4_money + test_deep_retry + test_deep_capture +
+  test_deep_reuse) 616 passed, 4 skipped, cùng 1 fail có sẵn đó; 12 test hồi
+  quy mới cho 3 dạng mới + lọc nhà thầu thắng + dedup bảng trùng + đơn giá
+  chào vẫn ghi khi tổng ≠ giá trúng.
+
 ## RC3-11.1 — Parser v6, sửa lỗi M1 NO_TABLE cho goodsList phẳng (13/11/2026)
 
 - **Parser v6** (`PARSER_VERSION` 5→6): `goodsList` có thêm dạng hàng phẳng thứ ba

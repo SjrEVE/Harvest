@@ -1,0 +1,33 @@
+{
+ "bideContractorInputResultDTO": {
+  "id": "ac8e51fb-052a-4952-bf79-24f32b42f0d1",
+  "notifyNo": "DC2600114884",
+  "notifyVersion": "00",
+  "resultVersion": "01",
+  "bidPriceUnit": "VND",
+  "lotResultDTO": [
+   {
+    "id": "52cb774c-5a98-4f6b-bbe7-d8535ebcdf54",
+    "lotNo": "BP2600984487",
+    "lotName": "Rifampicin 150mg; Isoniazid 75mg; Pyrazinamid 400mg",
+    "lotPrice": 10800000,
+    "lotEstimatePrice": null,
+    "winningCode": "vn0600206147",
+    "goodsList": "[{\"lotNo\":\"BP2600984487\",\"tenThuoc\":\"Turbezid\",\"lotName\":\"Rifampicin 150mg; Isoniazid 75mg; Pyrazinamid 400mg\",\"winContractors\":[{\"bidResult\":1,\"ventureName\":null,\"contractorCode\":\"vn0600206147\",\"bidWiningPrice\":3000,\"role\":1,\"contractorName\":\"CÔNG TY CỔ PHẦN DƯỢC PHẨM NAM HÀ\",\"recEmail\":\"thauetc@namhapharma.com\",\"taxCode\":\"0600206147\",\"taxNation\":\"Số 415 đường Hàn Thuyên  Phường Nam Định Tỉnh Ninh Bình\"}],\"falseContractors\":[],\"lotEstimatePrice\":null,\"medicineCode\":null,\"tenHoatChat\":\"Cung ứng thuốc điều trị Lao tại Trạm Y tế Lục Nam\",\"nongDo\":\"150mg; 75mg; 400mg\",\"gdklh\":893110160824,\"duongDung\":\"uống\",\"dangBaoChe\":\"viên nén\",\"csSanXuat\":\"Công ty cổ phần dược phẩm Nam Hà\",\"nuocSanXuat\":\"Việt Nam\",\"quyCach\":\"Hộp 3 vỉ x 12 viên\",\"uom\":\"viên\",\"quantity\":3600,\"donGia\":3000,\"amount\":10800000,\"groupMedicine\":3,\"tienDo\":\"30 ngày\",\"cperiod\":\"30 ngày\",\"origin\":null,\"coSoSanXuat\":null,\"coSoCungCap\":null,\"status\":1,\"rowspan\":1,\"isPersonalContractor\":0}]",
+    "contractorList": [
+     {
+      "orgCode": "vn0600206147",
+      "bidWiningPrice": 3000,
+      "bidResult": 1,
+      "adjustPrice": null,
+      "lotOpenPrice": null,
+      "lotFinalPrice": 0,
+      "discountPercent": null
+     }
+    ]
+   }
+  ],
+  "lotResultItems": null
+ },
+ "bidpPlanDetailDTO": null
+}

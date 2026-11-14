@@ -50,7 +50,7 @@ Write-Host '--- building SanThauDataStudio.exe (Qt Quick/QML) ---'
     --windows-product-name='San Thau Data Studio' `
     --windows-file-version=0.0.1.10 `
     --windows-product-version=0.0.1.10 `
-    --windows-file-description='San Thau Data Studio 0.0.1-RC3-11.1' `
+    --windows-file-description='San Thau Data Studio 0.0.1-RC3-11.2' `
     --include-qt-plugins=qml,platforms,imageformats,styles `
     --include-data-dir=src/santhau_studio/desktop/qml=qml `
     --output-dir=$Out `
@@ -70,7 +70,7 @@ Write-Host '--- building SanThauCollector.exe (headless worker) ---'
     --windows-product-name='San Thau Data Studio Collector' `
     --windows-file-version=0.0.1.10 `
     --windows-product-version=0.0.1.10 `
-    --windows-file-description='San Thau Data Studio Collector 0.0.1-RC3-11.1' `
+    --windows-file-description='San Thau Data Studio Collector 0.0.1-RC3-11.2' `
     --include-data-files=docs/ddl/g0_b_proposed.sql=docs/ddl/g0_b_proposed.sql `
     --include-data-files=docs/ddl/002_public_deep.sql=docs/ddl/002_public_deep.sql `
     --include-data-files=docs/ddl/003_attempt_telemetry.sql=docs/ddl/003_attempt_telemetry.sql `

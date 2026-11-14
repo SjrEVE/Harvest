@@ -4,19 +4,25 @@ Bản Linux chỉ thu thập và lưu dữ liệu: không GUI, Qt, dashboard, t�
 Kho SQLite, dữ liệu gốc, lịch sử và bằng chứng vẫn dùng cùng hợp đồng dữ liệu với Windows.
 Không tạo hoặc rebuild `serving.sqlite`.
 
-Bản cập nhật **0.0.1-RC3-11.1** (`.deb`: `0.0.1~rc3-11.1`) dành cho Linode chạy
-Ubuntu 22.04/24.04 x86-64 (Intel/AMD). Bản vá parser v6 cho lane M1 (xem dưới);
+Bản cập nhật **0.0.1-RC3-11.2** (`.deb`: `0.0.1~rc3-11.2`) dành cho Linode chạy
+Ubuntu 22.04/24.04 x86-64 (Intel/AMD). Bản vá parser v7 cho lane M1 (xem dưới);
 không có migration mới — migration v8 và v9 của RC3-11 vẫn tự áp dụng như cũ,
-giữ nguyên dữ liệu và tiến độ đã có. Bản RC3-11.1 bổ sung:
+giữ nguyên dữ liệu và tiến độ đã có. Bản RC3-11.2 bổ sung:
 
-- Parser v6 sửa lỗi `M1_LOT_*_GOODSLIST_ENTRY_*_NO_TABLE`: các lot LCNT_DB/CDTRG
-  trả `goodsList` dạng hàng phẳng (entry tự là mặt hàng: `name`/`quantity`/`unit`/
-  `description`/`origin`/`priceUnit`, `formValue` null, không có `lotContent.Table`),
-  `priceUnit` chính là đơn giá trúng thầu (đã kiểm chứng: qty × priceUnit cộng lại
-  đúng bằng `bidWiningPrice` của nhà thầu trúng). 7 record lỗi ở đợt canary deploy
-  (144 mặt hàng) sẽ được parse lại từ raw đã lưu khi nâng cấp — parser bump kích hoạt
-  chọn lại task PARSE_ERROR, không cần gọi lại E-GP. Entry phẳng không có giá vẫn ghi
-  hàng hóa, chỉ cảnh báo, không fail cả record.
+- Parser v7 sửa 58 task M1 `PARSE_ERROR` trong đợt quét bù đang chạy: `goodsList`
+  có thêm 3 dạng — (1) object danh sách dịch vụ (`listTG`/`listDG`/`listKQDR`/
+  `listTLPT`/`listTTG`, hàng có `serviceCategory`/`description` + `bidPrice`,
+  hàng `parent: 0` là tiêu đề nhóm, chỉ hàng lá mới là mặt hàng); (2)
+  `dsDvKqTg` (bảng giá theo từng nhà thầu + lot, chỉ lấy bảng của nhà thầu
+  trúng); (3) hàng thuốc (`tenThuoc`/`donGia`/`winContractors`, `donGia` là
+  đơn giá trúng). Tên mặt hàng nhận thêm `serviceCategory`/`description`/
+  `tenThuoc`/`lotName` (hàng dịch vụ trong `Table` không có key `name` vẫn
+  parse được). Entry `Table` lặp lại theo từng nhà thầu chỉ parse bảng của
+  nhà thầu trúng, bảng giống hệt nhau chỉ parse một lần — không đếm trùng.
+  Đơn giá trúng là đơn giá chào của nhà thầu trúng; tổng qty × đơn giá bằng
+  tổng chào thầu (`lotOpenPrice`), có thể thấp hơn `bidWiningPrice` sau hiệu
+  chỉnh. 58 record lỗi sẽ được parse lại từ raw đã lưu khi nâng cấp — parser
+  bump kích hoạt chọn lại task PARSE_ERROR, không cần gọi lại E-GP.
 
 - Lane M1: giá trúng thầu theo từng mặt hàng trong KQLCNT (`ITEM_WINNING_PRICE`,
   `ITEM_BID_PRICE`) qua endpoint `expose/contractor-input-result/get`, 1 request
@@ -47,7 +53,7 @@ Gói x86-64 nhắm Ubuntu 22.04 trở lên (glibc từ 2.35). Phạm vi đã ki�
 
 ```sh
 sha256sum -c SHA256SUMS
-sudo apt install ./santhau-collector_0.0.1~rc3-11.1_amd64.deb
+sudo apt install ./santhau-collector_0.0.1~rc3-11.2_amd64.deb
 santhau-collector --version
 ```
 
@@ -57,8 +63,8 @@ Cài đặt không tự chạy dịch vụ và không gọi E-GP. Không cần c
 Bản tar.gz có thể cài bằng tài khoản thường:
 
 ```sh
-tar -xzf santhau-collector-0.0.1-RC3-11.1-linux-x86_64.tar.gz
-cd santhau-collector-0.0.1-RC3-11.1-linux-x86_64
+tar -xzf santhau-collector-0.0.1-RC3-11.2-linux-x86_64.tar.gz
+cd santhau-collector-0.0.1-RC3-11.2-linux-x86_64
 sh install.sh "$HOME/.local/opt/santhau-collector"
 "$HOME/.local/opt/santhau-collector/santhau-collector" --version
 ```
@@ -216,7 +222,7 @@ Giữ nguyên Data Root, dừng dịch vụ an toàn rồi cài đè gói mới.
 ```sh
 systemctl --user stop santhau-collector.service
 santhau-collector status --data-root "$HOME/SanThauData"
-sudo apt install ./santhau-collector_0.0.1~rc3-11.1_amd64.deb
+sudo apt install ./santhau-collector_0.0.1~rc3-11.2_amd64.deb
 systemctl --user daemon-reload
 santhau-collector deep-config --enable --batch-requests 30 --data-root "$HOME/SanThauData"
 systemctl --user start santhau-collector.service

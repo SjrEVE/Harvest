@@ -1,11 +1,19 @@
-"""M1 lane: per-item winning prices in KQLCNT (parser v6, migration 008).
+"""M1 lane: per-item winning prices in KQLCNT (parser v7, migration 008).
 
 Fixtures are SYNTHETIC, modeled on the live captures: the two 2026-11-13
 canary records (IB2600073112 goodsList/Table encoding and IB2600363545
 lotResultItems encoding) plus the flat goodsList encoding from the 2026-11-12
 deploy canary (7 records, e.g. IB2600597038, IB2600599802: entries carry the
 item inline with formValue null and priceUnit as the unit price).
-No live payload is copied into the repo.
+
+The parser-v7 fixtures in fixtures/m1/ are TRIMMED, redacted copies of real
+saved raw responses from the 2026-11-13 backfill sweep (58 PARSE_ERROR
+records): the goodsList dict (service lists), dsDvKqTg, medicine, and
+description-row Table encodings, plus the per-contractor duplicate Table
+entries. Each fixture keeps the lot DTO + the entries under test, drops
+bidpPlanDetailDTO and unparsed DTO keys, and redacts contact PII (recEmail,
+taxNation). The full 58-record replay is the deploy-time verification, not a
+unit test: see the RC3-11.2 verification notes.
 """
 
 import json
@@ -265,7 +273,7 @@ def seed_kqlcnt_record(root, *, with_input_result_id=False):
 
 def test_m1_goodslist_encoding_writes_lot_and_item_winning_price():
     parsed = parse_detail(public_spec("KQLCNT", "M1"), goodslist_payload())
-    assert parsed.parser_version == 6
+    assert parsed.parser_version == 7
     assert parsed.capability == "STRUCTURED_ITEMS"
     assert parsed.problems == ()
     assert len(parsed.lots) == 1
@@ -343,7 +351,7 @@ def test_m1_both_encodings_prefers_lot_result_items_and_warns():
 
 def test_m1_flat_goodslist_entries_parse_with_price_unit():
     parsed = parse_detail(public_spec("KQLCNT", "M1"), flat_goodslist_payload())
-    assert parsed.parser_version == 6
+    assert parsed.parser_version == 7
     assert parsed.capability == "STRUCTURED_ITEMS"
     assert parsed.problems == ()
     assert len(parsed.lots) == 1
@@ -448,7 +456,7 @@ def test_m1_missing_currency_is_unparsable_not_guessed():
 
 def test_m1_public_spec_is_kqlcnt_only():
     assert public_spec("KQLCNT", "M1") is not None
-    assert public_spec("KQLCNT", "M1").parser_version == PARSER_VERSION == 6
+    assert public_spec("KQLCNT", "M1").parser_version == PARSER_VERSION == 7
     assert public_spec("TBMT", "M1") is None
     assert public_spec("KQLCNT", "HSMT") is None
 
@@ -549,3 +557,173 @@ def test_m1_candidates_and_sweep_cover_kqlcnt_records(tmp_path: Path):
         assert not list((tmp_path / "data" / "jobs" / "queued").glob("*"))
     finally:
         writer.close()
+
+# ---------------------------------------------------------------- parser v7: goodsList dict (service lists)
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "m1"
+
+
+def load_fixture(name):
+    return json.loads((FIXTURES / f"{name}.json").read_text())
+
+
+def test_m1_dict_goodslist_listtg_parses_service_rows():
+    parsed = parse_detail(public_spec("KQLCNT", "M1"), load_fixture("dict_listTG"))
+    assert parsed.parser_version == 7
+    assert parsed.problems == ()
+    assert parsed.capability == "STRUCTURED_ITEMS"
+    assert len(parsed.lots) == 1
+    good = parsed.lots[0].goods[0]
+    assert good.name.startswith("Cung cấp dịch vụ Thuê hệ thống trung tâm giám sát")
+    assert good.quantity == 1
+    assert good.unit == "Gói"
+    assert good.specification == "Theo quy định tại Chương V"
+    by_role = money_by_role(parsed)
+    assert by_role[("ITEM_WINNING_PRICE", "0")].value == 2313360000
+    assert by_role[("ITEM_WINNING_PRICE", "0")].source_path.endswith(".bidPrice")
+
+
+def test_m1_dict_goodslist_hierarchy_skips_group_headers():
+    parsed = parse_detail(public_spec("KQLCNT", "M1"), load_fixture("dict_listTG_hier"))
+    assert parsed.problems == ()
+    # Two group headers (parent: 0 rows with children) are skipped; only
+    # the three leaf rows are items — pricing a header would double-count
+    # its children, whose intoMoney already sums to the header's.
+    assert [len(lot.goods) for lot in parsed.lots] == [3]
+    assert any("GROUP_HEADERS_SKIPPED:2" in w for w in parsed.warnings)
+    by_role = money_by_role(parsed)
+    assert [by_role[("ITEM_WINNING_PRICE", str(i))].value for i in range(3)] == [
+        9085498, 56228, 102349,
+    ]
+    assert parsed.lots[0].goods[0].name == "Duy trì cây cảnh tạo hình"
+
+
+def test_m1_dict_goodslist_listdg_parses_description_rows():
+    parsed = parse_detail(public_spec("KQLCNT", "M1"), load_fixture("dict_listDG"))
+    assert parsed.problems == ()
+    assert [len(lot.goods) for lot in parsed.lots] == [4]
+    assert parsed.lots[0].goods[0].name.startswith("Công tác đo khống chế cao")
+    by_role = money_by_role(parsed)
+    assert [by_role[("ITEM_WINNING_PRICE", str(i))].value for i in range(4)] == [
+        1914222, 1342714, 1914222, 1342714,
+    ]
+
+
+def test_m1_dict_goodslist_all_empty_is_notice_not_error():
+    parsed = parse_detail(public_spec("KQLCNT", "M1"), load_fixture("dict_empty"))
+    assert parsed.problems == ()
+    assert parsed.capability == "NOTICE_METADATA"
+    assert parsed.lots[0].goods == ()
+    # The lot itself still carries its LOT_PRICE; only the per-item prices
+    # are absent.
+    assert {m.role for m in parsed.money} == {"LOT_PRICE"}
+
+
+def test_m1_dict_dsdvkqtg_routes_rows_to_their_lots():
+    parsed = parse_detail(public_spec("KQLCNT", "M1"), load_fixture("dict_dsdvkqtg"))
+    assert parsed.problems == ()
+    assert [lot.lot_no_raw for lot in parsed.lots] == [
+        "PP2600425495", "PP2600425497", "PP2600425500",
+    ]
+    # The carrying lot (lot0) holds no rows: each dsHH row attaches to the
+    # lot its unit's lotNo names.
+    assert [len(lot.goods) for lot in parsed.lots] == [0, 1, 1]
+    by_role = money_by_role(parsed)
+    assert by_role[("ITEM_WINNING_PRICE", "0")].value == 450000
+    assert by_role[("ITEM_WINNING_PRICE", "1")].value == 1600000
+    assert parsed.lots[1].goods[0].name.startswith("Ẩm kế Nhiệt Kế")
+
+
+def test_m1_dict_dsdvkqtg_loser_unit_is_skipped_not_priced():
+    payload = load_fixture("dict_dsdvkqtg")
+    unit = payload["bideContractorInputResultDTO"]["lotResultDTO"][0]["goodsList"]
+    decoded = json.loads(unit)
+    decoded["dsDvKqTg"][0]["contractorCode"] = "vn9999999999"  # not the winner
+    payload["bideContractorInputResultDTO"]["lotResultDTO"][0]["goodsList"] = json.dumps(decoded)
+    parsed = parse_detail(public_spec("KQLCNT", "M1"), payload)
+    assert parsed.problems == ()
+    assert [len(lot.goods) for lot in parsed.lots] == [0, 0, 1]
+    assert any("NOT_WINNER_SKIPPED" in w for w in parsed.warnings)
+
+
+def test_m1_dict_adjustment_offered_price_still_emitted():
+    # 1499902: the winner's offered unit price (892,100; qty x price ==
+    # the offered lot total 50,849,700,000) is emitted even though the
+    # post-evaluation winning total is lower (47,310,000,000). The per-item
+    # price is the offered price; no total is invented to force a match.
+    parsed = parse_detail(public_spec("KQLCNT", "M1"), load_fixture("dict_adjustment"))
+    assert parsed.problems == ()
+    assert len(parsed.lots[0].goods) == 1
+    by_role = money_by_role(parsed)
+    assert by_role[("ITEM_WINNING_PRICE", "0")].value == 892100
+
+
+# ---------------------------------------------------------------- parser v7: medicine rows
+
+def test_m1_medicine_single_parses_don_gia():
+    parsed = parse_detail(public_spec("KQLCNT", "M1"), load_fixture("medicine_single"))
+    assert parsed.problems == ()
+    assert [len(lot.goods) for lot in parsed.lots] == [1]
+    good = parsed.lots[0].goods[0]
+    assert good.name == "Turbezid"
+    assert good.quantity == 3600
+    by_role = money_by_role(parsed)
+    item_price = by_role[("ITEM_WINNING_PRICE", "0")]
+    assert item_price.value == 3000
+    assert item_price.source_path.endswith(".donGia")
+    assert good.quantity * item_price.value == 10800000  # == amount == win total
+
+
+def test_m1_medicine_multilot_routes_by_entry_lot_no():
+    parsed = parse_detail(public_spec("KQLCNT", "M1"), load_fixture("medicine_multilot"))
+    assert parsed.problems == ()
+    # Five drug rows for five lots all sit in lot0's goodsList; each routes
+    # to the lot its own lotNo names — none stays on the carrying lot.
+    assert [len(lot.goods) for lot in parsed.lots] == [1, 1, 1, 1, 1]
+    by_role = money_by_role(parsed)
+    assert [by_role[("ITEM_WINNING_PRICE", str(i))].value for i in range(5)] == [
+        650, 800, 18000, 650, 1350,
+    ]
+    assert parsed.lots[0].goods[0].name.startswith("Cao khô Actisô EP")
+    assert parsed.lots[0].goods[0].specification == "Hộp 1 túi x 5 vỉ x 20 viên"
+
+
+# ---------------------------------------------------------------- parser v7: Table name vocabulary + dedup
+
+def test_m1_table_description_rows_parse_without_name_key():
+    parsed = parse_detail(public_spec("KQLCNT", "M1"), load_fixture("table_description_rows"))
+    assert parsed.problems == ()
+    assert [len(lot.goods) for lot in parsed.lots] == [3]
+    assert parsed.lots[0].goods[0].name.startswith("Thiết bị Trường MN Vạn Điểm")
+    assert parsed.lots[0].goods[0].specification == "Theo bảng thông số chi tiết đính kèm"
+    by_role = money_by_role(parsed)
+    assert [by_role[("ITEM_WINNING_PRICE", str(i))].value for i in range(3)] == [
+        127600000, 4136000, 21186000,
+    ]
+
+
+def test_m1_table_duplicate_entries_parse_winner_once():
+    # Six entries: the same two Tables under three contractorCodes. Only
+    # the winner's two Tables are parsed, once each: 2 goods rows + 2
+    # related-service rows, never the 12 rows a naive parse would emit.
+    parsed = parse_detail(public_spec("KQLCNT", "M1"), load_fixture("table_duplicate_entries"))
+    assert parsed.problems == ()
+    assert [len(lot.goods) for lot in parsed.lots] == [4]
+    by_role = money_by_role(parsed)
+    assert [by_role[("ITEM_WINNING_PRICE", str(i))].value for i in range(4)] == [
+        100000, 1530000, 0, 0,
+    ]
+
+
+def test_m1_table_repeated_winner_table_is_deduped():
+    payload = load_fixture("table_duplicate_entries")
+    lot = payload["bideContractorInputResultDTO"]["lotResultDTO"][0]
+    entries = json.loads(lot["goodsList"])
+    winner_entry = next(e for e in entries if e["contractorCode"] == "vn0103267936"
+                        and e["formCode"] == "BD.MT.02.1252")
+    entries.append(json.loads(json.dumps(winner_entry)))  # same table twice, winner
+    lot["goodsList"] = json.dumps(entries)
+    parsed = parse_detail(public_spec("KQLCNT", "M1"), payload)
+    assert parsed.problems == ()
+    assert [len(lot.goods) for lot in parsed.lots] == [4]
+    assert any("DUPLICATE_TABLE_SKIPPED" in w for w in parsed.warnings)

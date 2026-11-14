@@ -18,7 +18,7 @@ from santhau_studio.collectors.deep import (
 from santhau_studio.collectors.hsmt_forms import read_form
 from santhau_studio.domain.identity import record_object_sha
 
-PARSER_VERSION = 6
+PARSER_VERSION = 7
 
 PREFIX = "https://muasamcong.mof.gov.vn/o/egp-portal-contractor-selection-v2/services/"
 ENDPOINTS = {
@@ -394,19 +394,21 @@ def _reoffer(payload, lane):
 
 
 def _m1(payload):
-    """Per-item winning prices for one KQLCNT result (parser v6).
+    """Per-item winning prices for one KQLCNT result (parser v7).
 
     Response envelope (canaried 2026-11-13 on two live records, IB2600073112
     and IB2600363545): ``{bideContractorInputResultDTO, bidpPlanDetailDTO}``.
     The DTO carries ``lotResultDTO[]`` (one entry per lot: lotNo, lotName,
     lotPrice, winningCode, contractorList with the winner's bidWiningPrice)
-    and the per-item rows in THREE alternative encodings, mutually exclusive
+    and the per-item rows in SIX alternative encodings, mutually exclusive
     per lot:
 
     * ``lotResultDTO[].goodsList`` — JSON-encoded string, one entry per lot,
       ``formValue.lotContent.Table[]``; each item's ``bidPrice`` is the
-      winning unit price (verified: qty x bidPrice sums to the winner's
-      bidWiningPrice).
+      winning unit price. Entries repeat per bidding contractor (each entry
+      carries its own ``contractorCode``; 1499707 shows the same Table under
+      3 codes) — only the winner's entries are parsed, and identical Tables
+      are parsed once, so a repeated table is never triple-counted.
     * ``dto.lotResultItems[]`` — one entry per (winning contractor, lot),
       linked by ``lotResultId`` to a ``lotResultDTO[].id`` (9/9 verified);
       ``formValue`` is a JSON-encoded string of items carrying the explicit
@@ -416,24 +418,60 @@ def _m1(payload):
     * ``lotResultDTO[].goodsList`` flat rows (live 2026-11-12, LCNT_DB/CDTRG
       lots): the entry itself is the item — name/quantity/unit/description/
       origin/``priceUnit`` with ``formValue`` null and no ``lotContent``.
-      ``priceUnit`` is the winning unit price (verified: qty x priceUnit
-      sums to the winner's bidWiningPrice in 6/7 captures; the 7th differs
-      by 0.00009% on a float quantity). ``lotResultItems`` is null for these
-      records, so no fallback exists. A flat entry with a name but no usable
-      price is still a goods row: the missing price is a warning, never a
-      record failure (parser v6; the v5 ``NO_TABLE`` problem for these rows
-      dropped 144 items across 7 records).
+      ``priceUnit`` is the winning unit price.
+    * ``lotResultDTO[].goodsList`` as a JSON OBJECT of service lists (live
+      2026-11-13, parser v7): ``{"listTG": [...], "listKQDR": [],
+      "listTLPT": [], "listDG": [], "listTTG": []}`` — one of listTG/listDG
+      is populated per record, the rest empty. Rows carry ``serviceCategory``
+      (name) or ``description``, ``qty``, ``uom``, ``bidPrice``,
+      ``intoMoney`` and ``orgCode`` (== the lot's winningCode in 753/753
+      rows checked). Rows form a two-level tree: ``parent: 0`` rows are group
+      headers whose ``intoMoney`` is the sum of their children
+      (``pos`` "1.1", "1.2", ...); only the leaf rows are items — headers
+      are skipped, never priced. An all-empty object carries no items.
+    * ``lotResultDTO[].goodsList`` as ``{"dsDvKqTg": [...]}`` (live
+      2026-11-13, parser v7): one unit per (contractor, lot) with
+      ``dsHH[]`` service rows; each unit's ``contractorCode`` must equal its
+      lot's winningCode (24/24 in the live record) or the unit is skipped —
+      a loser's table is never emitted as winning prices. Rows attach to the
+      lot their unit's ``lotNo`` names.
+    * ``lotResultDTO[].goodsList`` medicine rows (live 2026-11-13, parser
+      v7; DC* drug packages): the entry itself is the drug — ``tenThuoc``
+      (name, fallback ``lotName``), ``quantity``, ``uom``, ``donGia`` (unit
+      price), ``winContractors[0].bidWiningPrice``; qty x donGia == amount
+      == the winner's per-item total in 8/8 live rows. Entries route to the
+      lot their own ``lotNo`` names (1496970: 5 drug rows for 5 lots all sit
+      in lot0's goodsList).
 
-    All three encodings carry the WINNER's items only: the first two have
-    contractorCode == winningCode in every observed entry, and the flat
-    encoding's prices are verified as winning prices by the qty x priceUnit
-    sum against bidWiningPrice — so the unit price IS the winning unit price. ``ITEM_BID_PRICE`` is emitted only when ``bidPrice`` and
-    ``lotWiningPrice`` are both present and differ — otherwise the two would
-    be duplicate rows for the same price. Currency is the DTO's own
-    ``bidPriceUnit`` (``VND`` in both captures); without a 3-letter code the
-    rows become UNPARSABLE, never guessed. No items at all yields capability
-    ``NOTICE_METADATA`` (the run marks the task SOURCE_EMPTY, not an error).
-    Members are NOT emitted: contractorList role semantics are unverified.
+    Item names use a shared vocabulary across encodings: ``name``,
+    ``serviceCategory``, ``description``, ``tenThuoc``, ``lotName`` (first
+    non-empty wins); the specification is the first of ``feature``,
+    ``serviceDescription``, ``technique``, ``quyCach``, ``nongDo``,
+    ``dangBaoChe``, ``duongDung``, ``description`` that differs from the
+    chosen name. Unit prices come from ``bidPrice``, ``priceUnit`` or
+    ``donGia`` (first known wins).
+
+    What "winning unit price" means: the per-item ``bidPrice``/``priceUnit``/
+    ``donGia`` is the WINNER's OFFERED unit price (the bid-letter schedule;
+    the row's ``orgCode``/entry ``contractorCode`` equals the lot's
+    winningCode wherever the source attests it). qty x unit price sums to
+    the winner's OFFERED lot total (``lotOpenPrice``/``adjustPrice``) when
+    the table covers the whole lot — exactly in 19/22 verifiable live
+    records, within source rounding (<=0.0002%) in 2 more. It does NOT
+    always equal ``bidWiningPrice``: the winning total is the post-evaluation
+    figure and may be lower (1499902: offered 50,849,700,000 vs winning
+    47,310,000,000; 1499704: offered 3,686,323,941 vs winning 3,317,691,000),
+    and some tables cover only part of the lot (1499740: listDG 1,858,566,867
+    of a 4,087,152,000 lot; 1499867: Table 1,948,070,000 of a 10,152,387,319
+    lot). The per-item prices are still the winner's real offered prices;
+    no total is ever invented to force a match. ``ITEM_BID_PRICE`` is
+    emitted only when ``bidPrice`` and ``lotWiningPrice`` are both present
+    and differ — otherwise the two would be duplicate rows for the same
+    price. Currency is the DTO's own ``bidPriceUnit`` (``VND`` in both
+    captures); without a 3-letter code the rows become UNPARSABLE, never
+    guessed. No items at all yields capability ``NOTICE_METADATA`` (the run
+    marks the task SOURCE_EMPTY, not an error). Members are NOT emitted:
+    contractorList role semantics are unverified.
     """
     dto = payload.get("bideContractorInputResultDTO")
     if not isinstance(dto, dict):
@@ -459,20 +497,39 @@ def _m1(payload):
 
         Field names differ per encoding: the Table/lotResultItems rows use
         qty/uom/feature/bidPrice, the flat goodsList rows (parser v6) use
-        quantity/unit/description/priceUnit. ``priceUnit`` is the winning
-        unit price in the flat encoding (verified: qty x priceUnit sums to
-        the winner's bidWiningPrice); it is only consulted when ``bidPrice``
-        is absent, and the money row's source_path names the field actually
-        read.
+        quantity/unit/description/priceUnit, the service-list rows (parser
+        v7) use serviceCategory/serviceDescription/bidPrice, and the
+        medicine rows (parser v7) use tenThuoc/quantity/uom/donGia. The
+        name is the first non-empty of name/serviceCategory/description/
+        tenThuoc/lotName; the specification is the first of feature/
+        serviceDescription/technique/quyCach/nongDo/dangBaoChe/duongDung/
+        description that differs from the chosen name (so a description
+        used as the name is never duplicated into the spec, while a flat
+        row's description still lands as its spec). ``priceUnit`` is the
+        winning unit price in the flat encoding (verified: qty x priceUnit
+        sums to the winner's bidWiningPrice); it is only consulted when
+        ``bidPrice`` is absent, and the money row's source_path names the
+        field actually read. ``donGia`` is the medicine rows' unit price
+        (qty x donGia == amount == winContractors[0].bidWiningPrice, 8/8).
         """
         nonlocal ordinal
+        name = _text(row, ("name", "serviceCategory", "description", "tenThuoc", "lotName"))
+        spec = None
+        for field in (
+            "feature", "serviceDescription", "technique", "quyCach",
+            "nongDo", "dangBaoChe", "duongDung", "description",
+        ):
+            candidate = _text(row, (field,))
+            if candidate is not None and candidate != name:
+                spec = candidate
+                break
         presence, qty, qty_raw = _presence_number(row, ("qty", "quantity"))
-        if presence != "KNOWN" or not _text(row, ("name",)):
+        if presence != "KNOWN" or name is None:
             problems.append(f"M1_ITEM_{ordinal}_INVALID_FIELDS")
         good = ParsedGoodsRow(
             ordinal,
-            _text(row, ("name",)),
-            _text(row, ("feature", "description")),
+            name,
+            spec,
             _text(row, ("uom", "unit")),
             presence,
             qty,
@@ -481,7 +538,7 @@ def _m1(payload):
         )
         win_presence, win_value, _ = _presence_number(row, ("lotWiningPrice",))
         bid_field, bid_presence, bid_value = None, "MISSING", None
-        for candidate in ("bidPrice", "priceUnit"):
+        for candidate in ("bidPrice", "priceUnit", "donGia"):
             candidate_presence, candidate_value, _ = _presence_number(row, (candidate,))
             if candidate_presence == "KNOWN":
                 bid_field, bid_presence, bid_value = candidate, candidate_presence, candidate_value
@@ -587,6 +644,156 @@ def _m1(payload):
             else:
                 target.append(good)
     # goodsList encoding: JSON string per lot, winner's goods table.
+    # The string decodes to a LIST of entries (Table / flat / medicine
+    # rows) or a DICT of service lists (parser v7). Entries carry their own
+    # lotNo: an entry belongs to the lot its lotNo names, which may differ
+    # from the enclosing lot (medicine rows: 1496970 keeps 5 drug rows for
+    # 5 lots in lot0's goodsList). Table entries repeat per bidding
+    # contractor, so only the winner's entries are parsed and identical
+    # Tables are parsed once.
+    lot_by_no = {lot_no: lot for lot, lot_no in lots}
+
+    def winner_codes(target_lot):
+        """The lot's winning contractor codes (winningCode may be doubled)."""
+        raw = target_lot.get("winningCode") if isinstance(target_lot, dict) else None
+        if not isinstance(raw, str):
+            return set()
+        return {code.strip() for code in raw.split(",") if code.strip()}
+
+    def route(entry, enclosing_no):
+        """Entry lotNo -> target lot_no, or None when it names no lot here."""
+        number = entry.get("lotNo")
+        if isinstance(number, str) and number:
+            return number if number in lot_by_no else None
+        return enclosing_no
+
+    def is_medicine(entry):
+        return (
+            isinstance(entry.get("winContractors"), list)
+            or "donGia" in entry
+            or "tenThuoc" in entry
+        )
+
+    # Lots the lotResultItems encoding already populated: goodsList must
+    # never double-count them. Snapshotted before the goodsList loop — the
+    # check is "populated by lotResultItems", not "non-empty right now",
+    # so a second goodsList entry for the same lot is not mistaken for an
+    # overlap with itself.
+    pre_populated = {no for no, goods in lot_goods.items() if goods}
+
+    def goodslist_dict(decoded, lot, lot_no, lot_index):
+        """goodsList decoded to a dict: service-list encoding (parser v7)."""
+        winners = winner_codes(lot)
+        # dsDvKqTg: one unit per (contractor, lot) with dsHH service rows.
+        units = decoded.get("dsDvKqTg")
+        if isinstance(units, list):
+            skipped = 0
+            for unit_index, unit in enumerate(units):
+                if not isinstance(unit, dict):
+                    problems.append(
+                        f"M1_LOT_{lot_index}_GOODSLIST_DSDVKQTG_{unit_index}_NOT_OBJECT"
+                    )
+                    continue
+                target_no = unit.get("lotNo")
+                target_lot = lot_by_no.get(target_no) if isinstance(target_no, str) else None
+                if target_lot is None:
+                    warnings.append(f"M1_LOT_{lot_no}_GOODSLIST_DSDVKQTG_UNLINKED_LOT")
+                target_winners = winner_codes(target_lot) if target_lot is not None else set()
+                contractor = unit.get("contractorCode")
+                if (
+                    target_winners
+                    and isinstance(contractor, str)
+                    and contractor not in target_winners
+                ):
+                    # A loser's table must never be emitted as winning prices.
+                    skipped += 1
+                    continue
+                if target_no in pre_populated:
+                    warnings.append(f"M1_LOT_{target_no}_BOTH_ENCODINGS")
+                    continue
+                target_goods = (
+                    lot_goods.setdefault(target_no, [])
+                    if target_lot is not None
+                    else lot_goods.setdefault(None, [])
+                )
+                rows = unit.get("dsHH")
+                if not isinstance(rows, list):
+                    continue
+                for item_index, row in enumerate(rows):
+                    if not isinstance(row, dict):
+                        problems.append(
+                            f"M1_LOT_{lot_index}_GOODSLIST_DSDVKQTG_{unit_index}_ROW_{item_index}_NOT_OBJECT"
+                        )
+                        continue
+                    target_goods.append(item_rows(
+                        row,
+                        f"bideContractorInputResultDTO.lotResultDTO[{lot_index}].goodsList.dsDvKqTg[{unit_index}].dsHH[{item_index}]",
+                    ))
+            if skipped:
+                warnings.append(
+                    f"M1_LOT_{lot_no}_GOODSLIST_DSDVKQTG_NOT_WINNER_SKIPPED:{skipped}"
+                )
+        elif units is not None:
+            problems.append(f"M1_LOT_{lot_index}_GOODSLIST_DSDVKQTG_NOT_LIST")
+        # Service lists: exactly one of listTG/listDG is populated per
+        # record in every live capture; the rest are empty.
+        service_keys = ("listTG", "listKQDR", "listTLPT", "listDG", "listTTG")
+        nonempty = [
+            key for key in service_keys
+            if isinstance(decoded.get(key), list) and decoded[key]
+        ]
+        if len(nonempty) > 1:
+            warnings.append(f"M1_LOT_{lot_no}_GOODSLIST_MULTI_LISTS")
+        if lot_no in pre_populated:
+            # Both encodings populated for one lot: never double-count the
+            # same items. lotResultItems carries the explicit lotWiningPrice,
+            # so it wins; the overlap is flagged, not silently merged.
+            warnings.append(f"M1_LOT_{lot_no}_BOTH_ENCODINGS")
+            return
+        for key in service_keys:
+            rows = decoded.get(key)
+            if rows is None:
+                continue
+            if not isinstance(rows, list):
+                problems.append(f"M1_LOT_{lot_index}_GOODSLIST_{key}_NOT_LIST")
+                continue
+            child_parents = {
+                row.get("parent") for row in rows if isinstance(row, dict)
+            }
+            headers = 0
+            skipped = 0
+            for item_index, row in enumerate(rows):
+                if not isinstance(row, dict):
+                    problems.append(
+                        f"M1_LOT_{lot_index}_GOODSLIST_{key}_ROW_{item_index}_NOT_OBJECT"
+                    )
+                    continue
+                row_id = row.get("id")
+                if row_id is not None and row_id in child_parents:
+                    # Group header: its intoMoney is the sum of its
+                    # children, so pricing it would double-count.
+                    headers += 1
+                    continue
+                org = row.get("orgCode")
+                if winners and isinstance(org, str) and org not in winners:
+                    skipped += 1
+                    continue
+                lot_goods[lot_no].append(item_rows(
+                    row,
+                    f"bideContractorInputResultDTO.lotResultDTO[{lot_index}].goodsList.{key}[{item_index}]",
+                ))
+            if headers:
+                warnings.append(
+                    f"M1_LOT_{lot_no}_GOODSLIST_{key}_GROUP_HEADERS_SKIPPED:{headers}"
+                )
+            if skipped:
+                warnings.append(
+                    f"M1_LOT_{lot_no}_GOODSLIST_{key}_NOT_WINNER_SKIPPED:{skipped}"
+                )
+        for key in decoded:
+            if key not in service_keys and key != "dsDvKqTg":
+                warnings.append(f"M1_LOT_{lot_no}_GOODSLIST_UNKNOWN_KEY_{key}")
+
     for lot_index, (lot, lot_no) in enumerate(lots):
         raw = lot.get("goodsList")
         if raw is None:
@@ -594,30 +801,50 @@ def _m1(payload):
         if not isinstance(raw, str):
             problems.append(f"M1_LOT_{lot_index}_GOODSLIST_NOT_STRING")
             continue
-        entries = json_list(raw, f"M1_LOT_{lot_index}_GOODSLIST_INVALID_JSON")
-        if entries is None:
+        try:
+            decoded = json.loads(raw)
+        except ValueError:
+            problems.append(f"M1_LOT_{lot_index}_GOODSLIST_INVALID_JSON")
             continue
-        if lot_goods.get(lot_no):
-            # Both encodings populated for one lot: never double-count the
-            # same items. lotResultItems carries the explicit lotWiningPrice,
-            # so it wins; the overlap is flagged, not silently merged.
-            warnings.append(f"M1_LOT_{lot_no}_BOTH_ENCODINGS")
+        if isinstance(decoded, dict):
+            goodslist_dict(decoded, lot, lot_no, lot_index)
             continue
+        if not isinstance(decoded, list):
+            problems.append(f"M1_LOT_{lot_index}_GOODSLIST_INVALID_JSON")
+            continue
+        entries = decoded
+        table_entries = []
         for entry_index, entry in enumerate(entries):
             if not isinstance(entry, dict):
                 problems.append(f"M1_LOT_{lot_index}_GOODSLIST_ENTRY_{entry_index}_NOT_OBJECT")
                 continue
+            target_no = route(entry, lot_no)
             form_value = entry.get("formValue")
             table = form_value.get("lotContent", {}).get("Table") if isinstance(form_value, dict) else None
             if isinstance(table, list):
-                for item_index, row in enumerate(table):
-                    if not isinstance(row, dict):
-                        problems.append(f"M1_LOT_{lot_index}_GOODSLIST_ROW_{item_index}_NOT_OBJECT")
+                table_entries.append((entry_index, entry, table, target_no))
+                continue
+            # Medicine encoding (live 2026-11-13, DC* drug packages): the
+            # entry itself is the drug — tenThuoc/quantity/uom/donGia with
+            # winContractors[0].bidWiningPrice; qty x donGia == amount ==
+            # the winner's per-item total (8/8 live rows). Entries route to
+            # the lot their own lotNo names.
+            if is_medicine(entry):
+                if target_no is None:
+                    warnings.append(f"M1_LOT_{lot_no}_GOODSLIST_MEDICINE_UNLINKED_LOT")
+                    target_goods = lot_goods.setdefault(None, [])
+                else:
+                    if target_no in pre_populated:
+                        warnings.append(f"M1_LOT_{target_no}_BOTH_ENCODINGS")
                         continue
-                    lot_goods[lot_no].append(item_rows(
-                        row,
-                        f"bideContractorInputResultDTO.lotResultDTO[{lot_index}].goodsList[{entry_index}].formValue.lotContent.Table[{item_index}]",
-                    ))
+                    target_goods = lot_goods.setdefault(target_no, [])
+                money_before = len(money)
+                target_goods.append(item_rows(
+                    entry,
+                    f"bideContractorInputResultDTO.lotResultDTO[{lot_index}].goodsList[{entry_index}]",
+                ))
+                if len(money) == money_before:
+                    warnings.append(f"M1_LOT_{target_no or lot_no}_GOODSLIST_MEDICINE_NO_ITEM_PRICE")
                 continue
             # Flat encoding (live 2026-11-12, LCNT_DB/CDTRG lots): the entry
             # itself is the item row — name/quantity/unit/description/origin/
@@ -626,16 +853,72 @@ def _m1(payload):
             # lotResultItems is null for these records, so no fallback exists.
             # An entry with a name but no usable price is still a goods row:
             # the missing price is a warning, never a record failure.
-            if _text(entry, ("name",)) is not None:
+            if _text(entry, ("name", "serviceCategory", "description", "tenThuoc", "lotName")) is not None:
+                if target_no is None:
+                    warnings.append(f"M1_LOT_{lot_no}_GOODSLIST_FLAT_UNLINKED_LOT")
+                    target_goods = lot_goods.setdefault(None, [])
+                else:
+                    if target_no in pre_populated:
+                        warnings.append(f"M1_LOT_{target_no}_BOTH_ENCODINGS")
+                        continue
+                    target_goods = lot_goods.setdefault(target_no, [])
                 money_before = len(money)
-                lot_goods[lot_no].append(item_rows(
+                target_goods.append(item_rows(
                     entry,
                     f"bideContractorInputResultDTO.lotResultDTO[{lot_index}].goodsList[{entry_index}]",
                 ))
                 if len(money) == money_before:
-                    warnings.append(f"M1_LOT_{lot_no}_GOODSLIST_FLAT_NO_ITEM_PRICE")
+                    warnings.append(f"M1_LOT_{target_no or lot_no}_GOODSLIST_FLAT_NO_ITEM_PRICE")
                 continue
             problems.append(f"M1_LOT_{lot_index}_GOODSLIST_ENTRY_{entry_index}_NO_TABLE")
+        # Table entries, grouped by target lot: only the winner's entries
+        # are parsed (entries repeat per bidding contractor), and identical
+        # Tables are parsed once — a repeated table is never counted twice.
+        by_target = {}
+        for entry_index, entry, table, target_no in table_entries:
+            by_target.setdefault(target_no, []).append((entry_index, entry, table))
+        for target_no, group in by_target.items():
+            if target_no is None:
+                warnings.append(f"M1_LOT_{lot_no}_GOODSLIST_TABLE_UNLINKED_LOT")
+                target_goods = lot_goods.setdefault(None, [])
+            else:
+                if target_no in pre_populated:
+                    warnings.append(f"M1_LOT_{target_no}_BOTH_ENCODINGS")
+                    continue
+                target_goods = lot_goods.setdefault(target_no, [])
+            target_lot = lot_by_no.get(target_no) if target_no is not None else None
+            winners = winner_codes(target_lot) if target_lot is not None else set()
+            pool = group
+            if winners:
+                winner_group = [
+                    item for item in group
+                    if isinstance(item[1].get("contractorCode"), str)
+                    and item[1]["contractorCode"] in winners
+                ]
+                if winner_group:
+                    pool = winner_group
+                else:
+                    warnings.append(f"M1_LOT_{target_no}_GOODSLIST_NO_WINNER_ENTRY")
+            seen_tables = set()
+            duplicates = 0
+            for entry_index, _entry, table in pool:
+                key = json.dumps(table, sort_keys=True, ensure_ascii=False)
+                if key in seen_tables:
+                    duplicates += 1
+                    continue
+                seen_tables.add(key)
+                for item_index, row in enumerate(table):
+                    if not isinstance(row, dict):
+                        problems.append(f"M1_LOT_{lot_index}_GOODSLIST_ROW_{item_index}_NOT_OBJECT")
+                        continue
+                    target_goods.append(item_rows(
+                        row,
+                        f"bideContractorInputResultDTO.lotResultDTO[{lot_index}].goodsList[{entry_index}].formValue.lotContent.Table[{item_index}]",
+                    ))
+            if duplicates:
+                warnings.append(
+                    f"M1_LOT_{target_no or lot_no}_GOODSLIST_DUPLICATE_TABLE_SKIPPED:{duplicates}"
+                )
     parsed_lots = tuple(
         ParsedLot(lot_no, _text(lot, ("lotName",)), _text(dto, ("resultVersion",)),
                   tuple(lot_goods.get(lot_no, ())), lot)

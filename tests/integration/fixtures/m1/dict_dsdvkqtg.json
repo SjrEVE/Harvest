@@ -1,0 +1,89 @@
+{
+ "bideContractorInputResultDTO": {
+  "id": "94ba7576-3526-45de-9047-056b0ab6ebfa",
+  "notifyNo": "IB2600573048",
+  "notifyVersion": "00",
+  "resultVersion": "00",
+  "bidPriceUnit": "VND",
+  "lotResultDTO": [
+   {
+    "id": "eb1769f1-0882-4f07-8293-2d065b148515",
+    "lotNo": "PP2600425495",
+    "lotName": "Pipet bầu các loại",
+    "lotPrice": 3040000,
+    "lotEstimatePrice": null,
+    "winningCode": null,
+    "goodsList": "{\"dsDvKqTg\": [{\"dsHH\": [{\"id\": 9740388893962720, \"serviceCategory\": \"Ẩm kế Nhiệt Kế (NAK(từ 01 đến 04); 3/810-155/DCV 23; 4/810-155/DCV 24; 14A-HL/KXN; 14B-HL/KXN; 25 VSNTP/KXN; 26 VSNTP/KXN; 27 VSNTP/KXN)\", \"serviceDescription\": \"Theo quy định tại Chương V.\", \"qty\": 11, \"valueConstruction\": \"\", \"place\": \"Trung tâm Kiểm soát bệnh tật tỉnh Gia Lai - Cơ sở 1: Khu C3, đường Điện Biên Phủ, phường Quy Nhơn Đông, tỉnh Gia Lai, Cơ sở 2: 177 Cách Mạng Tháng 8, Phường Pleiku, tỉnh Gia Lai\", \"insurancePeriod\": \"\", \"estimateDate\": \"60 ngày\", \"uom\": \"Cái\", \"insurancePremiumRate\": \"\", \"bidPrice\": 450000, \"insurancePremium\": \"\", \"intoMoney\": 4950000, \"parent\": 2600425497, \"currentItemIndex\": \"3.1\", \"pos\": \"1.1\", \"title\": \"Danh sách dịch vụ đối với loại hợp đồng theo đơn giá cố định\", \"amountTotal\": null, \"lotNo\": null, \"lotName\": null, \"formCode\": \"BD.DT.02.1801\", \"nameTable\": \"listTablePrice2\", \"originQty\": 11, \"amount\": 4950000}], \"lotNo\": \"PP2600425497\", \"lotName\": \"Ẩm kế Nhiệt Kế (NAK(từ 01 đến 04); 3/810-155/DCV 23;\\r\\n 4/810-155/DCV 24; 14A-HL/KXN; 14B-HL/KXN; 25 VSNTP/KXN; 26 VSNTP/KXN; 27 VSNTP/KXN)\", \"contractorCode\": \"vn0314902658\", \"contractorName\": \"Trung tâm Nghiên cứu và Ứng dụng Khoa học Công nghệ\", \"formCode\": \"BD.DT.02.1801\"}, {\"dsHH\": [{\"id\": 9059618770813004, \"serviceCategory\": \"Máy đo Clo dư hiện trường (HI 99701/ HANNA/ TBH -07; HI 97701; HI 96701)\", \"serviceDescription\": \"Theo quy định tại Chương V.\", \"qty\": 3, \"valueConstruction\": \"\", \"place\": \"Trung tâm Kiểm soát bệnh tật tỉnh Gia Lai - Cơ sở 1: Khu C3, đường Điện Biên Phủ, phường Quy Nhơn Đông, tỉnh Gia Lai, Cơ sở 2: 177 Cách Mạng Tháng 8, Phường Pleiku, tỉnh Gia Lai\", \"insurancePeriod\": \"\", \"estimateDate\": \"60 ngày\", \"uom\": \"Cái\", \"insurancePremiumRate\": \"\", \"bidPrice\": 1600000, \"insurancePremium\": \"\", \"intoMoney\": 4800000, \"parent\": 2600425500, \"currentItemIndex\": \"6.1\", \"pos\": \"2.1\", \"title\": \"Danh sách dịch vụ đối với loại hợp đồng theo đơn giá cố định\", \"amountTotal\": null, \"lotNo\": null, \"lotName\": null, \"formCode\": \"BD.DT.02.1801\", \"nameTable\": \"listTablePrice2\", \"originQty\": 3, \"amount\": 4800000}], \"lotNo\": \"PP2600425500\", \"lotName\": \"Máy đo Clo dư hiện trường (HI 99701/ HANNA/ TBH -07; HI 97701; HI 96701)\", \"contractorCode\": \"vn0314902658\", \"contractorName\": \"Trung tâm Nghiên cứu và Ứng dụng Khoa học Công nghệ\", \"formCode\": \"BD.DT.02.1801\"}]}",
+    "contractorList": [
+     {
+      "orgCode": "vn4100467733",
+      "bidWiningPrice": null,
+      "bidResult": 0,
+      "adjustPrice": 2880000,
+      "lotOpenPrice": 2880000,
+      "lotFinalPrice": 2880000,
+      "discountPercent": null
+     }
+    ]
+   },
+   {
+    "id": "05473bbe-d6fb-4f79-8366-6869535f1a7a",
+    "lotNo": "PP2600425497",
+    "lotName": "Ẩm kế Nhiệt Kế (NAK(từ 01 đến 04); 3/810-155/DCV 23;\r\n 4/810-155/DCV 24; 14A-HL/KXN; 14B-HL/KXN; 25 VSNTP/KXN; 26 VSNTP/KXN; 27 VSNTP/KXN)",
+    "lotPrice": 7370000,
+    "lotEstimatePrice": null,
+    "winningCode": "vn0314902658",
+    "contractorList": [
+     {
+      "orgCode": "vn0314902658",
+      "bidWiningPrice": 4950000,
+      "bidResult": 1,
+      "adjustPrice": 4950000,
+      "lotOpenPrice": 4950000,
+      "lotFinalPrice": 4950000,
+      "discountPercent": null
+     },
+     {
+      "orgCode": "vn4100467733",
+      "bidWiningPrice": null,
+      "bidResult": 0,
+      "adjustPrice": 3850000,
+      "lotOpenPrice": 3850000,
+      "lotFinalPrice": 3850000,
+      "discountPercent": null
+     }
+    ]
+   },
+   {
+    "id": "bc837b18-4fba-47e3-bf23-c28179b2e5a1",
+    "lotNo": "PP2600425500",
+    "lotName": "Máy đo Clo dư hiện trường (HI 99701/ HANNA/ TBH -07; HI 97701; HI 96701)",
+    "lotPrice": 6000000,
+    "lotEstimatePrice": null,
+    "winningCode": "vn0314902658",
+    "contractorList": [
+     {
+      "orgCode": "vn0314902658",
+      "bidWiningPrice": 4800000,
+      "bidResult": 1,
+      "adjustPrice": 4800000,
+      "lotOpenPrice": 4800000,
+      "lotFinalPrice": 4800000,
+      "discountPercent": null
+     },
+     {
+      "orgCode": "vn4100467733",
+      "bidWiningPrice": null,
+      "bidResult": 0,
+      "adjustPrice": 7200000,
+      "lotOpenPrice": 7200000,
+      "lotFinalPrice": 7200000,
+      "discountPercent": null
+     }
+    ]
+   }
+  ],
+  "lotResultItems": null
+ },
+ "bidpPlanDetailDTO": null
+}
