@@ -21,6 +21,8 @@ MIGRATIONS: tuple[tuple[int, str, Path], ...] = (
     (5, "scoped_maintenance", Path("docs/ddl/005_scoped_maintenance.sql")),
     (6, "missing_only_policy", Path("docs/ddl/006_missing_only_policy.sql")),
     (7, "money_roles_parser_v4", Path("docs/ddl/007_money_roles_parser_v4.sql")),
+    (8, "money_roles_m1", Path("docs/ddl/008_money_roles_m1.sql")),
+    (9, "m1_lane_enums", Path("docs/ddl/009_m1_lane_enums.sql")),
 )
 
 
@@ -60,6 +62,14 @@ def migrate(conn: sqlite3.Connection, repo_root: Path) -> MigrationState:
 
     A checksum mismatch on an already-applied version is an error, not a re-run: it means
     the contract file changed under a database that was built from the old one.
+
+    A migration whose SQL carries a `-- FK_OFF` line rebuilds a parent table
+    (e.g. deep_captures, runs) and therefore needs foreign key enforcement OFF
+    for its own transaction: with enforcement ON, DROP TABLE fails while child
+    rows exist. The pragma is a no-op inside a transaction, so it is toggled
+    outside it — OFF before the script runs, back ON after COMMIT — and the
+    migration fails if PRAGMA foreign_key_check finds any violation after
+    re-enabling. No other migration touches enforcement.
     """
     # The contract file declares software_migrations itself, so the harness must not
     # pre-create it: an IF NOT EXISTS here would make the migration's own CREATE fail.
@@ -87,6 +97,9 @@ def migrate(conn: sqlite3.Connection, repo_root: Path) -> MigrationState:
         # the script, a failure mid-way rolls the DDL back too — verified against SQLite, the
         # transaction is still open after a successful executescript.
         # (`PRAGMA foreign_keys` inside this transaction is inert; connect() sets it outside.)
+        fk_off = "-- FK_OFF" in sql.splitlines()
+        if fk_off:
+            conn.execute("PRAGMA foreign_keys=OFF")
         try:
             conn.executescript("BEGIN;\n" + sql)
             conn.execute(
@@ -96,8 +109,20 @@ def migrate(conn: sqlite3.Connection, repo_root: Path) -> MigrationState:
         except sqlite3.Error:
             if conn.in_transaction:
                 conn.execute("ROLLBACK")
+            if fk_off:
+                conn.execute("PRAGMA foreign_keys=ON")
             raise
         conn.execute("COMMIT")
+        if fk_off:
+            # Re-enable only after COMMIT: the pragma is a no-op inside a
+            # transaction, so enabling before COMMIT would silently leave
+            # enforcement off for the rest of the connection's life.
+            conn.execute("PRAGMA foreign_keys=ON")
+            violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if violations:
+                raise RuntimeError(
+                    f"migration {version} ({name}) left foreign key violations: {violations[:3]}"
+                )
     return status(conn)
 
 

@@ -179,12 +179,13 @@ def test_money_amounts_schema_accepts_all_v4_roles(tmp_path):
     try:
         assert writer.conn.execute(
             "SELECT MAX(version) FROM software_migrations"
-        ).fetchone()[0] == 7
+        ).fetchone()[0] == 9
         roles = [
             "PACKAGE_VALUE", "BID_PRICE", "WIN_PRICE", "UNIT_PRICE", "CONTRACT_VALUE",
             "BUDGET", "ADJUSTMENT", "REOFFER_PRICE", "REOFFER_PRICE_FINAL",
             "BID_FINAL_PRICE", "PACKAGE_PRICE", "PACKAGE_PRICE_INIT",
             "PACKAGE_PRICE_STEP", "LOT_PRICE", "LOT_ESTIMATE_PRICE", "LOT_PLAN_PRICE",
+            "ITEM_WINNING_PRICE", "ITEM_BID_PRICE",
         ]
         for role in roles:
             writer.conn.execute(
@@ -288,7 +289,7 @@ def test_replay_covers_all_old_parser_captures_and_fills_money(tmp_path):
         assert collect("REOFFER", reoffer()).status == "COMPLETED"
         assert collect("DETAIL", reoffer()).status == "COMPLETED"
         # The v3 spec labels the captures parser_version=3, but the parse code
-        # that runs is always the current one, so v4 already wrote the money.
+        # that runs is always the current one, so v5 already wrote the money.
         # Reproduce v3's observable store state (no money rows) by removing
         # them: that is exactly what a store captured by the real v3 holds.
         writer.conn.execute("DELETE FROM money_amounts")
@@ -311,7 +312,7 @@ def test_replay_covers_all_old_parser_captures_and_fills_money(tmp_path):
     with connect_read_only(tmp_path / "warehouse.sqlite") as conn:
         assert conn.execute("SELECT COUNT(*) FROM money_amounts").fetchone()[0] == 11
         assert conn.execute(
-            "SELECT COUNT(*) FROM deep_capture_parse_metadata WHERE parser_version=4"
+            "SELECT COUNT(*) FROM deep_capture_parse_metadata WHERE parser_version=5"
         ).fetchone()[0] == 3
         assert conn.execute(
             "SELECT COUNT(DISTINCT state) FROM deep_tasks WHERE state='FETCHED'"
@@ -319,5 +320,5 @@ def test_replay_covers_all_old_parser_captures_and_fills_money(tmp_path):
     assert replay_deep(tmp_path, execute=False, limit=100)["eligible"] == 0
 
 
-def test_parser_version_is_4():
-    assert PARSER_VERSION == 4
+def test_parser_version_is_5():
+    assert PARSER_VERSION == 5

@@ -42,6 +42,8 @@ class PublicDeepFetcher:
         raw = json.loads(self.writer.store.read(record["current_record_object_sha"]))
         self.receipt = {"source_record_id": record["id"], "listing_object_sha": record["current_record_object_sha"],
                         "processApply": raw.get("processApply"), "adapter_version": ADAPTER_VERSION, "attempts": []}
+        if self.request.job_kind == "M1":
+            return self._fetch_m1(record, raw)
         if raw.get("bidForm") != "CGTTRG":
             raise UnsupportedAdapter("UNSUPPORTED_BID_FORM:" + str(raw.get("bidForm")), "UNSUPPORTED_BID_FORM")
         if raw.get("notifyNo") != record["natural_key"]:
@@ -80,9 +82,70 @@ class PublicDeepFetcher:
         )
         return DeepResponse(result.payload, result.payload)
 
+    def _fetch_m1(self, record, raw):
+        """M1: one KQLCNT result's per-item winning prices, by inputResultId.
+
+        The portal's `expose/` endpoint returns HTTP 400 unless a `token=`
+        query parameter is present; the server does not validate its value
+        (canary 2026-11-13: dummy and empty values both return HTTP 200 with
+        identical payloads), so the lane sends the parameter with an empty
+        value — no captcha is solved and no credential material travels.
+        KQLCNT listings carry no bidForm/processApply, so none of the CGTTRG
+        gates apply here.
+        """
+        if raw.get("notifyNo") != record["natural_key"]:
+            raise UnsupportedAdapter("LISTING_IDENTITY_MISMATCH", "UNVERIFIED_LISTING")
+        input_result_id = raw.get("inputResultId")
+        if not isinstance(input_result_id, str) or not input_result_id:
+            raise UnsupportedAdapter("INPUT_RESULT_ID_MISSING", "UNSUPPORTED_INPUT_RESULT_ID")
+        endpoint = PREFIX + ENDPOINTS["M1"]
+        if endpoint in self.blocked_endpoints:
+            raise DetailShapeError("ENDPOINT_BLOCKED_THIS_WORKER")
+        body = {"id": input_result_id}
+        self.receipt = {
+            "endpoint": endpoint,
+            "request": body,
+            "source_record_id": record["id"],
+            "expected_notice": record["natural_key"],
+            "expected_version": raw.get("notifyVersion"),
+        }
+        with FetchLane(
+            url=endpoint, source_key="egp_public_cgttrg", budget=self.budget, retry=self.retry,
+            connect_timeout_seconds=self.connect_timeout_seconds, query="token=",
+        ) as lane:
+            try:
+                result = lane.post(body, min_interval=self.pacing)
+            except AccessBlocked:
+                self.blocked_endpoints.add(endpoint)
+                raise
+        self.receipt.update(
+            http_status=result.http_status,
+            attempts=[asdict(a) for a in result.attempts],
+            requests_used=self.budget.used,
+        )
+        return DeepResponse(result.payload, result.payload)
+
 
 def identity_problem(payload, record, lane, expected_id=None):
     """Never project an unrelated notice or different publication into this record."""
+    if lane == "M1":
+        # M1 payloads nest the result under bideContractorInputResultDTO;
+        # expected_id here is the inputResultId the request carried.
+        dto = payload.get("bideContractorInputResultDTO") if isinstance(payload, dict) else None
+        if not isinstance(dto, dict):
+            return "IDENTITY_SHAPE_INVALID"
+        if dto.get("notifyNo") != record["natural_key"]:
+            return "NOTICE_IDENTITY_MISMATCH"
+        if expected_id and dto.get("id") not in (None, expected_id):
+            return "NOTICE_UUID_MISMATCH"
+        actual, expected = dto.get("notifyVersion"), record.get("version_raw")
+        if (
+            actual is not None
+            and expected is not None
+            and str(actual).lstrip("0") != str(expected).lstrip("0")
+        ):
+            return "NOTICE_VERSION_MISMATCH"
+        return None
     values = (
         payload.get("bidoInvBiddingDTO")
         if lane == "HSMT" and isinstance(payload, dict)

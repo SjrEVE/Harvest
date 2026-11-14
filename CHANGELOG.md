@@ -3,6 +3,37 @@
 Chỉ ghi thay đổi quan trọng tới hợp đồng kỹ thuật. Spec nền: **Master Spec Consolidated v1.3**
 (không đổi; mọi mục dưới là cụ thể hoá hoặc sửa đổi cần owner phê chuẩn).
 
+## RC3-11 — Lane M1, giá trúng thầu theo mặt hàng KQLCNT (13/11/2026)
+
+- **Lane M1 mới** (`PARSER_VERSION` 4→5): giá trúng thầu theo từng mặt hàng trong KQLCNT
+  qua endpoint `expose/contractor-input-result/get`, 1 request cho 1 record theo
+  `inputResultId` (626.953 record, không dedup). Parser ghi `ITEM_WINNING_PRICE`
+  (đơn giá trúng thầu: `lotResultItems[].formValue[].lotWiningPrice`, hoặc `bidPrice`
+  của item trong `goodsList` khi không có `lotWiningPrice`) và `ITEM_BID_PRICE` (chỉ khi
+  `bidPrice` khác `lotWiningPrice`), kèm `LOT_PRICE`/`LOT_ESTIMATE_PRICE` theo lot; tiền tệ
+  lấy từ `bidPriceUnit` của DTO (VND), không có mã tiền tệ thì UNPARSABLE chứ không đoán.
+  **Migration 008** mở rộng enum role của `money_amounts` (2 role mới); **migration 009**
+  mở rộng enum lane của `deep_captures` và enum job_kind của `runs` cho `M1` (rebuild 2 bảng,
+  giữ nguyên dữ liệu; file DDL v1 không sửa).
+- **Canary M1** (13/11/2026, 2 record live IB2600073112 + IB2600363545): endpoint bắt buộc
+  có tham số query `token=` — không token thì HTTP 400; token là presence-only, server không
+  kiểm tra giá trị (dummy và rỗng đều HTTP 200, payload giống hệt nhau) nên collector gửi
+  `token=` rỗng, không giải captcha, không có credential trong URL. Bulk probe: `{"id": [...]}`
+  → HTTP 400, `{"ids": [...]}` → HTTP 500 — **không có endpoint bulk**; backfill vẫn 1
+  request/record (~22 ngày Linode-alone, ~7–8 ngày chia 3 máy).
+- **`deep-sweep --lane M1`** (mặc định chỉ xem trước, `--execute` mới xếp hàng; tối đa 10
+  record/job): quét bù M1 cho các record KQLCNT chưa có capture FETCHED/SOURCE_EMPTY.
+  Auto-deep nhận thêm lane M1 (KQLCNT có `inputResultId`), nên record mới về sau tự có M1.
+  `deep-retry --lane` thêm `M1`; `deep-status` hiện cả lane M1.
+- **Không đổi**: M2/M3 (biên bản mở thầu, điểm kỹ thuật) chưa làm — RC3-12 sau M1.
+- **Kiểm chứng**: canary M1 PASS (0 shape problems, raw lưu tại store canary); CI pytest subset
+  537 passed, 4 skipped; chạy mở rộng (CI subset + test_m1_parser + test_deep_run +
+  test_parser_v4_money + test_deep_retry + test_deep_capture + test_deep_reuse) 600 passed,
+  4 skipped; full suite (trừ 30 file Windows-only): 720 passed, 21 failed, 14 skipped — toàn
+  bộ 21 fail đều fail sẵn trên baseline RC3-10 (import Windows-only `workers.ipc` / thiếu
+  PySide6 trên venv Linux, không liên quan M1), 0 regression;
+  self-test-deep PASS (money_amounts: 22 trên store scratch).
+
 ## RC3-10 — Parser v4, deep retry, HSMT 1958/1959 (08/11/2026)
 
 - **Parser v4** (`PARSER_VERSION` 3→4): trích giá vào `money_amounts` từ raw đã lưu — REOFFER

@@ -171,7 +171,7 @@ def write_projection(conn, writer, record_id, spec, parsed, capture_id, seq, res
         "DELETE FROM money_amounts WHERE json_extract(provenance_json,'$.source_record_id')=? AND json_extract(provenance_json,'$.lane')=? AND json_extract(provenance_json,'$.endpoint_kind')=?",
         (record_id, spec.lane, spec.endpoint_kind),
     )
-    if spec.parser_kind == "HSMT":
+    if spec.parser_kind in ("HSMT", "M1"):
         conn.execute("DELETE FROM goods_rows WHERE " + clause, owner)
         conn.execute("DELETE FROM lots WHERE " + clause, owner)
         lot_ids, goods_ids = {}, {}

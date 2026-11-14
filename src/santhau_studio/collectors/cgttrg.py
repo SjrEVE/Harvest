@@ -18,13 +18,14 @@ from santhau_studio.collectors.deep import (
 from santhau_studio.collectors.hsmt_forms import read_form
 from santhau_studio.domain.identity import record_object_sha
 
-PARSER_VERSION = 4
+PARSER_VERSION = 5
 
 PREFIX = "https://muasamcong.mof.gov.vn/o/egp-portal-contractor-selection-v2/services/"
 ENDPOINTS = {
     "HSMT": "lcnt_tbmcgtt_hsmt",
     "DETAIL": "online-reoffer/detail",
     "REOFFER": "online-reoffer/detail",
+    "M1": "expose/contractor-input-result/get",
 }
 
 # Currency for lot/goods prices. HSMT payloads declare no currency, but the same
@@ -37,7 +38,12 @@ TAX_UNKNOWN = "UNKNOWN"
 
 
 def public_spec(family, lane):
-    if family != "TBMT" or lane not in ENDPOINTS:
+    if lane not in ENDPOINTS:
+        return None
+    if lane == "M1":
+        if family != "KQLCNT":
+            return None
+    elif family != "TBMT":
         return None
     return DeepLaneSpec(
         family,
@@ -387,7 +393,238 @@ def _reoffer(payload, lane):
     )
 
 
+def _m1(payload):
+    """Per-item winning prices for one KQLCNT result (parser v5).
+
+    Response envelope (canaried 2026-11-13 on two live records, IB2600073112
+    and IB2600363545): ``{bideContractorInputResultDTO, bidpPlanDetailDTO}``.
+    The DTO carries ``lotResultDTO[]`` (one entry per lot: lotNo, lotName,
+    lotPrice, winningCode, contractorList with the winner's bidWiningPrice)
+    and the per-item rows in TWO alternative encodings, mutually exclusive in
+    both captures:
+
+    * ``lotResultDTO[].goodsList`` — JSON-encoded string, one entry per lot,
+      ``formValue.lotContent.Table[]``; each item's ``bidPrice`` is the
+      winning unit price (verified: qty x bidPrice sums to the winner's
+      bidWiningPrice).
+    * ``dto.lotResultItems[]`` — one entry per (winning contractor, lot),
+      linked by ``lotResultId`` to a ``lotResultDTO[].id`` (9/9 verified);
+      ``formValue`` is a JSON-encoded string of items carrying the explicit
+      ``lotWiningPrice`` (== ``bidPrice`` == the item's ``lotPrice`` field in
+      every observed row) plus ``codeGood`` (model), ``labelGood`` (brand),
+      ``origin``, ``manufacturer``, ``yearManufacture``.
+
+    Both encodings carry the WINNER's items only (contractorCode ==
+    winningCode in every observed entry), so the unit price IS the winning
+    unit price. ``ITEM_BID_PRICE`` is emitted only when ``bidPrice`` and
+    ``lotWiningPrice`` are both present and differ — otherwise the two would
+    be duplicate rows for the same price. Currency is the DTO's own
+    ``bidPriceUnit`` (``VND`` in both captures); without a 3-letter code the
+    rows become UNPARSABLE, never guessed. No items at all yields capability
+    ``NOTICE_METADATA`` (the run marks the task SOURCE_EMPTY, not an error).
+    Members are NOT emitted: contractorList role semantics are unverified.
+    """
+    dto = payload.get("bideContractorInputResultDTO")
+    if not isinstance(dto, dict):
+        raise DetailShapeError("M1_DTO_MISSING_OR_INVALID")
+    currency = dto.get("bidPriceUnit")
+    currency = currency.strip().upper() if isinstance(currency, str) and len(currency.strip()) == 3 else None
+    lots_raw = dto.get("lotResultDTO")
+    if lots_raw is None:
+        lots_raw = []
+    if not isinstance(lots_raw, list):
+        raise DetailShapeError("M1_LOT_RESULT_NOT_LIST")
+    items_raw = dto.get("lotResultItems")
+    if items_raw is None:
+        items_raw = []
+    if not isinstance(items_raw, list):
+        raise DetailShapeError("M1_LOT_RESULT_ITEMS_NOT_LIST")
+
+    problems, warnings, money = [], [], []
+    ordinal = 0
+
+    def item_rows(row, source_path):
+        """One item dict -> (ParsedGoodsRow, money rows)."""
+        nonlocal ordinal
+        presence, qty, qty_raw = _presence_number(row, ("qty",))
+        if presence != "KNOWN" or not _text(row, ("name",)):
+            problems.append(f"M1_ITEM_{ordinal}_INVALID_FIELDS")
+        good = ParsedGoodsRow(
+            ordinal,
+            _text(row, ("name",)),
+            _text(row, ("feature",)),
+            _text(row, ("uom",)),
+            presence,
+            qty,
+            qty_raw,
+            row,
+        )
+        win_presence, win_value, _ = _presence_number(row, ("lotWiningPrice",))
+        bid_presence, bid_value, _ = _presence_number(row, ("bidPrice",))
+        if win_presence == "KNOWN":
+            field, role = "lotWiningPrice", "ITEM_WINNING_PRICE"
+            amount = _money_amount(
+                row, field, role=role, owner_kind="GOODS_ROW",
+                owner_ref=str(ordinal),
+                source_path=f"{source_path}.{field}",
+                currency_code=currency,
+            )
+            if amount is not None:
+                money.append(amount)
+            if bid_presence == "KNOWN" and bid_value != win_value:
+                amount = _money_amount(
+                    row, "bidPrice", role="ITEM_BID_PRICE", owner_kind="GOODS_ROW",
+                    owner_ref=str(ordinal),
+                    source_path=f"{source_path}.bidPrice",
+                    currency_code=currency,
+                )
+                if amount is not None:
+                    money.append(amount)
+        elif bid_presence == "KNOWN":
+            amount = _money_amount(
+                row, "bidPrice", role="ITEM_WINNING_PRICE", owner_kind="GOODS_ROW",
+                owner_ref=str(ordinal),
+                source_path=f"{source_path}.bidPrice",
+                currency_code=currency,
+            )
+            if amount is not None:
+                money.append(amount)
+        ordinal += 1
+        return good
+
+    def json_list(text, problem):
+        try:
+            value = json.loads(text)
+        except ValueError:
+            problems.append(problem)
+            return None
+        if not isinstance(value, list):
+            problems.append(problem)
+            return None
+        return value
+
+    # Lots first: goods attach to them by lotResultId (lotResultItems) or by
+    # position (goodsList, which is already per-lot).
+    lot_goods = {}
+    lot_by_id = {}
+    lots = []
+    for lot_index, lot in enumerate(lots_raw):
+        if not isinstance(lot, dict):
+            problems.append(f"M1_LOT_{lot_index}_NOT_OBJECT")
+            continue
+        lot_no = _text(lot, ("lotNo",))
+        if lot_no is None:
+            problems.append(f"M1_LOT_{lot_index}_NO_NUMBER")
+            continue
+        if isinstance(lot.get("id"), str):
+            lot_by_id[lot["id"]] = lot_no
+        lot_goods[lot_no] = []
+        for field, role in (
+            ("lotPrice", "LOT_PRICE"),
+            ("lotEstimatePrice", "LOT_ESTIMATE_PRICE"),
+        ):
+            amount = _money_amount(
+                lot, field, role=role, owner_kind="LOT", owner_ref=lot_no,
+                source_path=f"bideContractorInputResultDTO.lotResultDTO[{lot_index}].{field}",
+                currency_code=currency,
+            )
+            if amount is not None:
+                money.append(amount)
+        lots.append((lot, lot_no))
+    # lotResultItems encoding: explicit lotWiningPrice per item.
+    for entry_index, entry in enumerate(items_raw):
+        if not isinstance(entry, dict):
+            problems.append(f"M1_LOT_RESULT_ITEM_{entry_index}_NOT_OBJECT")
+            continue
+        form_value = entry.get("formValue")
+        if form_value is None:
+            continue
+        if not isinstance(form_value, str):
+            problems.append(f"M1_LOT_RESULT_ITEM_{entry_index}_FORM_VALUE_NOT_STRING")
+            continue
+        items = json_list(form_value, f"M1_LOT_RESULT_ITEM_{entry_index}_INVALID_JSON")
+        if items is None:
+            continue
+        lot_no = lot_by_id.get(entry.get("lotResultId"))
+        target = lot_goods.get(lot_no) if lot_no else None
+        if target is None:
+            problems.append(f"M1_LOT_RESULT_ITEM_{entry_index}_UNLINKED_LOT")
+        for item_index, row in enumerate(items):
+            if not isinstance(row, dict):
+                problems.append(f"M1_LOT_RESULT_ITEM_{entry_index}_ROW_{item_index}_NOT_OBJECT")
+                continue
+            good = item_rows(
+                row,
+                f"bideContractorInputResultDTO.lotResultItems[{entry_index}].formValue[{item_index}]",
+            )
+            if target is None:
+                lot_goods.setdefault(None, []).append(good)
+            else:
+                target.append(good)
+    # goodsList encoding: JSON string per lot, winner's goods table.
+    for lot_index, (lot, lot_no) in enumerate(lots):
+        raw = lot.get("goodsList")
+        if raw is None:
+            continue
+        if not isinstance(raw, str):
+            problems.append(f"M1_LOT_{lot_index}_GOODSLIST_NOT_STRING")
+            continue
+        entries = json_list(raw, f"M1_LOT_{lot_index}_GOODSLIST_INVALID_JSON")
+        if entries is None:
+            continue
+        if lot_goods.get(lot_no):
+            # Both encodings populated for one lot: never double-count the
+            # same items. lotResultItems carries the explicit lotWiningPrice,
+            # so it wins; the overlap is flagged, not silently merged.
+            warnings.append(f"M1_LOT_{lot_no}_BOTH_ENCODINGS")
+            continue
+        for entry_index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                problems.append(f"M1_LOT_{lot_index}_GOODSLIST_ENTRY_{entry_index}_NOT_OBJECT")
+                continue
+            form_value = entry.get("formValue")
+            table = form_value.get("lotContent", {}).get("Table") if isinstance(form_value, dict) else None
+            if not isinstance(table, list):
+                problems.append(f"M1_LOT_{lot_index}_GOODSLIST_ENTRY_{entry_index}_NO_TABLE")
+                continue
+            for item_index, row in enumerate(table):
+                if not isinstance(row, dict):
+                    problems.append(f"M1_LOT_{lot_index}_GOODSLIST_ROW_{item_index}_NOT_OBJECT")
+                    continue
+                lot_goods[lot_no].append(item_rows(
+                    row,
+                    f"bideContractorInputResultDTO.lotResultDTO[{lot_index}].goodsList[{entry_index}].formValue.lotContent.Table[{item_index}]",
+                ))
+    parsed_lots = tuple(
+        ParsedLot(lot_no, _text(lot, ("lotName",)), _text(dto, ("resultVersion",)),
+                  tuple(lot_goods.get(lot_no, ())), lot)
+        for lot, lot_no in lots
+    )
+    unallotted = tuple(lot_goods.get(None, ()))
+    version = {
+        k: dto.get(k)
+        for k in ("notifyId", "notifyNo", "notifyVersion", "resultVersion", "lastModifiedDate")
+    }
+    total_goods = sum(len(lot.goods) for lot in parsed_lots) + len(unallotted)
+    return ParsedDetail(
+        _json(version),
+        {},
+        parsed_lots,
+        (),
+        tuple(problems),
+        unallotted,
+        warnings=tuple(sorted(set(warnings))),
+        capability="STRUCTURED_ITEMS" if total_goods else "NOTICE_METADATA",
+        parser_version=PARSER_VERSION,
+        money=tuple(money),
+    )
+
+
 def parse_public(spec, payload):
     if not isinstance(payload, dict):
         raise DetailShapeError("DEEP_RESPONSE_NOT_OBJECT")
-    return _hsmt(payload) if spec.parser_kind == "HSMT" else _reoffer(payload, spec.parser_kind)
+    if spec.parser_kind == "HSMT":
+        return _hsmt(payload)
+    if spec.parser_kind == "M1":
+        return _m1(payload)
+    return _reoffer(payload, spec.parser_kind)

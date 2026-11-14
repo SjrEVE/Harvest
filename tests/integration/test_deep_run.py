@@ -273,4 +273,5 @@ def test_worker_details_job_runs_offline_and_blocks_live(tmp_path: Path) -> None
 
 def test_lane_readiness_matrix_is_explicit() -> None:
     assert LANE_READINESS["DETAIL"] == "TESTED_OFFLINE"
+    assert LANE_READINESS["M1"] == "TESTED_OFFLINE"
     assert LANE_READINESS["KQLCNT_FULL"] == "BLOCKED"

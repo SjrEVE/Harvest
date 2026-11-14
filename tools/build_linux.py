@@ -12,8 +12,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "build/linux"
-VERSION = "0.0.1~rc3-10"
-BUNDLE_VERSION = "0.0.1-RC3-10"
+VERSION = "0.0.1~rc3-11"
+BUNDLE_VERSION = "0.0.1-RC3-11"
 
 
 def run(*args):
@@ -125,6 +125,8 @@ def main():
         "--include-data-files=docs/ddl/005_scoped_maintenance.sql=docs/ddl/005_scoped_maintenance.sql",
         "--include-data-files=docs/ddl/006_missing_only_policy.sql=docs/ddl/006_missing_only_policy.sql",
         "--include-data-files=docs/ddl/007_money_roles_parser_v4.sql=docs/ddl/007_money_roles_parser_v4.sql",
+        "--include-data-files=docs/ddl/008_money_roles_m1.sql=docs/ddl/008_money_roles_m1.sql",
+        "--include-data-files=docs/ddl/009_m1_lane_enums.sql=docs/ddl/009_m1_lane_enums.sql",
         "--include-data-files=packaging/linux/config/egp-profile.json=config/egp-profile.json",
         f"--include-data-files={info}=config/build-info.json",
         *(f"--nofollow-import-to={name}" for name in excluded),

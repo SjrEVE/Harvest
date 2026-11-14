@@ -198,6 +198,35 @@ def test_query_string_on_the_endpoint_is_refused() -> None:
         FetchLane(url=URL + "?token=notarealsecret", source_key="egp_home")
 
 
+def test_sanctioned_query_param_is_appended_after_validation() -> None:
+    """M1: the portal's expose/ endpoints need a presence-only `token=` (empty
+    value, canaried 2026-11-13). It travels via the explicit `query` argument,
+    never inside the endpoint URL, and only the strict `key=`/`key=value`
+    pattern is admitted."""
+    from santhau_studio.collectors.http_client import validate_query
+
+    assert validate_query("token=") == "token="
+    assert validate_query("token=abc") == "token=abc"
+    assert validate_query(None) is None
+    for bad in ("token=abc&sid=1", "token", "token==x", "a b=c", ""):
+        with pytest.raises(InsecureRequest):
+            validate_query(bad)
+    recorder = Recorder(ok({"ok": True}))
+    lane = FetchLane(
+        url=URL, source_key="egp_home", client=recorder.client(),
+        retry=network_policy.RetryPolicy(max_attempts=1, jitter_fraction=0),
+        sleeper=lambda _: None, query="token=",
+    )
+    outcome = lane.post({"id": "x"})
+    assert outcome.payload == {"ok": True}
+    assert str(recorder.requests[0].url) == URL + "?token="
+
+
+def test_query_param_with_smuggled_second_param_is_rejected() -> None:
+    with pytest.raises(InsecureRequest):
+        FetchLane(url=URL, source_key="egp_home", query="token=a&sid=1")
+
+
 def test_portal_tls_keeps_the_same_security_policy_as_other_hosts() -> None:
     """Spec section 6 forbids lowering TLS security even for the portal."""
     portal = build_ssl_context("muasamcong.mof.gov.vn")

@@ -24,6 +24,7 @@ from santhau_studio.domain.identity import record_object_sha
 LANE_DETAIL = "DETAIL"
 LANE_HSMT = "HSMT"
 LANE_REOFFER = "REOFFER"
+LANE_M1 = "M1"
 LANE_KQLCNT_FULL = "KQLCNT_FULL"
 LANE_BOQ = "BOQ"
 LANE_OTHER = "OTHER"

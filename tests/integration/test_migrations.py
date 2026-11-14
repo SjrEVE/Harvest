@@ -22,8 +22,8 @@ REPO_ROOT = SCHEMA_PATH.parents[2]
 def test_bootstrap_records_the_frozen_contract_as_version_one(tmp_path: Path) -> None:
     conn = connect(tmp_path / "warehouse.sqlite", create_schema=True)
     state = status(conn)
-    assert state.current_version == 7
-    assert state.applied == ((1, "g0_b_contract"), (2, "public_deep_checkpoints"), (3, "attempt_telemetry"), (4, "deep_parser_metadata"), (5, "scoped_maintenance"), (6, "missing_only_policy"), (7, "money_roles_parser_v4"))
+    assert state.current_version == 9
+    assert state.applied == ((1, "g0_b_contract"), (2, "public_deep_checkpoints"), (3, "attempt_telemetry"), (4, "deep_parser_metadata"), (5, "scoped_maintenance"), (6, "missing_only_policy"), (7, "money_roles_parser_v4"), (8, "money_roles_m1"), (9, "m1_lane_enums"))
     assert state.up_to_date
     recorded = conn.execute(
         "SELECT name, checksum FROM software_migrations WHERE version=1"
@@ -37,7 +37,7 @@ def test_bootstrap_records_the_frozen_contract_as_version_one(tmp_path: Path) ->
 def test_writer_open_gives_a_migrated_database(tmp_path: Path) -> None:
     writer = WarehouseWriter.open(tmp_path, create_schema=True, role="backfill")
     try:
-        assert status(writer.conn).current_version == 7
+        assert status(writer.conn).current_version == 9
     finally:
         writer.close()
 
@@ -71,7 +71,7 @@ def test_a_database_with_no_migration_row_reports_pending(tmp_path: Path) -> Non
     bare.execute("CREATE TABLE unrelated (x)")
     state = status(bare)
     assert state.current_version == 0
-    assert state.pending == ((1, "g0_b_contract"), (2, "public_deep_checkpoints"), (3, "attempt_telemetry"), (4, "deep_parser_metadata"), (5, "scoped_maintenance"), (6, "missing_only_policy"), (7, "money_roles_parser_v4"))
+    assert state.pending == ((1, "g0_b_contract"), (2, "public_deep_checkpoints"), (3, "attempt_telemetry"), (4, "deep_parser_metadata"), (5, "scoped_maintenance"), (6, "missing_only_policy"), (7, "money_roles_parser_v4"), (8, "money_roles_m1"), (9, "m1_lane_enums"))
     assert not state.up_to_date
     bare.close()
 
@@ -86,6 +86,8 @@ def test_migration_list_is_the_frozen_contract_only() -> None:
         (5, "scoped_maintenance", Path("docs/ddl/005_scoped_maintenance.sql")),
         (6, "missing_only_policy", Path("docs/ddl/006_missing_only_policy.sql")),
         (7, "money_roles_parser_v4", Path("docs/ddl/007_money_roles_parser_v4.sql")),
+        (8, "money_roles_m1", Path("docs/ddl/008_money_roles_m1.sql")),
+        (9, "m1_lane_enums", Path("docs/ddl/009_m1_lane_enums.sql")),
     ) == MIGRATIONS
 
 
@@ -99,7 +101,7 @@ def test_public_deep_upgrade_preserves_existing_records(tmp_path, monkeypatch):
         writer.close()
     writer = WarehouseWriter.open(tmp_path, create_schema=True)
     try:
-        assert status(writer.conn).current_version == 7
+        assert status(writer.conn).current_version == 9
         assert [
             tuple(r) for r in writer.conn.execute("SELECT * FROM source_records ORDER BY id")
         ] == before
@@ -126,6 +128,63 @@ def test_every_migration_ddl_is_packaged_in_the_linux_build() -> None:
     assert not missing, f"migration DDL not packaged in the Linux build: {missing}"
 
 
+def test_migration_eight_adds_m1_roles(tmp_path: Path) -> None:
+    """RC3-11: migration 008 rebuilds money_amounts so parser-v5 M1 roles insert.
+
+    The v7 role CHECK allowed the RC3-10 roles but not ITEM_WINNING_PRICE /
+    ITEM_BID_PRICE. An M1 role must insert after bootstrap; a v7 role must
+    still insert too.
+    """
+    conn = connect(tmp_path / "warehouse.sqlite", create_schema=True)
+    try:
+        assert status(conn).current_version == 9
+        for role in ("ITEM_WINNING_PRICE", "ITEM_BID_PRICE", "LOT_PRICE"):
+            conn.execute(
+                "INSERT INTO money_amounts (owner_kind, owner_id, role, presence_state,"
+                " value, value_raw, currency, currency_code, tax_basis,"
+                " provenance_json, observed_at_utc)"
+                " VALUES ('GOODS_ROW', 1, ?, 'KNOWN', 123, '123', 'KNOWN', 'VND',"
+                " 'UNKNOWN', '{\"lane\":\"M1\"}', '2026-11-13T00:00:00Z')",
+                (role,),
+            )
+        rows = conn.execute(
+            "SELECT role FROM money_amounts ORDER BY role"
+        ).fetchall()
+        assert [r[0] for r in rows] == ["ITEM_BID_PRICE", "ITEM_WINNING_PRICE", "LOT_PRICE"]
+    finally:
+        conn.close()
+
+
+def test_migration_nine_widens_lane_enums(tmp_path: Path) -> None:
+    """RC3-11: migration 009 rebuilds deep_captures/runs so the M1 lane fits.
+
+    The frozen v1 CHECKs allowed only DETAIL/HSMT/REOFFER/KQLCNT_FULL/BOQ/OTHER
+    lanes and the list-flow job kinds. An M1 capture and an M1 run must insert
+    after bootstrap, and the pre-existing rows must survive the rebuild with
+    their foreign keys intact (the migration runs with enforcement off and
+    re-checks afterwards).
+    """
+    conn = connect(tmp_path / "warehouse.sqlite", create_schema=True)
+    try:
+        assert status(conn).current_version == 9
+        for table in ("deep_captures", "runs"):
+            sql = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE name=?", (table,)
+            ).fetchone()[0]
+            assert "'M1'" in sql, f"{table} CHECK was not widened for M1"
+        conn.execute(
+            "INSERT INTO runs (run_id, job_id, job_kind, lifecycle, started_at_utc,"
+            " policy_version, requested_by)"
+            " VALUES ('run-m1', 'job-m1', 'M1', 'RUNNING', '2026-11-13T00:00:00Z', 1, 'test')"
+        )
+        assert conn.execute(
+            "SELECT job_kind FROM runs WHERE run_id='run-m1'"
+        ).fetchone()[0] == "M1"
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        conn.close()
+
+
 def test_migration_seven_widens_money_roles(tmp_path: Path) -> None:
     """RC3-10: migration 007 rebuilds money_amounts so parser-v4 roles insert.
 
@@ -135,7 +194,7 @@ def test_migration_seven_widens_money_roles(tmp_path: Path) -> None:
     """
     conn = connect(tmp_path / "warehouse.sqlite", create_schema=True)
     try:
-        assert status(conn).current_version == 7
+        assert status(conn).current_version == 9
         for role in ("REOFFER_PRICE", "BID_PRICE"):
             conn.execute(
                 "INSERT INTO money_amounts (owner_kind, owner_id, role, presence_state,"

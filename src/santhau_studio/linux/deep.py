@@ -74,6 +74,80 @@ def reset_deep_retry(root, *, record_id, lane):
         }
 
 
+def sweep_deep(root, *, lane="M1", limit=100, execute=False):
+    """One-off deep sweep: enqueue batched jobs for records the lane has not
+    yet captured (no FETCHED/SOURCE_EMPTY task against the current listing).
+
+    Default is a dry-run preview — nothing is enqueued and no request is
+    spent. With --execute the jobs are queued (at most 10 records per job, the
+    fetcher's 30-request budget leaves retry headroom) and the worker picks
+    them up; a later sweep only sees what is still missing, because
+    collect_public skips fresh FETCHED/SOURCE_EMPTY captures itself. Stop the
+    worker before enqueueing, as with deep-config.
+    """
+    if lane != "M1":
+        raise ValueError("only the M1 lane has a sweep path today")
+    if type(limit) is not int or limit < 1:
+        raise ValueError("limit must be a positive integer")
+    if not (root / "warehouse.sqlite").is_file():
+        raise ValueError("Chạy init trước khi quét thu thập chi tiết.")
+    from santhau_studio.collectors.cgttrg import PARSER_VERSION
+    from santhau_studio.workers.auto_deep import MAX_RECORDS_PER_DEEP_JOB
+    from santhau_studio.workers.jobs import JobRequest, enqueue_job
+
+    with closing(connect_read_only(root / "warehouse.sqlite")) as conn:
+        rows = conn.execute(
+            "SELECT r.id FROM source_records r"
+            " JOIN source_record_versions v ON v.source_record_id=r.id AND v.content_version_seq=r.current_content_version"
+            " LEFT JOIN deep_tasks t ON t.source_record_id=r.id AND t.lane=?"
+            " WHERE r.source_key='egp_home' AND r.family='KQLCNT'"
+            " AND json_extract(v.normalized_json,'$.inputResultId') IS NOT NULL"
+            " AND (t.source_record_id IS NULL"
+            " OR NOT (t.state IN ('FETCHED','SOURCE_EMPTY') AND t.listing_object_sha=r.current_record_object_sha))"
+            " ORDER BY r.id LIMIT ?",
+            (lane, limit),
+        ).fetchall()
+    record_ids = [int(r[0]) for r in rows]
+    chunks = [
+        record_ids[start:start + MAX_RECORDS_PER_DEEP_JOB]
+        for start in range(0, len(record_ids), MAX_RECORDS_PER_DEEP_JOB)
+    ]
+    job_ids = []
+    if execute:
+        import uuid
+        from datetime import UTC, datetime
+
+        for chunk in chunks:
+            request = JobRequest(
+                job_id="deep-sweep-" + uuid.uuid4().hex[:16],
+                job_kind=lane,
+                requested_by="deep-sweep",
+                sources=({"source_key": "egp_home", "family": "KQLCNT"},),
+                scope={"record_ids": chunk},
+                request_limits={
+                    "max_requests": min(2 * len(chunk), 30),
+                    "max_attempts": 4,
+                    "max_seconds": min(900, 120 + 30 * len(chunk)),
+                    "pacing_seconds": 3,
+                },
+                created_at=datetime.now(UTC).isoformat(),
+            )
+            enqueue_job(root, request)
+            job_ids.append(request.job_id)
+    return {
+        "ok": True,
+        "lane": lane,
+        "parser_version": PARSER_VERSION,
+        "records_matched": len(record_ids),
+        "jobs": len(chunks),
+        "records_per_job": MAX_RECORDS_PER_DEEP_JOB,
+        "executed": execute,
+        "job_ids": job_ids,
+        "first_record_ids": record_ids[:10],
+        "network_requests": 0,
+    }
+
+
 def deep_status(root):
     with closing(connect_read_only(root / "warehouse.sqlite")) as conn:
         present = bool(
@@ -114,5 +188,5 @@ def deep_status(root):
             ]
             if present
             else [],
-            "scope": "TBMT/CGTTRG only; document references are not downloaded files",
+            "scope": "TBMT/CGTTRG + KQLCNT/M1; document references are not downloaded files",
         }

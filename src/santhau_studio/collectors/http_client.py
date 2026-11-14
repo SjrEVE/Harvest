@@ -18,6 +18,7 @@ Structural differences from the source behaviour, each with a reason:
 
 from __future__ import annotations
 
+import re
 import ssl
 import threading
 import time
@@ -75,6 +76,26 @@ class FetchFailed(RuntimeError):
 
 class InsecureRequest(RuntimeError):
     """Refused before sending: wrong scheme, host off the allowlist, or credential material."""
+
+
+# The one sanctioned query string in the whole collector (FAULT-11 exception).
+# The portal's `expose/` endpoints return HTTP 400 unless a `token=` query
+# parameter is present; the server does NOT validate its value — the M1 canary
+# (2026-11-13) got HTTP 200 with identical payloads for both a dummy value and
+# an empty value, and HTTP 400 with no parameter at all. The collector therefore
+# sends the parameter with an EMPTY value: presence without credential material.
+# Any other query string stays refused by _check_url; this pattern admits only
+# `key=` / `key=value` with a plain ASCII key and an unreserved value.
+QUERY_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_]*=[A-Za-z0-9._~-]*")
+
+
+def validate_query(query: str | None) -> str | None:
+    """Return the query string if it matches the sanctioned pattern, else refuse."""
+    if query is None:
+        return None
+    if not isinstance(query, str) or QUERY_PATTERN.fullmatch(query) is None:
+        raise InsecureRequest("refusing non-sanctioned query string")
+    return query
 
 
 @dataclass
@@ -141,8 +162,10 @@ class FetchLane:
         clock: Callable[[], float] = time.monotonic,
         budget=None,
         connect_timeout_seconds: float = 15.0,
+        query: str | None = None,
     ) -> None:
         self.url = url
+        self.query = validate_query(query)
         self.source_key = source_key
         self.host = self._check_url(url)
         self.retry = retry or RetryPolicy()
@@ -203,7 +226,8 @@ class FetchLane:
                     self.budget.consume()
                 network_event(self.host, "REQUEST", source_key=self.source_key)
                 self._request_started = True
-                return self._client.post(self.url, json=body, timeout=timeout)
+                request_url = self.url + ("?" + self.query if self.query else "")
+                return self._client.post(request_url, json=body, timeout=timeout)
             if self._own_client:
                 network_event(self.host, "HOST_WAIT")
                 gate_options = {"budget": self.budget} if self.budget is not None else {}

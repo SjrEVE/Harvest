@@ -19,7 +19,7 @@ import uuid
 from datetime import UTC, datetime
 
 KEY = "automatic_public_deep"
-LANES = ("HSMT", "REOFFER", "DETAIL")
+LANES = ("HSMT", "REOFFER", "DETAIL", "M1")
 
 # Records per batched lane job. PublicDeepFetcher caps a job at 30 requests;
 # 10 records x 2 requests of retry headroom stays inside that cap.
@@ -86,7 +86,9 @@ def candidates(conn, limit):
       LEFT JOIN deep_captures c ON c.id=t.capture_id
       LEFT JOIN deep_task_metadata m ON m.source_record_id=t.source_record_id AND m.lane=t.lane AND m.task_updated_at_utc=t.updated_at_utc
       LEFT JOIN deep_capture_parse_metadata pm ON pm.deep_capture_id=c.id AND pm.capture_seq=c.latest_capture_seq
-      WHERE r.source_key='egp_home' AND r.family='TBMT' AND json_extract(v.normalized_json,'$.bidForm')='CGTTRG'
+      WHERE r.source_key='egp_home'
+      AND ((lane.lane='M1' AND r.family='KQLCNT' AND json_extract(v.normalized_json,'$.inputResultId') IS NOT NULL)
+           OR (lane.lane<>'M1' AND r.family='TBMT' AND json_extract(v.normalized_json,'$.bidForm')='CGTTRG'))
       AND COALESCE(m.capability,'') NOT IN ('IDENTITY_QUARANTINE','UNVERIFIED_LISTING')
       AND NOT (COALESCE(m.capability,'') LIKE 'UNSUPPORTED%' AND COALESCE(m.adapter_version,0)=? AND COALESCE(m.parser_version,0)=?
                AND COALESCE(t.listing_object_sha,'')=r.current_record_object_sha)
@@ -109,7 +111,7 @@ def candidates(conn, limit):
                 AND julianday(t.updated_at_utc) + (CASE COALESCE(CAST(json_extract(t.provenance_json,'$.deep_retry.consecutive_failures') AS INTEGER),0)
                     WHEN 0 THEN ? WHEN 1 THEN ? WHEN 2 THEN ? WHEN 3 THEN ? ELSE ? END) / 1440.0 <= julianday(?))
         )))
-      ORDER BY r.id,CASE lane.lane WHEN 'HSMT' THEN 0 WHEN 'REOFFER' THEN 1 ELSE 2 END LIMIT ?""".replace(
+      ORDER BY r.id,CASE lane.lane WHEN 'HSMT' THEN 0 WHEN 'REOFFER' THEN 1 WHEN 'DETAIL' THEN 2 WHEN 'M1' THEN 3 ELSE 4 END LIMIT ?""".replace(
         "LANES_SQL", placeholders
     )
     return [
@@ -168,11 +170,12 @@ def run_batch(loop, parent_run=None):
             if loop.flag.interrupt_requested or requests_used >= config["batch_requests"]:
                 break
             record_ids = [target["id"] for target in chunk]
+            family = "KQLCNT" if lane == "M1" else "TBMT"
             request = JobRequest(
                 job_id="auto-deep-" + uuid.uuid4().hex[:16],
                 job_kind=lane,
                 requested_by="automatic-public-deep",
-                sources=({"source_key": "egp_home", "family": "TBMT"},),
+                sources=({"source_key": "egp_home", "family": family},),
                 scope={"record_ids": record_ids, "refresh_expired": config.get("refresh_expired", False)},
                 request_limits={
                     # Two requests of headroom per record (retries) inside the
@@ -192,7 +195,7 @@ def run_batch(loop, parent_run=None):
             loop._set_phase("DEEP_COLLECTING")
             loop._set_progress(
                 {
-                    "family": "TBMT",
+                    "family": family,
                     "lane": lane,
                     "record_ids": record_ids,
                     "automatic": True,
