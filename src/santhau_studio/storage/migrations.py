@@ -20,6 +20,7 @@ MIGRATIONS: tuple[tuple[int, str, Path], ...] = (
     (4, "deep_parser_metadata", Path("docs/ddl/004_deep_parser_metadata.sql")),
     (5, "scoped_maintenance", Path("docs/ddl/005_scoped_maintenance.sql")),
     (6, "missing_only_policy", Path("docs/ddl/006_missing_only_policy.sql")),
+    (7, "money_roles_parser_v4", Path("docs/ddl/007_money_roles_parser_v4.sql")),
 )
 
 

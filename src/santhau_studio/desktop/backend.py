@@ -47,7 +47,7 @@ from santhau_studio.workers.jobs import JOB_KINDS, JobError, JobRequest, enqueue
 
 DISK_SCAN_LIMIT = 50_000
 SEARCH_LIMIT_MAX = 200
-APP_VERSION = "0.0.1-RC3-9"
+APP_VERSION = "0.0.1-RC3-10"
 _PROBE_LOCK = threading.Lock()
 
 _TITLE_KEYS = ("title", "bidName", "planName", "projectName", "contractName", "name")

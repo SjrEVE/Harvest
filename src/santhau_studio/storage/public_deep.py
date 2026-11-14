@@ -4,6 +4,12 @@ import json
 from datetime import UTC, datetime
 
 from santhau_studio.domain.identity import canonical_bytes
+from santhau_studio.storage.deep_retry import (
+    FAILURE_STATES,
+    SUCCESS_STATES,
+    next_retry_state,
+    read_retry_state,
+)
 from santhau_studio.storage.projection_evidence import merge_evidence, retire_evidence
 
 
@@ -22,7 +28,41 @@ def task_state(
     capture_id=None,
     error=None,
     provenance=None,
+    failure_kind=None,
 ):
+    """Upsert a deep-task checkpoint, tracking consecutive failures.
+
+    ``failure_kind`` (UNSUPPORTED / FETCH / PARSE / TRANSIENT, see
+    ``storage.deep_retry``) is only meaningful for failure states; success
+    states reset the counter. A failure against a *new* listing version starts
+    a fresh series (consecutive=1), because the old failure may not apply to
+    the new listing. The retry bookkeeping is merged into ``provenance_json``
+    under ``deep_retry`` so it survives without a schema migration.
+    """
+    previous = conn.execute(
+        "SELECT state, listing_object_sha, provenance_json FROM deep_tasks"
+        " WHERE source_record_id=? AND lane=?",
+        (record_id, lane),
+    ).fetchone()
+    previous_retry = (
+        read_retry_state(previous["provenance_json"]) if previous else read_retry_state(None)
+    )
+    listing_changed = bool(
+        previous
+        and previous["listing_object_sha"] is not None
+        and listing_sha is not None
+        and previous["listing_object_sha"] != listing_sha
+    )
+    if state in SUCCESS_STATES or state in FAILURE_STATES:
+        retry = next_retry_state(
+            previous_retry,
+            state=state,
+            failure_kind=failure_kind,
+            listing_changed=listing_changed,
+        )
+    else:
+        retry = previous_retry
+    merged_provenance = {**(provenance or {}), "deep_retry": retry}
     conn.execute(
         "INSERT INTO deep_tasks VALUES(?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT(source_record_id,lane) DO UPDATE SET state=excluded.state,"
@@ -38,7 +78,7 @@ def task_state(
             capture_id,
             datetime.now(UTC).isoformat(),
             error,
-            dumps(provenance or {}),
+            dumps(merged_provenance),
         ),
     )
 
@@ -62,6 +102,50 @@ def write_documents(conn, record_id, documents, evidence):
         )
 
 
+def _now_z():
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def write_money(conn, record_id, money, owners, evidence):
+    """Write the parser's money rows, resolving symbolic owners to row ids.
+
+    ``owners`` maps (owner_kind, owner_ref) to the id the projection just wrote:
+    PACKAGE "" is the record itself, LOT is the lot_no_raw, OFFER is the member
+    object sha, GOODS_ROW is the parser goods ordinal. A row whose owner was
+    never written is skipped — the raw capture still holds the price — rather
+    than inventing an owner id.
+    """
+    for amount in money:
+        owner_id = owners.get((amount.owner_kind, amount.owner_ref))
+        if owner_id is None:
+            continue
+        conn.execute(
+            "INSERT INTO money_amounts(owner_kind, owner_id, role, presence_state, value,"
+            " value_raw, currency, currency_code, tax_basis, provenance_json, observed_at_utc)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(owner_kind, owner_id, role, currency_code, tax_basis) DO UPDATE SET"
+            " presence_state=excluded.presence_state, value=excluded.value,"
+            " value_raw=excluded.value_raw, currency=excluded.currency,"
+            " currency_code=excluded.currency_code, tax_basis=excluded.tax_basis,"
+            " provenance_json=excluded.provenance_json, observed_at_utc=excluded.observed_at_utc",
+            (
+                amount.owner_kind,
+                owner_id,
+                amount.role,
+                amount.presence_state,
+                amount.value,
+                amount.value_raw,
+                amount.currency,
+                amount.currency_code,
+                amount.tax_basis,
+                evidence(
+                    {"source_path": amount.source_path, "source_record_id": record_id}
+                ),
+                _now_z(),
+            ),
+        )
+
+
 def write_projection(conn, writer, record_id, spec, parsed, capture_id, seq, response_sha):
     provenance = {
         "lane": spec.lane,
@@ -81,9 +165,16 @@ def write_projection(conn, writer, record_id, spec, parsed, capture_id, seq, res
     clause = "source_record_id=? AND json_extract(provenance_json,'$.lane')=? AND json_extract(provenance_json,'$.endpoint_kind')=?"
     retire_evidence(conn, record_id, capture_id)
     write_documents(conn, record_id, parsed.documents, evidence)
+    # Money rows are lane-owned derivations like lots/goods: re-cut them on every
+    # projection so a replay that changes a price cannot leave a stale row.
+    conn.execute(
+        "DELETE FROM money_amounts WHERE json_extract(provenance_json,'$.source_record_id')=? AND json_extract(provenance_json,'$.lane')=? AND json_extract(provenance_json,'$.endpoint_kind')=?",
+        (record_id, spec.lane, spec.endpoint_kind),
+    )
     if spec.parser_kind == "HSMT":
         conn.execute("DELETE FROM goods_rows WHERE " + clause, owner)
         conn.execute("DELETE FROM lots WHERE " + clause, owner)
+        lot_ids, goods_ids = {}, {}
         ordinal = conn.execute(
             "SELECT COALESCE(MAX(row_ordinal),-1)+1 FROM goods_rows WHERE source_record_id=?",
             (record_id,),
@@ -92,7 +183,7 @@ def write_projection(conn, writer, record_id, spec, parsed, capture_id, seq, res
         def goods(rows, lot_id):
             nonlocal ordinal
             for row in rows:
-                conn.execute(
+                cur = conn.execute(
                     "INSERT INTO goods_rows(lot_id,source_record_id,row_ordinal,name,specification,unit,quantity_presence,quantity,quantity_raw,provenance_json) VALUES(?,?,?,?,?,?,?,?,?,?)",
                     (
                         lot_id,
@@ -113,6 +204,7 @@ def write_projection(conn, writer, record_id, spec, parsed, capture_id, seq, res
                         ),
                     ),
                 )
+                goods_ids[row.row_ordinal] = int(cur.lastrowid)
                 ordinal += 1
 
         for lot in parsed.lots:
@@ -134,9 +226,15 @@ def write_projection(conn, writer, record_id, spec, parsed, capture_id, seq, res
                     evidence({"raw_row": lot.raw}),
                 ),
             ).lastrowid
+            lot_ids[lot.lot_no_raw] = int(lot_id)
             goods(lot.goods, lot_id)
         goods(parsed.unallotted_goods, None)
+        owners = {("PACKAGE", ""): record_id}
+        owners.update((("LOT", lot_no), lot_id) for lot_no, lot_id in lot_ids.items())
+        owners.update((("GOODS_ROW", str(ordinal)), gid) for ordinal, gid in goods_ids.items())
+        write_money(conn, record_id, parsed.money, owners, evidence)
     else:
+        member_ids = {}
         for member in parsed.members:
             ref = writer.store.put(canonical_bytes(member.raw))
             writer.register_object(ref)
@@ -146,7 +244,7 @@ def write_projection(conn, writer, record_id, spec, parsed, capture_id, seq, res
                 (record_id, ref.sha256, member.role),
             ).fetchone()
             if not exists:
-                conn.execute(
+                member_id = conn.execute(
                     "INSERT INTO contractor_memberships(source_record_id,party_object_sha,party_name,party_tax_id_presence,party_tax_id,role,membership_share_presence,membership_share,ranking,provenance_json) VALUES(?,?,?,?,?,?,?,?,?,?)",
                     (
                         record_id,
@@ -160,10 +258,15 @@ def write_projection(conn, writer, record_id, spec, parsed, capture_id, seq, res
                         None,
                         evidence({"raw": member.raw}),
                     ),
-                )
+                ).lastrowid
+                member_ids[member.member_object_sha] = int(member_id)
             else:
                 conn.execute("UPDATE contractor_memberships SET provenance_json=? WHERE id=?",
                     (merge_evidence(exists["provenance_json"], {**provenance, "raw": member.raw}), exists["id"]))
+                member_ids[member.member_object_sha] = int(exists["id"])
+        owners = {("PACKAGE", ""): record_id}
+        owners.update((("OFFER", sha), mid) for sha, mid in member_ids.items())
+        write_money(conn, record_id, parsed.money, owners, evidence)
         record = conn.execute(
             "SELECT source_key,family,natural_key FROM source_records WHERE id=?", (record_id,)
         ).fetchone()

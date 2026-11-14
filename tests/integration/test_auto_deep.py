@@ -132,7 +132,10 @@ def test_automatic_retry_budget_is_shared_between_record_jobs(tmp_path):
             limits.append(request.request_limits["max_requests"])
             return "FAILED", {"requests_used": request.request_limits["max_requests"]}
         loop._dispatch = dispatch
-        assert run_batch(loop) == 2
+        # Six lane tasks are batched into one job per lane, so the shared
+        # request budget still stops the scan after two lane jobs -- but four
+        # lane tasks (HSMT x2, REOFFER x2) are dispatched, not two.
+        assert run_batch(loop) == 4
         assert limits == [4, 2]
     finally:
         writer.close()

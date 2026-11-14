@@ -18,6 +18,13 @@ from santhau_studio.storage.warehouse import WarehouseWriter, connect_read_only
 
 
 def targets(conn, record_ids, limit):
+    """Every capture still on an old parser, all three lanes.
+
+    Parser v4 extracts prices, so a FETCHED capture is eligible too — the old
+    target (HSMT PARSE_ERROR only) would leave every already-fetched price
+    behind. Captures without a response (BLOCKED / unsupported) have no raw to
+    re-parse and are excluded by the response_object_sha condition.
+    """
     from santhau_studio.collectors.cgttrg import PARSER_VERSION
 
     found = []
@@ -25,8 +32,8 @@ def targets(conn, record_ids, limit):
         "SELECT r.*,t.lane,t.response_object_sha AS replay_sha,t.capture_id,t.listing_object_sha AS replay_listing_sha,"
         "t.provenance_json AS task_provenance,c.latest_capture_seq,c.captured_at_utc,c.refresh_due_at_utc "
         "FROM deep_tasks t JOIN source_records r ON r.id=t.source_record_id JOIN deep_captures c ON c.id=t.capture_id "
-        "WHERE r.source_key='egp_home' AND r.family='TBMT' AND t.lane='HSMT' AND t.state='PARSE_ERROR' "
-        "AND t.response_object_sha IS NOT NULL ORDER BY r.id"
+        "WHERE r.source_key='egp_home' AND r.family='TBMT' AND t.lane IN ('HSMT','DETAIL','REOFFER') "
+        "AND t.response_object_sha IS NOT NULL ORDER BY r.id, t.lane"
     ):
         if record_ids is not None and row["id"] not in record_ids:
             continue
@@ -91,6 +98,7 @@ def replay(root, *, execute=False, record_ids=None, limit=100):
                     + len(parsed.unallotted_goods)
                     if parsed
                     else 0,
+                    "money": len(parsed.money) if parsed else 0,
                     "document_references": len(parsed.documents) if parsed else 0,
                 }
             )
@@ -102,63 +110,73 @@ def replay(root, *, execute=False, record_ids=None, limit=100):
     with closing(WarehouseWriter.open(root, create_schema=True, role="parser-replay")) as writer:
         # Re-evaluate under the writer lock; a stale preview never authorizes stale targets.
         records = targets(writer.conn, record_ids, limit)
-        run_id = "replay-" + uuid.uuid4().hex
-        writer.register_run(run_id, run_id, "HSMT", requested_by="offline-parser-replay")
+        # One run per lane: runs.job_kind is a closed enum, so a single replay run
+        # cannot honestly cover HSMT + DETAIL + REOFFER at once.
+        by_lane: dict[str, list] = {}
         for record in records:
-            payload, parsed, issue, receipt = inspect(writer.store, record)
-            spec = public_spec(record["family"], record["lane"])
-            captured = datetime.fromisoformat(record["captured_at_utc"])
-            result_capture = record_deep_capture(
-                writer,
-                run_id=run_id,
-                source_record_id=record["id"],
-                spec=spec,
-                completeness="PARTIAL" if issue or parsed.problems else "FULL",
-                response_payload=payload,
-                detail=payload,
-                now=captured,
-                parse_error=issue,
-            )
-            writer.conn.execute(
-                "UPDATE deep_captures SET refresh_due_at_utc=? WHERE id=?",
-                (record["refresh_due_at_utc"], result_capture.capture_id),
-            )
-            problems = [issue] if issue else list(result_capture.problems)
-            state = "PARSE_ERROR" if problems or result_capture.stale else "FETCHED"
-            capability = "IDENTITY_QUARANTINE" if issue and any(word in issue for word in ("IDENTITY", "UUID", "VERSION_MISMATCH")) else (parsed.capability if parsed else "UNKNOWN")
-            warnings = parsed.warnings if parsed else ()
-            task_state(
-                writer.conn,
-                record["id"],
-                record["lane"],
-                state,
-                listing_sha=record["replay_listing_sha"],
-                response_sha=record["replay_sha"],
-                capture_id=result_capture.capture_id,
-                error=json.dumps(problems) if problems else None,
-                provenance={
-                    **receipt,
-                    "replay": {
-                        "parser_version": spec.parser_version,
-                        "network_requests": 0,
-                        "previous_capture_seq": record["latest_capture_seq"],
+            by_lane.setdefault(record["lane"], []).append(record)
+        for lane, lane_records in by_lane.items():
+            run_id = "replay-" + lane.lower() + "-" + uuid.uuid4().hex
+            writer.register_run(run_id, run_id, lane, requested_by="offline-parser-replay")
+            applied = repaired = 0
+            for record in lane_records:
+                payload, parsed, issue, receipt = inspect(writer.store, record)
+                spec = public_spec(record["family"], record["lane"])
+                captured = datetime.fromisoformat(record["captured_at_utc"])
+                result_capture = record_deep_capture(
+                    writer,
+                    run_id=run_id,
+                    source_record_id=record["id"],
+                    spec=spec,
+                    completeness="PARTIAL" if issue or parsed.problems else "FULL",
+                    response_payload=payload,
+                    detail=payload,
+                    now=captured,
+                    parse_error=issue,
+                )
+                writer.conn.execute(
+                    "UPDATE deep_captures SET refresh_due_at_utc=? WHERE id=?",
+                    (record["refresh_due_at_utc"], result_capture.capture_id),
+                )
+                problems = [issue] if issue else list(result_capture.problems)
+                state = "PARSE_ERROR" if problems or result_capture.stale else "FETCHED"
+                capability = "IDENTITY_QUARANTINE" if issue and any(word in issue for word in ("IDENTITY", "UUID", "VERSION_MISMATCH")) else (parsed.capability if parsed else "UNKNOWN")
+                warnings = parsed.warnings if parsed else ()
+                task_state(
+                    writer.conn,
+                    record["id"],
+                    record["lane"],
+                    state,
+                    listing_sha=record["replay_listing_sha"],
+                    response_sha=record["replay_sha"],
+                    capture_id=result_capture.capture_id,
+                    error=json.dumps(problems) if problems else None,
+                    provenance={
+                        **receipt,
+                        "replay": {
+                            "parser_version": spec.parser_version,
+                            "network_requests": 0,
+                            "previous_capture_seq": record["latest_capture_seq"],
+                        },
+                        "capability": capability,
+                        "warnings": list(warnings),
                     },
-                    "capability": capability,
-                    "warnings": list(warnings),
-                },
+                    failure_kind="PARSE" if state == "PARSE_ERROR" else None,
+                )
+                write_task(
+                    writer.conn,
+                    record["id"],
+                    record["lane"],
+                    parser_version=spec.parser_version,
+                    adapter_version=ADAPTER_VERSION,
+                    capability=capability,
+                    warnings=warnings,
+                )
+                applied += 1
+                repaired += int(state == "FETCHED")
+            result["applied"] += applied
+            result["repaired"] += repaired
+            writer.finish_run(
+                run_id, "COMPLETED" if applied == repaired else "PARTIAL"
             )
-            write_task(
-                writer.conn,
-                record["id"],
-                record["lane"],
-                parser_version=spec.parser_version,
-                adapter_version=ADAPTER_VERSION,
-                capability=capability,
-                warnings=warnings,
-            )
-            result["applied"] += 1
-            result["repaired"] += int(state == "FETCHED")
-        writer.finish_run(
-            run_id, "COMPLETED" if result["applied"] == result["repaired"] else "PARTIAL"
-        )
     return result

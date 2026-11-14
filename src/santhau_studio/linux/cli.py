@@ -198,7 +198,7 @@ def parser():
         prog="santhau-collector",
         description="Bộ thu thập Linux: sáu loại, theo tuần, không giao diện/thống kê.",
     )
-    cli.add_argument("--version", action="version", version="Săn Thầu Collector 0.0.1-RC3-9 (Linux x86-64)")
+    cli.add_argument("--version", action="version", version="Săn Thầu Collector 0.0.1-RC3-10 (Linux x86-64)")
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "--data-root",
@@ -220,6 +220,9 @@ def parser():
     choice.add_argument("--disable", action="store_true")
     deep.add_argument("--batch-requests", type=int, default=30)
     sub.add_parser("deep-status", parents=[common], help="Đọc checkpoint và lỗi thu thập chi tiết")
+    retry = sub.add_parser("deep-retry", parents=[common], help="Mở lại một deep task đã quarantine/backoff để lần quét sau thử lại; dừng worker trước khi đổi")
+    retry.add_argument("--record", type=int, required=True, help="ID source_records của gói thầu")
+    retry.add_argument("--lane", choices=("HSMT", "REOFFER", "DETAIL"), required=True)
     sub.add_parser("self-test-deep", parents=[common], help="Thử deep collector ngoại tuyến trên thư mục mới")
     replay = sub.add_parser("replay-deep", parents=[common], help="Parse lại raw bằng phiên bản mới; mặc định chỉ xem trước, không HTTP")
     replay_choice = replay.add_mutually_exclusive_group()
@@ -311,6 +314,10 @@ def main(argv=None):
         if args.command == "deep-status":
             from santhau_studio.linux.deep import deep_status
             output(deep_status(root))
+            return 0
+        if args.command == "deep-retry":
+            from santhau_studio.linux.deep import reset_deep_retry
+            output(reset_deep_retry(root, record_id=args.record, lane=args.lane))
             return 0
         if args.command == "self-test-deep":
             from santhau_studio.linux.deep_fixture import self_test as deep_self_test

@@ -1,12 +1,29 @@
-"""Opt-in deep backfill on the existing writer, between index children and when idle."""
+"""Opt-in deep backfill on the existing writer, between index children and when idle.
+
+Retry policy (see ``storage.deep_retry``): a failed lane task is retried on an
+escalating cooldown -- 1h, then 6h, then 24h, then 72h -- and after five
+consecutive non-transient failures it is quarantined: auto-deep leaves it
+alone until the listing changes, a parser/adapter bump could fix it, or an
+operator releases it with ``deep-retry``. Transient failures (timeouts, host
+blocks) never quarantine and keep recovering on their own.
+
+Job shape: one job per lane per scan (at most 10 records per job), not one job
+per (package, lane) pair. The fetcher budget caps a job at 30 requests, so 10
+records leave headroom for retries; the shared ``batch_requests`` budget still
+caps the whole scan.
+"""
 
 import json
 import time
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 KEY = "automatic_public_deep"
 LANES = ("HSMT", "REOFFER", "DETAIL")
+
+# Records per batched lane job. PublicDeepFetcher caps a job at 30 requests;
+# 10 records x 2 requests of retry headroom stays inside that cap.
+MAX_RECORDS_PER_DEEP_JOB = 10
 
 
 def validated_configuration(value):
@@ -50,6 +67,7 @@ def candidates(conn, limit):
         return []
     from santhau_studio.collectors.cgttrg import ENDPOINTS, PARSER_VERSION, PREFIX
     from santhau_studio.collectors.public_deep import ADAPTER_VERSION, PublicDeepFetcher
+    from santhau_studio.storage.deep_retry import RETRY_COOLDOWN_MINUTES
 
     lanes = [
         lane
@@ -59,7 +77,7 @@ def candidates(conn, limit):
     if not lanes:
         return []
     now = datetime.now(UTC)
-    cutoff = (now - timedelta(minutes=config["failure_cooldown_minutes"])).isoformat()
+    first_cooldown = config["failure_cooldown_minutes"]
     placeholders = " UNION ALL ".join("SELECT ? AS lane" for _ in lanes)
     query = """SELECT r.id,r.family,r.natural_key,lane.lane FROM source_records r
       JOIN source_record_versions v ON v.source_record_id=r.id AND v.content_version_seq=r.current_content_version
@@ -78,7 +96,19 @@ def candidates(conn, limit):
         OR (t.state IN ('FETCHED','SOURCE_EMPTY') AND
             (c.id IS NULL OR t.listing_object_sha IS NOT r.current_record_object_sha OR c.stale=1 OR COALESCE(pm.parser_version,1)<?
               OR (? AND c.refresh_due_at_utc IS NOT NULL AND COALESCE(julianday(c.refresh_due_at_utc),0)<=julianday(?))))
-        OR (t.state NOT IN ('FETCHED','SOURCE_EMPTY') AND julianday(t.updated_at_utc)<=julianday(?)))
+        OR (t.state NOT IN ('FETCHED','SOURCE_EMPTY') AND (
+            -- The failure was against a different listing version: retry now.
+            (t.listing_object_sha IS NOT NULL AND t.listing_object_sha <> r.current_record_object_sha)
+            -- Quarantine release: a parser bump may fix a parse failure.
+            OR (COALESCE(t.state,'')='PARSE_ERROR' AND COALESCE(pm.parser_version,1)<?)
+            -- Quarantine release: an adapter/parser bump may lift an unsupported gate.
+            OR (COALESCE(m.capability,'') LIKE 'UNSUPPORTED%' AND (COALESCE(m.adapter_version,0)<>? OR COALESCE(m.parser_version,0)<>?))
+            -- Otherwise: escalating cooldown, then quarantine. Legacy rows have no
+            -- deep_retry bookkeeping, so they start at the first cooldown step.
+            OR (COALESCE(json_extract(t.provenance_json,'$.deep_retry.quarantined'),0)=0
+                AND julianday(t.updated_at_utc) + (CASE COALESCE(CAST(json_extract(t.provenance_json,'$.deep_retry.consecutive_failures') AS INTEGER),0)
+                    WHEN 0 THEN ? WHEN 1 THEN ? WHEN 2 THEN ? WHEN 3 THEN ? ELSE ? END) / 1440.0 <= julianday(?))
+        )))
       ORDER BY r.id,CASE lane.lane WHEN 'HSMT' THEN 0 WHEN 'REOFFER' THEN 1 ELSE 2 END LIMIT ?""".replace(
         "LANES_SQL", placeholders
     )
@@ -91,11 +121,33 @@ def candidates(conn, limit):
                 ADAPTER_VERSION, PARSER_VERSION, PARSER_VERSION, PARSER_VERSION,
                 int(config.get("refresh_expired", False)),
                 now.isoformat().replace("+00:00", "Z"),
-                cutoff,
+                PARSER_VERSION, ADAPTER_VERSION, PARSER_VERSION,
+                first_cooldown, first_cooldown,
+                RETRY_COOLDOWN_MINUTES[1], RETRY_COOLDOWN_MINUTES[2], RETRY_COOLDOWN_MINUTES[3],
+                now.isoformat().replace("+00:00", "Z"),
                 min(limit, config["batch_requests"]),
             ),
         )
     ]
+
+
+def _lane_groups(selected):
+    """Group selected (package, lane) targets into batched lane jobs.
+
+    Returns [(lane, [targets...]), ...] in HSMT/REOFFER/DETAIL order, with at
+    most MAX_RECORDS_PER_DEEP_JOB records per job. Grouping by lane keeps one
+    fetcher/spec per job; chunking keeps each job inside the fetcher's
+    30-request budget.
+    """
+    grouped = {}
+    for target in selected:
+        grouped.setdefault(target["lane"], []).append(target)
+    jobs = []
+    for lane in LANES:
+        targets = grouped.get(lane, [])
+        for start in range(0, len(targets), MAX_RECORDS_PER_DEEP_JOB):
+            jobs.append((lane, targets[start:start + MAX_RECORDS_PER_DEEP_JOB]))
+    return jobs
 
 
 def run_batch(loop, parent_run=None):
@@ -112,19 +164,23 @@ def run_batch(loop, parent_run=None):
     completed = 0
     requests_used = 0
     try:
-        for target in selected:
+        for lane, chunk in _lane_groups(selected):
             if loop.flag.interrupt_requested or requests_used >= config["batch_requests"]:
                 break
+            record_ids = [target["id"] for target in chunk]
             request = JobRequest(
                 job_id="auto-deep-" + uuid.uuid4().hex[:16],
-                job_kind=target["lane"],
+                job_kind=lane,
                 requested_by="automatic-public-deep",
                 sources=({"source_key": "egp_home", "family": "TBMT"},),
-                scope={"record_ids": [target["id"]], "refresh_expired": config.get("refresh_expired", False)},
+                scope={"record_ids": record_ids, "refresh_expired": config.get("refresh_expired", False)},
                 request_limits={
-                    "max_requests": min(4, config["batch_requests"] - requests_used),
+                    # Two requests of headroom per record (retries) inside the
+                    # fetcher's 30-request budget; the shared batch budget
+                    # still caps the whole scan.
+                    "max_requests": min(2 * len(chunk), config["batch_requests"] - requests_used),
                     "max_attempts": 4,
-                    "max_seconds": 90,
+                    "max_seconds": min(900, 120 + 30 * len(chunk)),
                     "pacing_seconds": 3,
                 },
                 created_at=datetime.now(UTC).isoformat(),
@@ -137,8 +193,8 @@ def run_batch(loop, parent_run=None):
             loop._set_progress(
                 {
                     "family": "TBMT",
-                    "lane": target["lane"],
-                    "natural_key": target["natural_key"],
+                    "lane": lane,
+                    "record_ids": record_ids,
                     "automatic": True,
                     "completed_in_batch": completed,
                     "batch_size": len(selected),
@@ -151,9 +207,13 @@ def run_batch(loop, parent_run=None):
                 from santhau_studio.storage.public_deep import task_state
 
                 status, detail = "FAILED", {"error": scrub_exception(exc)}
-                task_state(
-                    loop._writer.conn, target["id"], target["lane"], "FAILED", error=detail["error"]
-                )
+                # A dispatch-level failure is not evidence about any one
+                # package: back it off as transient, never quarantine it.
+                for target in chunk:
+                    task_state(
+                        loop._writer.conn, target["id"], lane, "FAILED",
+                        error=detail["error"], failure_kind="TRANSIENT",
+                    )
             loop._writer.finish_run(run_id, status)
             loop._writer.conn.execute(
                 "INSERT INTO run_tasks(run_id,task_kind,status,detail_json) VALUES(?,?,?,?)",
@@ -164,8 +224,8 @@ def run_batch(loop, parent_run=None):
                     json.dumps({**detail, "automatic": True, "parent_run": parent_run}),
                 ),
             )
-            completed += 1
-            requests_used += max(0, detail.get("requests_used", 1))
+            completed += len(chunk)
+            requests_used += max(0, detail.get("requests_used", len(chunk)))
     finally:
         loop._set_phase(previous_phase)
         loop.progress = previous_progress

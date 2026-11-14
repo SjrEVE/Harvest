@@ -211,7 +211,7 @@ wheels = [
 
 [[package]]
 name = "santhau-data-studio"
-version = "0.0.1rc3.post9"
+version = "0.0.1rc3.post10"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

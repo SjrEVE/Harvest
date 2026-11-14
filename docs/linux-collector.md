@@ -4,9 +4,15 @@ Bản Linux chỉ thu thập và lưu dữ liệu: không GUI, Qt, dashboard, t�
 Kho SQLite, dữ liệu gốc, lịch sử và bằng chứng vẫn dùng cùng hợp đồng dữ liệu với Windows.
 Không tạo hoặc rebuild `serving.sqlite`.
 
-Bản cập nhật **0.0.1-RC3-3** (`.deb`: `0.0.1~rc3-3`) dành cho Linode chạy
-Ubuntu 22.04/24.04 x86-64 (Intel/AMD). Tự áp dụng migration v2 để thêm checkpoint
-chi tiết, giữ nguyên dữ liệu v1 và tiến độ đã có. Bản mới bổ sung:
+Bản cập nhật **0.0.1-RC3-10** (`.deb`: `0.0.1~rc3-10`) dành cho Linode chạy
+Ubuntu 22.04/24.04 x86-64 (Intel/AMD). Tự áp dụng migration v7 để mở rộng enum role
+của `money_amounts` cho parser v4, giữ nguyên dữ liệu và tiến độ đã có. Bản mới bổ sung:
+
+- Parser v4 trích giá vào `money_amounts` (REOFFER, bid, priceInit/priceStep, giá lot HSMT);
+  `replay-deep` chạy lại từ raw đã lưu (0 request mạng) để backfill giá cho capture cũ.
+- HSMT form 1958/1959 thành STRUCTURED sau canary toàn bộ 393 payload.
+- Deep retry: cooldown leo thang 1h→6h→24h→72h, quarantine sau lỗi thứ 5; batching gom
+  task theo lane (tối đa 10 record/job).
 
 - Thu thập HSMT/chi tiết/chào giá công khai cho TBMT/CGTTRG, ghi raw, lịch sử,
   lô/hàng hóa, người chào giá, tham chiếu tài liệu và liên kết theo mã nguồn.
@@ -27,7 +33,7 @@ Gói x86-64 nhắm Ubuntu 22.04 trở lên (glibc từ 2.35). Phạm vi đã ki�
 
 ```sh
 sha256sum -c SHA256SUMS
-sudo apt install ./santhau-collector_0.0.1~rc3-3_amd64.deb
+sudo apt install ./santhau-collector_0.0.1~rc3-10_amd64.deb
 santhau-collector --version
 ```
 
@@ -37,8 +43,8 @@ Cài đặt không tự chạy dịch vụ và không gọi E-GP. Không cần c
 Bản tar.gz có thể cài bằng tài khoản thường:
 
 ```sh
-tar -xzf santhau-collector-0.0.1-RC3-3-linux-x86_64.tar.gz
-cd santhau-collector-0.0.1-RC3-3-linux-x86_64
+tar -xzf santhau-collector-0.0.1-RC3-10-linux-x86_64.tar.gz
+cd santhau-collector-0.0.1-RC3-10-linux-x86_64
 sh install.sh "$HOME/.local/opt/santhau-collector"
 "$HOME/.local/opt/santhau-collector/santhau-collector" --version
 ```
@@ -196,7 +202,7 @@ Giữ nguyên Data Root, dừng dịch vụ an toàn rồi cài đè gói mới.
 ```sh
 systemctl --user stop santhau-collector.service
 santhau-collector status --data-root "$HOME/SanThauData"
-sudo apt install ./santhau-collector_0.0.1~rc3-3_amd64.deb
+sudo apt install ./santhau-collector_0.0.1~rc3-10_amd64.deb
 systemctl --user daemon-reload
 santhau-collector deep-config --enable --batch-requests 30 --data-root "$HOME/SanThauData"
 systemctl --user start santhau-collector.service

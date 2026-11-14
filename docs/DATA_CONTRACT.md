@@ -253,6 +253,35 @@ Cùng khuôn mẫu cho `goods_rows.quantity_presence` và `contractor_membership
 Nhiều nhà thầu / nhiều giá / multi-currency / thiếu tax basis → mỗi thứ một row, **không tự chọn phần
 tử đầu**.
 
+### 7.1 Deep-lane price roles (parser v4, migration 007)
+
+Ngoài 7 role gốc (`PACKAGE_VALUE`, `BID_PRICE`, `WIN_PRICE`, `UNIT_PRICE`,
+`CONTRACT_VALUE`, `BUDGET`, `ADJUSTMENT`), parser v4 ghi thêm:
+
+| Role | Owner | Nguồn |
+|---|---|---|
+| `REOFFER_PRICE` / `REOFFER_PRICE_FINAL` | `OFFER` (contractor membership) | `contractorsResult[].reofferPrice` / `reofferPriceFinal` |
+| `BID_PRICE` / `BID_FINAL_PRICE` | `PACKAGE` | `bidoListContractorReofferPassedDTOList[].bidPrice` / `bidFinalPrice` (tổng gói, lặp lại giống nhau trên mọi dòng lot) |
+| `PACKAGE_PRICE` | `PACKAGE` | `bidDetail.bidPrice` + `bidPriceUnit` / `bidPriceDetail[].moneyType` |
+| `PACKAGE_PRICE_INIT` / `PACKAGE_PRICE_STEP` | `PACKAGE` | top-level `priceInit` / `priceStep` |
+| `LOT_PRICE` / `LOT_ESTIMATE_PRICE` / `LOT_PLAN_PRICE` | `LOT` | dòng lot HSMT: `lotPrice` / `lotEstimatePrice` / `pricePlan` |
+| `UNIT_PRICE` | `GOODS_ROW` | `pricePlan` trên dòng hàng (hàng thuốc form 1960) |
+
+`currency_code` chỉ lấy từ nguồn tự khai (`bidPriceUnit`, `bidPriceDetail[].moneyType`).
+Giá lot/hàng không có currency riêng trong payload HSMT: chúng được ghi `VND` vì
+`bidPrice` (khai `VND` trên 1.679/1.679 capture REOFFER) bằng tổng các `lotPrice`
+cùng gói — cùng một đồng tiền theo số học trong gói, không phải đoán. `tax_basis`
+luôn `UNKNOWN`: nguồn không nói giá đã gồm thuế hay chưa.
+
+**Grain:** UNIQUE `(owner, role, currency, tax)` chỉ chứa một giá mỗi
+(owner, role). Giá chào lại là theo từng (nhà thầu, lot): khi một nhà thầu có
+nhiều lot với giá khác nhau (1.395/5.303 nhà thầu trên kho thật), parser **không**
+ghi row nào cho role đó mà ghi warning `OFFEROR_<code>_<ROLE>_VARIES_BY_LOT`
+— các giá từng lot vẫn nằm trong `contractor_memberships.provenance_json`
+(`source_rows`). Ghi một giá đại diện sẽ là tự chọn phần tử đầu, vi phạm §10.4.
+Muốn chứa đủ giá từng (nhà thầu, lot) thì `money_amounts` cần thêm grain
+(phạm vi/scope) — quyết định schema riêng, chưa làm ở v4.
+
 ---
 
 ## 8. Bảng tối thiểu U-3

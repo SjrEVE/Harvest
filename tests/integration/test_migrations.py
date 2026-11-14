@@ -22,8 +22,8 @@ REPO_ROOT = SCHEMA_PATH.parents[2]
 def test_bootstrap_records_the_frozen_contract_as_version_one(tmp_path: Path) -> None:
     conn = connect(tmp_path / "warehouse.sqlite", create_schema=True)
     state = status(conn)
-    assert state.current_version == 6
-    assert state.applied == ((1, "g0_b_contract"), (2, "public_deep_checkpoints"), (3, "attempt_telemetry"), (4, "deep_parser_metadata"), (5, "scoped_maintenance"), (6, "missing_only_policy"))
+    assert state.current_version == 7
+    assert state.applied == ((1, "g0_b_contract"), (2, "public_deep_checkpoints"), (3, "attempt_telemetry"), (4, "deep_parser_metadata"), (5, "scoped_maintenance"), (6, "missing_only_policy"), (7, "money_roles_parser_v4"))
     assert state.up_to_date
     recorded = conn.execute(
         "SELECT name, checksum FROM software_migrations WHERE version=1"
@@ -37,7 +37,7 @@ def test_bootstrap_records_the_frozen_contract_as_version_one(tmp_path: Path) ->
 def test_writer_open_gives_a_migrated_database(tmp_path: Path) -> None:
     writer = WarehouseWriter.open(tmp_path, create_schema=True, role="backfill")
     try:
-        assert status(writer.conn).current_version == 6
+        assert status(writer.conn).current_version == 7
     finally:
         writer.close()
 
@@ -71,7 +71,7 @@ def test_a_database_with_no_migration_row_reports_pending(tmp_path: Path) -> Non
     bare.execute("CREATE TABLE unrelated (x)")
     state = status(bare)
     assert state.current_version == 0
-    assert state.pending == ((1, "g0_b_contract"), (2, "public_deep_checkpoints"), (3, "attempt_telemetry"), (4, "deep_parser_metadata"), (5, "scoped_maintenance"), (6, "missing_only_policy"))
+    assert state.pending == ((1, "g0_b_contract"), (2, "public_deep_checkpoints"), (3, "attempt_telemetry"), (4, "deep_parser_metadata"), (5, "scoped_maintenance"), (6, "missing_only_policy"), (7, "money_roles_parser_v4"))
     assert not state.up_to_date
     bare.close()
 
@@ -85,6 +85,7 @@ def test_migration_list_is_the_frozen_contract_only() -> None:
         (4, "deep_parser_metadata", Path("docs/ddl/004_deep_parser_metadata.sql")),
         (5, "scoped_maintenance", Path("docs/ddl/005_scoped_maintenance.sql")),
         (6, "missing_only_policy", Path("docs/ddl/006_missing_only_policy.sql")),
+        (7, "money_roles_parser_v4", Path("docs/ddl/007_money_roles_parser_v4.sql")),
     ) == MIGRATIONS
 
 
@@ -98,7 +99,7 @@ def test_public_deep_upgrade_preserves_existing_records(tmp_path, monkeypatch):
         writer.close()
     writer = WarehouseWriter.open(tmp_path, create_schema=True)
     try:
-        assert status(writer.conn).current_version == 6
+        assert status(writer.conn).current_version == 7
         assert [
             tuple(r) for r in writer.conn.execute("SELECT * FROM source_records ORDER BY id")
         ] == before
@@ -106,6 +107,50 @@ def test_public_deep_upgrade_preserves_existing_records(tmp_path, monkeypatch):
         assert writer.conn.execute("PRAGMA foreign_key_check").fetchall() == []
     finally:
         writer.close()
+
+
+def test_every_migration_ddl_is_packaged_in_the_linux_build() -> None:
+    """RC3-10 lesson: migration 007 was registered but missing from the .deb.
+
+    tools/build_linux.py lists DDL data files by hand for Nuitka. A migration
+    whose SQL is not packaged fails at runtime on the deployed machine, while
+    every test (running from source) stays green. Every MIGRATIONS entry must
+    appear as an --include-data-files line in the build script.
+    """
+    build_script = (REPO_ROOT / "tools" / "build_linux.py").read_text(encoding="utf-8")
+    missing = [
+        rel.as_posix()
+        for _, _, rel in MIGRATIONS
+        if f"--include-data-files={rel.as_posix()}=" not in build_script
+    ]
+    assert not missing, f"migration DDL not packaged in the Linux build: {missing}"
+
+
+def test_migration_seven_widens_money_roles(tmp_path: Path) -> None:
+    """RC3-10: migration 007 rebuilds money_amounts so parser-v4 roles insert.
+
+    The v1 role CHECK only allowed PACKAGE_VALUE/BID_PRICE/WIN_PRICE/UNIT_PRICE/
+    CONTRACT_VALUE/BUDGET/ADJUSTMENT. A parser-v4 role (REOFFER_PRICE) must insert
+    after bootstrap; a v1 role must still insert too.
+    """
+    conn = connect(tmp_path / "warehouse.sqlite", create_schema=True)
+    try:
+        assert status(conn).current_version == 7
+        for role in ("REOFFER_PRICE", "BID_PRICE"):
+            conn.execute(
+                "INSERT INTO money_amounts (owner_kind, owner_id, role, presence_state,"
+                " value, value_raw, currency, currency_code, tax_basis,"
+                " provenance_json, observed_at_utc)"
+                " VALUES ('PACKAGE', 1, ?, 'KNOWN', 123, '123', 'KNOWN', 'VND',"
+                " 'UNKNOWN', '{\"lane\":\"REOFFER\"}', '2026-11-08T00:00:00Z')",
+                (role,),
+            )
+        rows = conn.execute(
+            "SELECT role FROM money_amounts ORDER BY role"
+        ).fetchall()
+        assert [r[0] for r in rows] == ["BID_PRICE", "REOFFER_PRICE"]
+    finally:
+        conn.close()
 
 
 def test_a_failed_migration_leaves_no_schema_and_no_version(tmp_path: Path, monkeypatch) -> None:

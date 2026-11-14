@@ -116,6 +116,30 @@ class ParsedMember:
 
 
 @dataclass(frozen=True)
+class ParsedMoneyAmount:
+    """One price carried into ``money_amounts`` (parser v4).
+
+    ``owner_ref`` is resolved to a row id by the writer: "" for PACKAGE (the record
+    itself), the lot_no_raw for LOT, the member object sha for OFFER, the parser
+    goods row ordinal for GOODS_ROW. ``currency_code`` is only ever a code the
+    payload itself declares (bidPriceUnit / bidPriceDetail moneyType) or the
+    system-wide VND attested by the sibling REOFFER payload — never a guess:
+    when no currency is attested the row is UNPARSABLE with the raw text kept.
+    """
+
+    owner_kind: str
+    owner_ref: str
+    role: str
+    presence_state: str
+    value: float | None
+    value_raw: str | None
+    currency: str
+    currency_code: str | None
+    tax_basis: str
+    source_path: str
+
+
+@dataclass(frozen=True)
 class ParsedDetail:
     source_version_json: str
     hsmt: dict[str, Any]
@@ -128,6 +152,7 @@ class ParsedDetail:
     warnings: tuple[str, ...] = ()
     capability: str = "UNKNOWN"
     parser_version: int = 1
+    money: tuple[ParsedMoneyAmount, ...] = ()
 
 
 def _scalar(value: Any) -> Any:

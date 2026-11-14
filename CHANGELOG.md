@@ -3,6 +3,31 @@
 Chỉ ghi thay đổi quan trọng tới hợp đồng kỹ thuật. Spec nền: **Master Spec Consolidated v1.3**
 (không đổi; mọi mục dưới là cụ thể hoá hoặc sửa đổi cần owner phê chuẩn).
 
+## RC3-10 — Parser v4, deep retry, HSMT 1958/1959 (08/11/2026)
+
+- **Parser v4** (`PARSER_VERSION` 3→4): trích giá vào `money_amounts` từ raw đã lưu — REOFFER
+  `reofferPrice`/`reofferPriceFinal`, `bidPrice`/`bidFinalPrice`, `priceInit`/`priceStep`; HSMT
+  `lotPrice`/`lotEstimatePrice` theo lot. Tiền tệ VND, `tax_basis` UNKNOWN (nguồn không nói đã
+  gồm thuế hay chưa). **Migration 007** mở rộng enum role của `money_amounts` (9 role mới:
+  REOFFER_PRICE, REOFFER_PRICE_FINAL, BID_FINAL_PRICE, PACKAGE_PRICE, PACKAGE_PRICE_INIT,
+  PACKAGE_PRICE_STEP, LOT_PRICE, LOT_ESTIMATE_PRICE, LOT_PLAN_PRICE); file DDL v1 không sửa.
+- **replay-deep mở rộng**: nhắm mọi capture còn parser cũ (cả 3 lane HSMT/DETAIL/REOFFER), không
+  chỉ HSMT PARSE_ERROR — chạy lại từ raw đã lưu, **0 request mạng**. Kỳ vọng ~20.4k money rows
+  trên Linode sau replay.
+- **HSMT form 1958/1959** đăng ký `STRUCTURED_CODES` sau canary toàn bộ 393 payload
+  UNVERIFIED_FORM (1958: 296/296 form, 3,596/3,596 dòng; 1959: 96/96 form, 1,971 dòng hàng +
+  931 dòng lot) — 392/393 payload trở thành STRUCTURED sau replay; 1 form 3150 còn lại
+  (qty không tên, ngoài phạm vi).
+- **Deep retry (P1-2)**: task lỗi liên tiếp được cooldown leo thang 1h→6h→24h→72h, quarantine sau
+  lỗi thứ 5 (~4.3 ngày); chỉ mở lại khi listing đổi version, parser/adapter bump, hoặc lệnh tay
+  `deep-retry`. TRANSIENT (timeout/429/5xx) không bao giờ bị quarantine. Batching: gom task theo
+  lane, tối đa 10 record/job, ≤3 job mỗi lần quét (trước đây tới 30 job).
+- **lots.goods_count**: điều tra xong — KHÔNG phải bug (SUM `goods_count` khớp `goods_rows` có
+  `lot_id`; ~64% gói thầu không có lot header trong dữ liệu nguồn). Không đổi code.
+- **Không đổi**: P2 tải tài liệu (document download) chưa làm — cần canary endpoint live, báo cáo riêng.
+- **Kiểm chứng**: CI pytest subset 602 passed, 4 skipped; self-test-deep PASS (money_amounts: 22
+  trên store scratch).
+
 ## G0-B — Contract closure (03/11/2026)
 
 ### Quyết định owner đã triển khai
