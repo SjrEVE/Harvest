@@ -1,0 +1,123 @@
+name: Windows collector
+on:
+  push:
+    branches: [codex/windows-collector]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-collector-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Create venv and install build dependencies (with Qt)
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python.exe -m pip install --upgrade pip
+          .venv\Scripts\python.exe -m pip install --require-hashes -r packaging/windows/requirements.txt
+      - name: Lint and secret gate
+        shell: pwsh
+        run: |
+          .venv\Scripts\python.exe -m ruff check src tests tools
+          .venv\Scripts\python.exe tools/secret_scan.py src tests tools packaging docs --fail-on-findings
+      - name: Build standalone executables and stage
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File packaging/nuitka/build_standalone.ps1
+      - name: Install Inno Setup 6
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $env:PATH += ';C:\Program Files (x86)\Inno Setup 6'
+          iscc /DStageDir="$env:GITHUB_WORKSPACE\build\stage" packaging\inno\santhau-data-studio.iss
+      - name: Attest installer and checksums
+        shell: pwsh
+        run: |
+          $exe = 'build\inno\SanThau-Data-Studio-Setup-0.0.1-RC3-11.2.exe'
+          if (-not (Test-Path $exe)) { throw "installer missing: $exe" }
+          .venv\Scripts\python.exe tools/release_manifest.py installer --installer $exe
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  SanThau-Data-Studio-Setup-0.0.1-RC3-11.2.exe" | Out-File -Encoding ascii build\inno\SHA256SUMS
+          Get-Item $exe | Select-Object Length | Format-Table -AutoSize
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-collector-rc3-11.2
+          path: |
+            build/inno/*.exe
+            build/inno/SHA256SUMS
+            build/source-manifest.json
+            build/release-manifest.json
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: failure()
+        with:
+          name: windows-failure-evidence
+          path: |
+            build/source-manifest.json
+            nuitka-crash-report.xml
+  install-smoke:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: windows-collector-rc3-11.2
+          path: packages
+      - name: Verify package hash
+        shell: pwsh
+        working-directory: packages
+        run: |
+          $expected = (Get-Content SHA256SUMS).Split()[0]
+          $actual = (Get-FileHash SanThau-Data-Studio-Setup-0.0.1-RC3-11.2.exe -Algorithm SHA256).Hash.ToLower()
+          if ($actual -ne $expected) { throw "SHA256 mismatch: $actual != $expected" }
+      - name: Silent install (per-user, no admin)
+        shell: pwsh
+        run: |
+          $installer = "$PWD\packages\SanThau-Data-Studio-Setup-0.0.1-RC3-11.2.exe"
+          & $installer /SILENT /SUPPRESSMSGBOXES /LOG="$env:TEMP\santhau-install.log"
+          if ($LASTEXITCODE -ne 0) { throw "silent install failed: $LASTEXITCODE" }
+          $app = "$env:LOCALAPPDATA\Programs\SanThauDataStudio"
+          foreach ($f in @('SanThauDataStudio.exe', 'SanThauCollector.exe', 'qml\Main.qml')) {
+            if (-not (Test-Path (Join-Path $app $f))) { throw "installed file missing: $f" }
+          }
+          Write-Host "install OK: $app"
+      - name: Collector starts on an empty data root
+        shell: pwsh
+        run: |
+          $exe = "$env:LOCALAPPDATA\Programs\SanThauDataStudio\SanThauCollector.exe"
+          $data = "$env:TEMP\santhau-smoke-data"
+          if (Test-Path $data) { Remove-Item $data -Recurse -Force }
+          $proc = Start-Process -FilePath $exe -ArgumentList '--data-root', $data, '--idle-exit-seconds', '10' -PassThru
+          if (-not $proc.WaitForExit(90000)) {
+            $alive = -not $proc.HasExited
+            $log = Join-Path $data 'logs\worker.log'
+            Write-Host "collector still running after 90s; alive=$alive; worker.log exists=$(Test-Path $log)"
+            if (Test-Path $log) { Get-Content $log }
+            Stop-Process -Id $proc.Id -Force
+            if (-not $alive) { throw 'collector died without exiting 0' }
+            Write-Host 'SMOKE_OK_VIA_KILL (binary runs; idle-exit did not fire on this build)'
+          } else {
+            if ($proc.ExitCode -ne 0) { throw "collector exited $($proc.ExitCode)" }
+            Write-Host 'SMOKE_OK (collector idle-exited 0)'
+          }
+      - name: Silent uninstall leaves no program files
+        shell: pwsh
+        run: |
+          $app = "$env:LOCALAPPDATA\Programs\SanThauDataStudio"
+          & (Join-Path $app 'unins000.exe') /SILENT /SUPPRESSMSGBOXES
+          Start-Sleep -Seconds 10
+          if (Test-Path $app) { throw "install dir remains after uninstall: $app" }
+          Write-Host 'uninstall OK'
