@@ -80,13 +80,13 @@ jobs:
         shell: pwsh
         working-directory: packages
         run: |
-          $expected = (Get-Content SHA256SUMS).Split()[0]
-          $actual = (Get-FileHash SanThau-Data-Studio-Setup-0.0.1-RC3-11.2.exe -Algorithm SHA256).Hash.ToLower()
+          $expected = (Get-Content inno/SHA256SUMS).Split()[0]
+          $actual = (Get-FileHash inno/SanThau-Data-Studio-Setup-0.0.1-RC3-11.2.exe -Algorithm SHA256).Hash.ToLower()
           if ($actual -ne $expected) { throw "SHA256 mismatch: $actual != $expected" }
       - name: Silent install (per-user, no admin)
         shell: pwsh
         run: |
-          $installer = "$PWD\packages\SanThau-Data-Studio-Setup-0.0.1-RC3-11.2.exe"
+          $installer = "$PWD\packages\inno\SanThau-Data-Studio-Setup-0.0.1-RC3-11.2.exe"
           & $installer /SILENT /SUPPRESSMSGBOXES /LOG="$env:TEMP\santhau-install.log"
           if ($LASTEXITCODE -ne 0) { throw "silent install failed: $LASTEXITCODE" }
           $app = "$env:LOCALAPPDATA\Programs\SanThauDataStudio"
