@@ -1,0 +1,33 @@
+{
+ "bideContractorInputResultDTO": {
+  "id": "90ab3310-138a-41ca-9236-0a7b58416cb9",
+  "notifyNo": "IB2600591637",
+  "notifyVersion": "00",
+  "resultVersion": "00",
+  "bidPriceUnit": "VND",
+  "lotResultDTO": [
+   {
+    "id": "892fe1eb-fa70-4ed4-b780-9a9f14adb1c2",
+    "lotNo": "BP2600895095",
+    "lotName": "Thuê hệ thống trung tâm giám sát, điều hành thông minh đặc khu Vân Đồn",
+    "lotPrice": 2376000000,
+    "lotEstimatePrice": null,
+    "winningCode": "vn0100684378",
+    "goodsList": "{\"listTG\":[{\"serviceCategory\":\"Cung cấp dịch vụ Thuê hệ thống trung tâm giám sát, điều hành thông minh đặc khu Vân Đồn\",\"serviceDescription\":\"Theo quy định tại Chương V\",\"qty\":1,\"place\":\"Phòng Văn hóa – Xã hội đặc khu Vân Đồn\",\"uom\":\"Gói\",\"bidPrice\":2313360000,\"intoMoney\":2313360000,\"orgCode\":\"vn0100684378\",\"pos\":\"1\",\"originQty\":1,\"id\":10101097229781044,\"parent\":0,\"valueConstruction\":\"\",\"insurancePeriod\":\"\",\"insurancePremiumRate\":\"\",\"insurancePremium\":\"\",\"estimateDate\":\"36 tháng kể từ ngày dịch vụ chính thức đi vào hoạt động\"}],\"listKQDR\":[],\"listTLPT\":[],\"listDG\":[],\"listTTG\":[]}",
+    "contractorList": [
+     {
+      "orgCode": "vn0100684378",
+      "bidWiningPrice": 2313360000,
+      "bidResult": 1,
+      "adjustPrice": 2313360000,
+      "lotOpenPrice": 2313360000,
+      "lotFinalPrice": 2313360000,
+      "discountPercent": null
+     }
+    ]
+   }
+  ],
+  "lotResultItems": []
+ },
+ "bidpPlanDetailDTO": null
+}

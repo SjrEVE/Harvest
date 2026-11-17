@@ -1,0 +1,26 @@
+{
+  "bidoInvBiddingDTO": [
+    {
+      "bidForm": "DTRR",
+      "chapterCode": "BD_CONTRACT_CONDITION",
+      "formCode": "BD_CONTRACT_CONDITION",
+      "id": "b7b28fac-d2b0-441e-bbec-ab80fac77fde",
+      "lastModifiedDate": "2026-11-16T23:23:37.565",
+      "notifyId": "6a169ad4-ff93-44d8-8a42-56c5d3f8f208",
+      "notifyNo": "IB2600612345",
+      "notifyVersion": "00",
+      "processApply": null
+    },
+    {
+      "bidForm": "DTRR",
+      "chapterCode": "C4",
+      "formCode": "BD.MT.02.1120",
+      "id": "f98b67e5-3a68-4aa6-94a0-9e624bcf8d0f",
+      "lastModifiedDate": "2026-11-16T23:13:11.819",
+      "notifyId": "6a169ad4-ff93-44d8-8a42-56c5d3f8f208",
+      "notifyNo": "IB2600612345",
+      "notifyVersion": "00",
+      "processApply": null
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+ "bideContractorInputResultDTO": {
+  "id": "0a543356-ef0a-4008-a8cd-7ee47e2774dd",
+  "notifyNo": "IB2600356660",
+  "notifyVersion": "00",
+  "resultVersion": "00",
+  "bidPriceUnit": "VND",
+  "lotResultDTO": [
+   {
+    "id": "edfe0e29-d740-49b4-9127-3123aaee04b2",
+    "lotNo": "BP2600397229",
+    "lotName": "Thu gom, vận chuyển và xử lý bùn năm 2026 - 2027",
+    "lotPrice": 51414000000,
+    "lotEstimatePrice": null,
+    "winningCode": "vn0302581625",
+    "goodsList": "{\"listTG\":[{\"serviceCategory\":\"Thu gom, vận chuyển và xử lý bùn năm 2026-2027\",\"serviceDescription\":\"Theo quy định tại Chương V\",\"qty\":57000,\"place\":\"Nhà máy nước Thủ Đức, số 02 Lê Văn Chí, phường Linh Xuân, Thành phố Hồ Chí Minh\",\"uom\":\"m3\",\"bidPrice\":892100,\"intoMoney\":50849700000,\"orgCode\":\"vn0302581625\",\"pos\":\"1\",\"originQty\":57000,\"id\":8840856962150493,\"parent\":0,\"valueConstruction\":\"\",\"insurancePeriod\":\"\",\"insurancePremiumRate\":\"\",\"insurancePremium\":\"\",\"estimateDate\":\"360\"}],\"listKQDR\":[],\"listTLPT\":[],\"listDG\":[],\"listTTG\":[]}",
+    "contractorList": [
+     {
+      "orgCode": "vn3600890938",
+      "bidWiningPrice": null,
+      "bidResult": 0,
+      "adjustPrice": 48351276000,
+      "lotOpenPrice": 48351276000,
+      "lotFinalPrice": 48351276000,
+      "discountPercent": null
+     },
+     {
+      "orgCode": "vn0302408148",
+      "bidWiningPrice": null,
+      "bidResult": 0,
+      "adjustPrice": 39485952000,
+      "lotOpenPrice": 51414000000,
+      "lotFinalPrice": 39485952000,
+      "discountPercent": 23.2
+     },
+     {
+      "orgCode": "vn3800501667",
+      "bidWiningPrice": null,
+      "bidResult": 0,
+      "adjustPrice": 51313965000,
+      "lotOpenPrice": 51313965000,
+      "lotFinalPrice": 51313965000,
+      "discountPercent": 0
+     },
+     {
+      "orgCode": "vn0302581625",
+      "bidWiningPrice": 47310000000,
+      "bidResult": 1,
+      "adjustPrice": 50849700000,
+      "lotOpenPrice": 50849700000,
+      "lotFinalPrice": 50849700000,
+      "discountPercent": null
+     }
+    ]
+   }
+  ],
+  "lotResultItems": []
+ },
+ "bidpPlanDetailDTO": null
+}

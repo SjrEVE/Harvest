@@ -3,7 +3,7 @@
 import json
 from dataclasses import dataclass
 
-STRUCTURED_CODES = {"BD.DT.02." + code for code in ("1957", "1960", "2034", "2035", "2036", "2037")}
+STRUCTURED_CODES = {"BD.DT.02." + code for code in ("1957", "1958", "1959", "1960", "2034", "2035", "2036", "2037")}
 AUXILIARY_CODES = {"BD.DT.02.2102"}
 DOCUMENT_CODES = {"BD.DT.02.3152", "BD.DT.02.3153"}
 

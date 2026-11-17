@@ -90,8 +90,8 @@ def test_scope_config_and_report_keep_data_roots_and_date_ranges_separate(tmp_pa
     configure_scope(linode, first="2026-09-01", last="2026-09-30")
     a, b = coverage_report(box), coverage_report(linode)
     assert a["scope"]["date_from"] == "2025-07-01" and b["scope"]["date_from"] == "2026-09-01"
-    assert a["summary"]["day_family_windows"] == 368 and b["summary"]["day_family_windows"] == 180
-    assert a["summary"]["never_attempted"] == 368 and b["summary"]["never_attempted"] == 180
+    assert a["summary"]["day_family_windows"] == 368 and b["summary"]["day_family_windows"] == 210
+    assert a["summary"]["never_attempted"] == 368 and b["summary"]["never_attempted"] == 210
     assert not a["summary"]["proved"] and not b["summary"]["proved"]
     assert "2026-11-03" not in json.dumps(a["windows"])
 

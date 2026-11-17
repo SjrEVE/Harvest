@@ -229,7 +229,7 @@ def test_weekly_transient_fault_does_not_starve_other_families(tmp_path):
             writer.conn.execute(
                 "SELECT COUNT(DISTINCT family) FROM coverage_intervals WHERE status='COMPLETE'"
             ).fetchone()[0]
-            == 5
+            == 6
         )
         assert (
             writer.conn.execute(

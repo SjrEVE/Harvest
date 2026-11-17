@@ -10,7 +10,7 @@ var words = {
     PUBLIC_CGTTRG:"Nguồn công khai · chỉ CGTTRG",FETCHED:"Đã lấy",SOURCE_EMPTY:"Đã lấy · chưa có mục bổ sung",
     PARSE_ERROR:"Lỗi phân tích dữ liệu",REFERENCE_ONLY:"Chỉ có tham chiếu file",DOWNLOADED:"Đã tải và kiểm tra file",
     TESTED_OFFLINE:"Đã kiểm tra bằng dữ liệu giả lập",
-    ALL:"Tất cả 6 loại hồ sơ",
+    ALL:"Tất cả 7 loại hồ sơ",
     BACKFILL:"Thu thập theo khoảng ngày", INCREMENTAL:"Cập nhật tự động đến hiện tại", RECONCILE:"Đối chiếu lại dữ liệu",
     INDEX:"Lập chỉ mục", DETAIL:"Chi tiết hồ sơ", HSMT:"Hồ sơ mời thầu", REOFFER:"Thông tin chào giá",
     KQLCNT_FULL:"Kết quả đầy đủ", BOQ:"Bảng khối lượng", OTHER:"Khác", VERIFY:"Kiểm tra", IMPORT:"Nhập dữ liệu",
@@ -148,7 +148,7 @@ function vietnamDay(offset) {
 function collectionResult(value) {
     var jobs = value.jobs || [], blocked = value.blocked || [];
     var lines = [];
-    if (jobs.length && value.cadence === "WEEK") lines.push("Đã xếp hàng thu thập theo tuần, đủ 6 loại mỗi tuần. Ngày đã có bằng chứng đầy đủ sẽ được bỏ qua.");
+    if (jobs.length && value.cadence === "WEEK") lines.push("Đã xếp hàng thu thập theo tuần, đủ 7 loại mỗi tuần. Ngày đã có bằng chứng đầy đủ sẽ được bỏ qua.");
     else if (jobs.length) lines.push("Đã xếp hàng " + jobs.length + "/" + (value.requested_families || jobs.length)
         + " loại: " + jobs.map(function(j) {return family(j.family)}).join(", ") + ".");
     if (value.worker_started) lines.push("Bộ thu thập xử lý lần lượt. Theo dõi tiến độ bên dưới.");

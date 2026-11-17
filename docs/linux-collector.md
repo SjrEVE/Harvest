@@ -4,9 +4,47 @@ Bản Linux chỉ thu thập và lưu dữ liệu: không GUI, Qt, dashboard, t�
 Kho SQLite, dữ liệu gốc, lịch sử và bằng chứng vẫn dùng cùng hợp đồng dữ liệu với Windows.
 Không tạo hoặc rebuild `serving.sqlite`.
 
-Bản cập nhật **0.0.1-RC3-3** (`.deb`: `0.0.1~rc3-3`) dành cho Linode chạy
-Ubuntu 22.04/24.04 x86-64 (Intel/AMD). Tự áp dụng migration v2 để thêm checkpoint
-chi tiết, giữ nguyên dữ liệu v1 và tiến độ đã có. Bản mới bổ sung:
+Bản cập nhật **0.0.1-RC3-12** (`.deb`: `0.0.1~rc3-12`) dành cho Linode chạy
+Ubuntu 22.04/24.04 x86-64 (Intel/AMD). Một bản duy nhất cào toàn bộ (xem dưới);
+không có migration mới — migration v8 và v9 của RC3-11 vẫn tự áp dụng như cũ,
+giữ nguyên dữ liệu và tiến độ đã có. Bản RC3-12 bổ sung:
+
+- Parser v7 sửa 58 task M1 `PARSE_ERROR` trong đợt quét bù đang chạy: `goodsList`
+  có thêm 3 dạng — (1) object danh sách dịch vụ (`listTG`/`listDG`/`listKQDR`/
+  `listTLPT`/`listTTG`, hàng có `serviceCategory`/`description` + `bidPrice`,
+  hàng `parent: 0` là tiêu đề nhóm, chỉ hàng lá mới là mặt hàng); (2)
+  `dsDvKqTg` (bảng giá theo từng nhà thầu + lot, chỉ lấy bảng của nhà thầu
+  trúng); (3) hàng thuốc (`tenThuoc`/`donGia`/`winContractors`, `donGia` là
+  đơn giá trúng). Tên mặt hàng nhận thêm `serviceCategory`/`description`/
+  `tenThuoc`/`lotName` (hàng dịch vụ trong `Table` không có key `name` vẫn
+  parse được). Entry `Table` lặp lại theo từng nhà thầu chỉ parse bảng của
+  nhà thầu trúng, bảng giống hệt nhau chỉ parse một lần — không đếm trùng.
+  Đơn giá trúng là đơn giá chào của nhà thầu trúng; tổng qty × đơn giá bằng
+  tổng chào thầu (`lotOpenPrice`), có thể thấp hơn `bidWiningPrice` sau hiệu
+  chỉnh. 58 record lỗi sẽ được parse lại từ raw đã lưu khi nâng cấp — parser
+  bump kích hoạt chọn lại task PARSE_ERROR, không cần gọi lại E-GP.
+
+- Lane M1: giá trúng thầu theo từng mặt hàng trong KQLCNT (`ITEM_WINNING_PRICE`,
+  `ITEM_BID_PRICE`) qua endpoint `expose/contractor-input-result/get`, 1 request
+  cho 1 record theo `inputResultId`; lệnh `deep-sweep --lane M1` để quét bù
+  (mặc định chỉ xem trước, `--execute` mới xếp hàng).
+- RC3-12 — một bản cào toàn bộ: thêm 7 lane chi tiết công khai (không cần
+  browser/session, token rỗng hoặc không token): YCBG (`get-request-quote`),
+  eShop (`eshop/shopping-result/detail-public-by-bidNo`), TBMT
+  (`lcnt_tbmt_ttc_ldt`), HSMT TBMT (`lcnt_tbmt_hsmt`, cần `processApply` từ
+  dòng danh sách), KHLCNT (`expose/lcnt/bid-po-bidp-plan-project-view/get-by-id`),
+  dự án (`expose/lcnt/bid-po-bidp-project-view/get-by-id`), hợp đồng
+  (`econsign/contract-info/detail-by-id-for-po`). eShop thành loại thứ 7
+  (`es-shopping-result`, khóa `bidNo`, phiên bản `orderNo`). Lệnh
+  `deep-sweep --lane ALL` xếp hàng cho mọi lane cùng lúc (một job cho mỗi cặp
+  lane × loại hồ sơ); `--lane DETAIL|HSMT|REOFFER` quét riêng từng lane.
+  Tài liệu đính kèm từng gói chỉ ghi tham chiếu (`REFERENCE_ONLY`) — file nhị
+  phân vẫn cần VNeGP Client Agent trên Windows, chưa tải được qua HTTP.
+- Parser v4 trích giá vào `money_amounts` (REOFFER, bid, priceInit/priceStep, giá lot HSMT);
+  `replay-deep` chạy lại từ raw đã lưu (0 request mạng) để backfill giá cho capture cũ.
+- HSMT form 1958/1959 thành STRUCTURED sau canary toàn bộ 393 payload.
+- Deep retry: cooldown leo thang 1h→6h→24h→72h, quarantine sau lỗi thứ 5; batching gom
+  task theo lane (tối đa 10 record/job).
 
 - Thu thập HSMT/chi tiết/chào giá công khai cho TBMT/CGTTRG, ghi raw, lịch sử,
   lô/hàng hóa, người chào giá, tham chiếu tài liệu và liên kết theo mã nguồn.
@@ -27,7 +65,7 @@ Gói x86-64 nhắm Ubuntu 22.04 trở lên (glibc từ 2.35). Phạm vi đã ki�
 
 ```sh
 sha256sum -c SHA256SUMS
-sudo apt install ./santhau-collector_0.0.1~rc3-3_amd64.deb
+sudo apt install ./santhau-collector_0.0.1~rc3-12_amd64.deb
 santhau-collector --version
 ```
 
@@ -37,8 +75,8 @@ Cài đặt không tự chạy dịch vụ và không gọi E-GP. Không cần c
 Bản tar.gz có thể cài bằng tài khoản thường:
 
 ```sh
-tar -xzf santhau-collector-0.0.1-RC3-3-linux-x86_64.tar.gz
-cd santhau-collector-0.0.1-RC3-3-linux-x86_64
+tar -xzf santhau-collector-0.0.1-RC3-12-linux-x86_64.tar.gz
+cd santhau-collector-0.0.1-RC3-12-linux-x86_64
 sh install.sh "$HOME/.local/opt/santhau-collector"
 "$HOME/.local/opt/santhau-collector/santhau-collector" --version
 ```
@@ -57,12 +95,12 @@ santhau-collector enqueue --from 2022-01-01 --to "$(TZ=Asia/Ho_Chi_Minh date +%F
 santhau-collector run
 ```
 
-Ngày cuối được tính trọn ngày theo giờ Việt Nam. Mặc định thu thập đủ sáu loại theo
-từng đợt 7 ngày từ ngày bắt đầu, ưu tiên đợt mới nhất rồi lùi dần về trước; đủ sáu loại
+Ngày cuối được tính trọn ngày theo giờ Việt Nam. Mặc định thu thập đủ bảy loại theo
+từng đợt 7 ngày từ ngày bắt đầu, ưu tiên đợt mới nhất rồi lùi dần về trước; đủ bảy loại
 trong tuần hiện tại mới lùi tuần. Đợt cuối có thể ngắn hơn 7 ngày. Ngày đã có bằng
 chứng đầy đủ sẽ được bỏ qua. Phần đang dở được giữ nhưng có thể cần đọc lại để đối chiếu.
 
-Nếu chọn đến hôm nay, lấy dữ liệu hiện có của hôm nay cho cả sáu loại rồi tiếp tục
+Nếu chọn đến hôm nay, lấy dữ liệu hiện có của hôm nay cho cả bảy loại rồi tiếp tục
 các ngày đã kết thúc. Hôm nay giữ trạng thái chưa đầy đủ vì còn phát sinh hồ sơ;
 chạy cập nhật hoặc chạy lại sau khi hết ngày để chốt bằng chứng. Tình trạng này
 không bị nhầm thành lỗi mạng hay nguồn chặn truy cập.
@@ -155,7 +193,7 @@ systemctl --user enable --now santhau-collector.service
 santhau-collector status --data-root "$HOME/SanThauData"
 ```
 
-Các lệnh trên xếp đầy đủ sáu loại từ 2022 đến hôm nay và bật chạy bù chi tiết;
+Các lệnh trên xếp đầy đủ bảy loại từ 2022 đến hôm nay và bật chạy bù chi tiết;
 việc gọi nguồn bắt đầu khi service chạy. Thay khoảng ngày trước khi enqueue nếu cần.
 Mọi lệnh điều khiển đều truyền cùng `--data-root`. Với Linode Volume, thay bằng
 thư mục trên volume đã mount ổn định, thuộc tài khoản chạy; không lưu kho trong
@@ -171,7 +209,7 @@ Lịch cập nhật tự động dùng bộ lập lịch của hệ điều hàn
 
 ## Cấu hình nguồn và kiểm chứng
 
-`init` nạp profile sáu loại đã được xác minh ở RC3 trước đó, ràng buộc với mã adapter.
+`init` nạp profile bảy loại đã được xác minh ở RC3 trước đó, ràng buộc với mã adapter.
 Profile chỉ chứa quy tắc nguồn và dấu thời gian, không mang hồ sơ thật hoặc proof COMPLETE.
 Không coi profile đó là bằng chứng đã chạy live thành công trên máy Linux mới.
 Nguồn cần phiên đăng nhập và các lane chưa xác minh vẫn bị chặn; không giải CAPTCHA
@@ -196,7 +234,7 @@ Giữ nguyên Data Root, dừng dịch vụ an toàn rồi cài đè gói mới.
 ```sh
 systemctl --user stop santhau-collector.service
 santhau-collector status --data-root "$HOME/SanThauData"
-sudo apt install ./santhau-collector_0.0.1~rc3-3_amd64.deb
+sudo apt install ./santhau-collector_0.0.1~rc3-12_amd64.deb
 systemctl --user daemon-reload
 santhau-collector deep-config --enable --batch-requests 30 --data-root "$HOME/SanThauData"
 systemctl --user start santhau-collector.service

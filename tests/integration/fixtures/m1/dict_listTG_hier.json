@@ -1,0 +1,33 @@
+{
+ "bideContractorInputResultDTO": {
+  "id": "0177a3f3-7392-49d8-9574-6c8558ecc74d",
+  "notifyNo": "IB2600583325",
+  "notifyVersion": "00",
+  "resultVersion": "00",
+  "bidPriceUnit": "VND",
+  "lotResultDTO": [
+   {
+    "id": "9bf04e87-990a-49f9-86d9-b7e314fead5d",
+    "lotNo": "BP2600906353",
+    "lotName": "Gói thầu số 01: Chăm sóc cây xanh",
+    "lotPrice": 2457618022,
+    "lotEstimatePrice": null,
+    "winningCode": "vn3801291719",
+    "goodsList": "{\"listTG\": [{\"serviceCategory\": \"TIỂU ĐẢO TRƯỚC ĐIỂM TRƯỜNG XUÂN HỒNG\", \"serviceDescription\": \"Theo quy định tại Chương V\", \"qty\": null, \"place\": null, \"uom\": null, \"bidPrice\": null, \"intoMoney\": 40477420.9646, \"orgCode\": \"vn3801291719\", \"pos\": \"1\", \"originQty\": null, \"id\": 8414252586402768, \"parent\": 0, \"valueConstruction\": \"\", \"insurancePeriod\": \"\", \"insurancePremiumRate\": \"\", \"insurancePremium\": \"\", \"estimateDate\": null}, {\"serviceCategory\": \"Duy trì cây cảnh tạo hình\", \"serviceDescription\": \"Theo quy định tại Chương V\", \"qty\": 0.06, \"place\": \"Xã Bom Bo, thành phố Đồng Nai\", \"uom\": \"100cây/năm\", \"bidPrice\": 9085498, \"intoMoney\": 545129.88, \"orgCode\": \"vn3801291719\", \"pos\": \"1.1\", \"originQty\": 0.06, \"id\": 11970451395310428, \"parent\": 8414252586402768, \"valueConstruction\": \"\", \"insurancePeriod\": \"\", \"insurancePremiumRate\": \"\", \"insurancePremium\": \"\", \"estimateDate\": \"365 ngày\"}, {\"serviceCategory\": \"Tưới nước cây cảnh ra hoa và cây cảnh tạo hình bằng ô tô tưới nước\", \"serviceDescription\": \"Theo quy định tại Chương V\", \"qty\": 14.4, \"place\": \"Xã Bom Bo, thành phố Đồng Nai\", \"uom\": \"100cây/lần\", \"bidPrice\": 56228, \"intoMoney\": 809683.2000000001, \"orgCode\": \"vn3801291719\", \"pos\": \"1.2\", \"originQty\": 14.4, \"id\": 10278862549915778, \"parent\": 8414252586402768, \"valueConstruction\": \"\", \"insurancePeriod\": \"\", \"insurancePremiumRate\": \"\", \"insurancePremium\": \"\", \"estimateDate\": \"365 ngày\"}, {\"serviceCategory\": \"CHÂN CỔNG CHÀO\", \"serviceDescription\": \"Theo quy định tại Chương V\", \"qty\": null, \"place\": null, \"uom\": null, \"bidPrice\": null, \"intoMoney\": 88296630.72, \"orgCode\": \"vn3801291719\", \"pos\": \"2\", \"originQty\": null, \"id\": 10217131693232014, \"parent\": 0, \"valueConstruction\": \"\", \"insurancePeriod\": \"\", \"insurancePremiumRate\": \"\", \"insurancePremium\": \"\", \"estimateDate\": null}, {\"serviceCategory\": \"Duy trì cây bóng mát loại 1\", \"serviceDescription\": \"Theo quy định tại Chương V\", \"qty\": 5, \"place\": \"Xã Bom Bo, thành phố Đồng Nai\", \"uom\": \"1cây/năm\", \"bidPrice\": 102349, \"intoMoney\": 511745, \"orgCode\": \"vn3801291719\", \"pos\": \"2.1\", \"originQty\": 5, \"id\": 9924102612741116, \"parent\": 10217131693232014, \"valueConstruction\": \"\", \"insurancePeriod\": \"\", \"insurancePremiumRate\": \"\", \"insurancePremium\": \"\", \"estimateDate\": \"365 ngày\"}], \"listKQDR\": [], \"listTLPT\": [], \"listDG\": [], \"listTTG\": []}",
+    "contractorList": [
+     {
+      "orgCode": "vn3801291719",
+      "bidWiningPrice": 2308972000,
+      "bidResult": 1,
+      "adjustPrice": 2308972277.9982,
+      "lotOpenPrice": 2308972277.9982,
+      "lotFinalPrice": 2308972277.9982,
+      "discountPercent": null
+     }
+    ]
+   }
+  ],
+  "lotResultItems": []
+ },
+ "bidpPlanDetailDTO": null
+}

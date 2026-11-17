@@ -3,6 +3,224 @@
 Chỉ ghi thay đổi quan trọng tới hợp đồng kỹ thuật. Spec nền: **Master Spec Consolidated v1.3**
 (không đổi; mọi mục dưới là cụ thể hoá hoặc sửa đổi cần owner phê chuẩn).
 
+## RC3-12 — Một bản duy nhất cào toàn bộ: 7 loại hồ sơ + 6 lane chi tiết (17/11/2026)
+
+- **Một bản thay cho các bản phân mảnh**: bản này cào toàn bộ 7 loại hồ sơ và mọi lane
+  chi tiết trong một lần chạy, theo quyết định 17/11/2026 ("1 bản thôi cào toàn bộ
+  1 lúc chứ ko phân mảnh như trước nữa"). Không đổi hành vi lane M1, pacing, hay
+  floor 3s.
+- **Loại hồ sơ thứ 7 — ESHOP** (`es-shopping-result`, khóa `bidNo`, version
+  `orderNo`): rule profile mới `OWNER-SEVEN-20261117-ESHOP`
+  (`canary_verified: 1`, đã kiểm chứng date-filter trên index
+  `es-shopping-result` ngày 17/11: cửa sổ 23/10/2026 trả đúng 1 dòng
+  BP2600926605, cửa sổ 12/10/2026 trả đúng 2 dòng, các cửa sổ khác rỗng đúng).
+  `orderNo` trên dòng list là singleton list `['OR…']` nên `version_of` unwrap
+  rồi mới so version (không unwrap sẽ UNPARSABLE sai).
+- **7 lane chi tiết mới trên 6 loại hồ sơ** (TBMT có 2 lane DETAIL + HSMT)
+  (mẫu lane M1 trong `public_deep.py`: POST JSON, `token=`
+  rỗng ở các endpoint có token, YCBG/eShop không token, header portal, pacing
+  3s, kiểm identity bằng khóa tự nhiên): YCBG `get-request-quote` theo ES id;
+  eShop `eshop/shopping-result/detail-public-by-bidNo` theo `bidNo`; TBMT DETAIL
+  `lcnt_tbmt_ttc_ldt` theo `notifyId`-hoặc-`id`; TBMT HSMT `lcnt_tbmt_hsmt` theo
+  `id` + `processApply` từ dòng list (bắt buộc — thiếu thì HTTP 500; gate
+  {None, "LDT"}, fallback "LDT", chỉ TBMT không phải CGTTRG; CGTTRG giữ lane
+  HSMT cũ); KHLCNT `get-by-id`; DU_AN `get-by-id`; HOP_DONG
+  `detail-by-id-for-po`. Tất cả đã canary live 17/11 (HTTP 200, đúng byte).
+  Parser mới chỉ chiếu các role đã có trong enum post-008: TBMT DETAIL
+  `BID_PRICE` + quan hệ `PLAN_HAS_NOTICE`; YCBG tài liệu `REFERENCE_ONLY`;
+  eShop `BID_PRICE` + `WIN_PRICE` + thành viên theo `contractorCode`; KHLCNT
+  envelope + version; DU_AN `BUDGET` + quyết định `REFERENCE_ONLY`; HOP_DONG
+  `CONTRACT_VALUE` (owner PACKAGE); TBMT HSMT chỉ schema 14 chương, không
+  lots/money. Tài liệu nhị phân theo gói vẫn `REFERENCE_ONLY` (cần Windows
+  Agent, ngoài phạm vi bản này).
+- **Lane quét thống nhất**: `deep-sweep --lane ALL` chạy mọi cặp (family, lane)
+  áp dụng được trong một lần; chế độ từng lane giữ nguyên. `ADAPTER_VERSION`
+  2→3 (mở lại các task UNSUPPORTED cũ để thử lại). Ứng viên auto-deep mirror
+  đúng gate của fetcher: TBMT phải có `bidForm`; `processApply` khác
+  None/"LDT" không bao giờ tạo HTTP (kể cả DETAIL TBMT) — test KHAC giữ nguyên
+  ý nghĩa: 1 gói, 3 lane, không HTTP; chọn lại sau bump adapter vẫn đủ 3 lane.
+- **Không đổi**: không có migration mới (enum lane của migration 009 đã có
+  DETAIL/HSMT/REOFFER/M1); **M2/M3 dời sang RC3-13** (đổi số theo quyết định
+  gộp RC3-12 này). Version: pyproject `0.0.1rc3.post14`; Linux
+  `0.0.1~rc3-12` / `0.0.1-RC3-12` (file Inno + build_standalone.ps1 đổi chuỗi
+  version theo, bản thân công việc installer Windows vẫn dừng theo lệnh trước).
+- **Sửa nhãn SOURCE_EMPTY (canary live 17/11 phát hiện)**: điều kiện rỗng
+  trong `public_deep_run.py` chỉ đếm lots/goods/members/documents nên capture
+  chỉ-có-tiền (TBMT DETAIL `BID_PRICE`, HOP_DONG DETAIL `CONTRACT_VALUE`) bị
+  gắn nhầm `SOURCE_EMPTY` dù giá đã lưu vào `money_amounts`. Nay đếm thêm
+  `money` — capture nào lưu được tiền là `FETCHED`. Relations KHÔNG đếm:
+  edge chỉ ghi khi record đích có trong store nên relation parse được mà chưa
+  resolve không phải nội dung đã lưu. HSMT TBMT (chapters chỉ nằm trong raw
+  payload, không có derived row) và KHLCNT DETAIL (envelope + version) vẫn
+  `SOURCE_EMPTY` đúng định nghĩa — payload vẫn lưu đủ trong store. Thêm 2
+  regression test money-only (`test_money_only_capture_is_fetched_not_source_empty`).
+- **Sửa routing CGTTRG-bidForm (canary live #2, 17/11 phát hiện)**: dòng
+  HOP_DONG kế thừa `bidForm` của gói thầu nên hợp đồng trúng từ gói CGTTRG
+  mang `bidForm` CGTTRG; dispatch cũ đẩy mọi record CGTTRG sang lane legacy
+  của TBMT (đòi `notifyNo` mà dòng hợp đồng không có) nên BLOCKED với
+  `LISTING_IDENTITY_MISMATCH`. Nay carve-out CGTTRG chỉ áp cho TBMT — các
+  loại khác chạy lane DETAIL bất kể `bidForm`. Thêm regression test
+  (`test_fetcher_routes_contract_detail_despite_cgtttrg_bid_form`, đã kiểm
+  chứng fail khi thiếu fix). Canary #2 (binary `eeaa008`, 18 hồ sơ): FETCHED
+  11 (DU_AN 3, ESHOP 3, TBMT DETAIL 3, YCBG 1, HOP_DONG 1), SOURCE_EMPTY 8
+  (KHLCNT 3, HSMT TBMT 3, YCBG 2), BLOCKED 2 (2 HOP_DONG CGTTRG — chính bug
+  này). Canary #3 (18 hồ sơ mới, binary build từ code bản này — amend sau
+  canary chỉ sửa CHANGELOG.md, code không đổi): FETCHED 13
+  (DU_AN 3, ESHOP 3, HOP_DONG 3 — gồm cả 2 CGTTRG, TBMT DETAIL 3, YCBG 2),
+  SOURCE_EMPTY 8 (KHLCNT 3, HSMT TBMT 3, YCBG 1), BLOCKED 0, FAILED 0;
+  15 dòng tiền (BID_PRICE 6, BUDGET 3, CONTRACT_VALUE 3, WIN_PRICE 3),
+  21 captures, HTTP 200 toàn bộ, identity khớp từng hồ sơ.
+- **Giới hạn đã biết**: docstring `egp_home.py` vẫn ghi "six families" — file bị
+  pin sha trong profile (`adapter_code_sha256`) nên sửa docstring sẽ phá
+  attestation đã phê chuẩn; sửa + pin lại là việc follow-up riêng, không làm
+  trong bản này. Ngoài ra `test_deep_retry.py` có 2 test hỏng do RC3-12 đã
+  sửa trong bản này: `test_quarantined_unsupported_task_returns_on_adapter_bump`
+  hardcode `adapter_version=2` (nay là 3, task cũ đúng ra được release — test
+  viết lại theo version hiện tại) và `test_lane_groups_chunk_within_fetcher_budget`
+  (nhóm theo `(lane, family)` từ khi sweep chạy 1 job mỗi cặp, test cập nhật
+  theo contract mới).
+- **Kiểm chứng**: CI pytest subset + file test mới 595 passed, 4 skipped,
+  1 failed (`test_budget_windowing::test_early_split...` — fail sẵn y hệt trên
+  baseline RC3-11.2 sạch trong môi trường này, do httpx parse proxy env,
+  không liên quan RC3-12); 60 test mới cho 7 lane chi tiết (57 + 2 regression
+  money-only + 1 regression CGTTRG-bidForm; spec, parser trên
+  fixture rút gọn từ 17 payload live, identity accept/reject, routing fetcher,
+  auto-deep + sweep ALL); e2e fake-source chỉ còn 1 fail sẵn
+  (`workers.ipc` Windows-only, y hệt trên baseline sạch); các test desktop/
+  Windows đã cập nhật số lượng nhưng chỉ kiểm tra biên dịch trên Linux (chúng
+  vốn không collect được ở đây do import Windows-only có sẵn từ trước).
+  Full test suite (`pytest tests/`, `--continue-on-collection-errors`,
+  TMPDIR trên RAM): 799 passed, 14 skipped, 22 failed, 30 collection errors —
+  đối chiếu baseline RC3-11.2 sạch (worktree fac1e04): cùng 22 failed (21 trùng
+  tên + 1 test đổi tên six→seven families) và cùng 30 file lỗi collection
+  (Windows/desktop-only, import Windows-only, có sẵn từ trước) — KHÔNG có
+  regression mới. 22 failed đều là lỗi môi trường Linux VM đã biết:
+  `test_budget_windowing` (httpx parse proxy env), 16 test
+  `test_desktop_backend`, 3 test `test_serving_no_audit_tables`,
+  `test_console_encoding` (Vietnamese console), và 1 test e2e serving
+  snapshot (`workers.ipc` Windows-only). Self-test offline: 384 → 448 records (8 ngày × 7 loại × 8 dòng); CLI
+  crash-recovery: 672 → 784 records, 84 → 98 proofs.
+
+## RC3-11.2 — Parser v7, sửa lỗi M1 INVALID_JSON / NO_TABLE / INVALID_FIELDS (13/11/2026)
+
+- **Parser v7** (`PARSER_VERSION` 6→7): `goodsList` có thêm 3 dạng phát hiện trong
+  58 record `PARSE_ERROR` của đợt quét bù M1 đang chạy. (1) Object danh sách dịch
+  vụ: chuỗi JSON parse được nhưng là dict, không phải list — 5 key
+  (`listTG`/`listDG`/`listKQDR`/`listTLPT`/`listTTG`), mỗi key một danh sách hàng
+  (`serviceCategory`/`description`, `qty`, `uom`, `bidPrice`, `intoMoney`,
+  `orgCode`); hàng `parent: 0` có con là tiêu đề nhóm (bỏ qua, chỉ hàng lá là
+  mặt hàng — cộng cả hàng cha sẽ đếm trùng); hàng trống ở tất cả các list là
+  record thật sự không có mặt hàng, không còn lỗi. (2) `dsDvKqTg`: bảng giá theo
+  từng nhà thầu + lot (`dsHH` trong mỗi unit), chỉ lấy unit của nhà thầu trúng,
+  hàng gắn vào lot mà `lotNo` của unit chỉ định (không phải lot đang mang
+  `goodsList`). (3) Hàng thuốc: entry không có `formValue`/`name`, có `tenThuoc`/
+  `donGia`/`winContractors` — `donGia` là đơn giá trúng, `tenThuoc` là tên
+  (fallback `lotName`), hàng gắn vào lot theo `lotNo` của entry; `winContractors`
+  xác nhận nhà thầu trúng theo từng entry. Tên mặt hàng nhận thêm
+  `serviceCategory`/`description`/`tenThuoc`/`lotName`, nên hàng dịch vụ trong
+  `Table` không có key `name` cũng parse được (sửa bucket `INVALID_FIELDS`).
+  Entry `Table` lặp lại theo từng nhà thầu chỉ parse bảng của nhà thầu trúng;
+  bảng giống hệt nhau chỉ parse một lần (cảnh báo
+  `GOODSLIST_DUPLICATE_TABLE_SKIPPED`).
+- **Đính chính claim của parser v6**: đơn giá trúng theo mặt hàng là đơn giá
+  chào của nhà thầu trúng. Tổng qty × đơn giá bằng tổng chào thầu của nhà thầu
+  trúng (`lotOpenPrice`/`adjustPrice`) khi bảng phủ hết lot — không phải lúc nào
+  cũng bằng `bidWiningPrice` sau hiệu chỉnh (có thể thấp hơn, vd 1499902:
+  chào 50.849.700.000 vs trúng 47.310.000.000) và không phải lúc nào cũng bằng
+  tổng lot (có bảng chỉ phủ một phần lot, vd 1499740). Parser vẫn ghi đơn giá
+  chào làm `ITEM_WINNING_PRICE`, không bịa tổng để ép khớp.
+- **Không đổi**: không có migration mới (008/009 của RC3-11 đã đủ); M2/M3 vẫn
+  RC3-12 sau.
+- **Kiểm chứng**: parser v7 chạy trên 10 fixture (bản rút gọn, đã che PII, của
+  raw live 58 record lỗi): 0 problems ở cả 10; CI pytest subset 536 passed,
+  4 skipped, 1 failed (`test_budget_windowing::test_early_split...` — fail sẵn
+  y hệt trên baseline RC3-11.1 sạch trong môi trường này, do httpx parse proxy
+  env, không liên quan M1); chạy mở rộng (CI subset + test_m1_parser +
+  test_deep_run + test_parser_v4_money + test_deep_retry + test_deep_capture +
+  test_deep_reuse) 616 passed, 4 skipped, cùng 1 fail có sẵn đó; 12 test hồi
+  quy mới cho 3 dạng mới + lọc nhà thầu thắng + dedup bảng trùng + đơn giá
+  chào vẫn ghi khi tổng ≠ giá trúng.
+
+## RC3-11.1 — Parser v6, sửa lỗi M1 NO_TABLE cho goodsList phẳng (13/11/2026)
+
+- **Parser v6** (`PARSER_VERSION` 5→6): `goodsList` có thêm dạng hàng phẳng thứ ba
+  (lot LCNT_DB/CDTRG): entry tự là mặt hàng — `name`/`quantity`/`unit`/`description`/
+  `origin`/`priceUnit`, `formValue` null, không có `lotContent.Table` — và `lotResultItems`
+  null, nên không có đường fallback. `priceUnit` chính là đơn giá trúng thầu (đã kiểm chứng
+  trên 7 record live: qty × priceUnit cộng lại đúng bằng `bidWiningPrice` của nhà thầu trúng
+  ở 6/7; record còn lại lệch 206đ = 0,00009% do quantity float 5034.06 làm tròn ở nguồn).
+  Parser v5 báo `M1_LOT_*_GOODSLIST_ENTRY_*_NO_TABLE` cho mỗi entry và fail cả record,
+  làm rơi 144 mặt hàng + 144 `ITEM_WINNING_PRICE` (lot + `LOT_PRICE` vẫn được ghi).
+  Parser v6 parse entry phẳng thành hàng hóa + `ITEM_WINNING_PRICE` từ `priceUnit`
+  (source_path ghi đúng `.priceUnit`); entry phẳng có tên nhưng không có giá vẫn ghi hàng
+  hóa, chỉ cảnh báo `GOODSLIST_FLAT_NO_ITEM_PRICE`, không fail record. Parser bump kích hoạt
+  chọn lại 7 task PARSE_ERROR từ raw đã lưu (không gọi lại E-GP).
+- **Không đổi**: không có migration mới (008/009 của RC3-11 đã đủ); M2/M3 vẫn RC3-12 sau.
+- **Kiểm chứng**: parser v6 chạy trên cả 7 raw live: 0 problems, 144/144 hàng hóa +
+  144/144 `ITEM_WINNING_PRICE`; CI pytest subset 536 passed, 4 skipped, 1 failed
+  (`test_budget_windowing::test_early_split...` — fail sẵn y hệt trên baseline RC3-11
+  sạch trong môi trường này, do httpx parse proxy env, không liên quan M1); chạy mở rộng
+  (CI subset + test_m1_parser + test_deep_run + test_parser_v4_money + test_deep_retry +
+  test_deep_capture + test_deep_reuse) 604 passed, 4 skipped, cùng 1 fail có sẵn đó;
+  5 test hồi quy mới cho dạng phẳng (parse, không giá → cảnh báo, entry không tên vẫn lỗi,
+  lot Table + lot phẳng cùng tồn tại, dispatch end-to-end ra FETCHED).
+
+## RC3-11 — Lane M1, giá trúng thầu theo mặt hàng KQLCNT (13/11/2026)
+
+- **Lane M1 mới** (`PARSER_VERSION` 4→5): giá trúng thầu theo từng mặt hàng trong KQLCNT
+  qua endpoint `expose/contractor-input-result/get`, 1 request cho 1 record theo
+  `inputResultId` (626.953 record, không dedup). Parser ghi `ITEM_WINNING_PRICE`
+  (đơn giá trúng thầu: `lotResultItems[].formValue[].lotWiningPrice`, hoặc `bidPrice`
+  của item trong `goodsList` khi không có `lotWiningPrice`) và `ITEM_BID_PRICE` (chỉ khi
+  `bidPrice` khác `lotWiningPrice`), kèm `LOT_PRICE`/`LOT_ESTIMATE_PRICE` theo lot; tiền tệ
+  lấy từ `bidPriceUnit` của DTO (VND), không có mã tiền tệ thì UNPARSABLE chứ không đoán.
+  **Migration 008** mở rộng enum role của `money_amounts` (2 role mới); **migration 009**
+  mở rộng enum lane của `deep_captures` và enum job_kind của `runs` cho `M1` (rebuild 2 bảng,
+  giữ nguyên dữ liệu; file DDL v1 không sửa).
+- **Canary M1** (13/11/2026, 2 record live IB2600073112 + IB2600363545): endpoint bắt buộc
+  có tham số query `token=` — không token thì HTTP 400; token là presence-only, server không
+  kiểm tra giá trị (dummy và rỗng đều HTTP 200, payload giống hệt nhau) nên collector gửi
+  `token=` rỗng, không giải captcha, không có credential trong URL. Bulk probe: `{"id": [...]}`
+  → HTTP 400, `{"ids": [...]}` → HTTP 500 — **không có endpoint bulk**; backfill vẫn 1
+  request/record (~22 ngày Linode-alone, ~7–8 ngày chia 3 máy).
+- **`deep-sweep --lane M1`** (mặc định chỉ xem trước, `--execute` mới xếp hàng; tối đa 10
+  record/job): quét bù M1 cho các record KQLCNT chưa có capture FETCHED/SOURCE_EMPTY.
+  Auto-deep nhận thêm lane M1 (KQLCNT có `inputResultId`), nên record mới về sau tự có M1.
+  `deep-retry --lane` thêm `M1`; `deep-status` hiện cả lane M1.
+- **Không đổi**: M2/M3 (biên bản mở thầu, điểm kỹ thuật) chưa làm — RC3-12 sau M1.
+- **Kiểm chứng**: canary M1 PASS (0 shape problems, raw lưu tại store canary); CI pytest subset
+  537 passed, 4 skipped; chạy mở rộng (CI subset + test_m1_parser + test_deep_run +
+  test_parser_v4_money + test_deep_retry + test_deep_capture + test_deep_reuse) 600 passed,
+  4 skipped; full suite (trừ 30 file Windows-only): 720 passed, 21 failed, 14 skipped — toàn
+  bộ 21 fail đều fail sẵn trên baseline RC3-10 (import Windows-only `workers.ipc` / thiếu
+  PySide6 trên venv Linux, không liên quan M1), 0 regression;
+  self-test-deep PASS (money_amounts: 22 trên store scratch).
+
+## RC3-10 — Parser v4, deep retry, HSMT 1958/1959 (08/11/2026)
+
+- **Parser v4** (`PARSER_VERSION` 3→4): trích giá vào `money_amounts` từ raw đã lưu — REOFFER
+  `reofferPrice`/`reofferPriceFinal`, `bidPrice`/`bidFinalPrice`, `priceInit`/`priceStep`; HSMT
+  `lotPrice`/`lotEstimatePrice` theo lot. Tiền tệ VND, `tax_basis` UNKNOWN (nguồn không nói đã
+  gồm thuế hay chưa). **Migration 007** mở rộng enum role của `money_amounts` (9 role mới:
+  REOFFER_PRICE, REOFFER_PRICE_FINAL, BID_FINAL_PRICE, PACKAGE_PRICE, PACKAGE_PRICE_INIT,
+  PACKAGE_PRICE_STEP, LOT_PRICE, LOT_ESTIMATE_PRICE, LOT_PLAN_PRICE); file DDL v1 không sửa.
+- **replay-deep mở rộng**: nhắm mọi capture còn parser cũ (cả 3 lane HSMT/DETAIL/REOFFER), không
+  chỉ HSMT PARSE_ERROR — chạy lại từ raw đã lưu, **0 request mạng**. Kỳ vọng ~20.4k money rows
+  trên Linode sau replay.
+- **HSMT form 1958/1959** đăng ký `STRUCTURED_CODES` sau canary toàn bộ 393 payload
+  UNVERIFIED_FORM (1958: 296/296 form, 3,596/3,596 dòng; 1959: 96/96 form, 1,971 dòng hàng +
+  931 dòng lot) — 392/393 payload trở thành STRUCTURED sau replay; 1 form 3150 còn lại
+  (qty không tên, ngoài phạm vi).
+- **Deep retry (P1-2)**: task lỗi liên tiếp được cooldown leo thang 1h→6h→24h→72h, quarantine sau
+  lỗi thứ 5 (~4.3 ngày); chỉ mở lại khi listing đổi version, parser/adapter bump, hoặc lệnh tay
+  `deep-retry`. TRANSIENT (timeout/429/5xx) không bao giờ bị quarantine. Batching: gom task theo
+  lane, tối đa 10 record/job, ≤3 job mỗi lần quét (trước đây tới 30 job).
+- **lots.goods_count**: điều tra xong — KHÔNG phải bug (SUM `goods_count` khớp `goods_rows` có
+  `lot_id`; ~64% gói thầu không có lot header trong dữ liệu nguồn). Không đổi code.
+- **Không đổi**: P2 tải tài liệu (document download) chưa làm — cần canary endpoint live, báo cáo riêng.
+- **Kiểm chứng**: CI pytest subset 602 passed, 4 skipped; self-test-deep PASS (money_amounts: 22
+  trên store scratch).
+
 ## G0-B — Contract closure (03/11/2026)
 
 ### Quyết định owner đã triển khai

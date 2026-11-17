@@ -1,0 +1,33 @@
+{
+ "bideContractorInputResultDTO": {
+  "id": "4c8e0b48-9266-4fe0-86a5-0433ce3b28d5",
+  "notifyNo": "IB2600594488",
+  "notifyVersion": "01",
+  "resultVersion": "00",
+  "bidPriceUnit": "VND",
+  "lotResultDTO": [
+   {
+    "id": "1ceacaa6-21b2-452c-a454-4a295e643ce5",
+    "lotNo": "BP2600951851",
+    "lotName": "Nạo vét, khơi thông hệ thống thoát nước",
+    "lotPrice": 3800325342,
+    "lotEstimatePrice": null,
+    "winningCode": "vn4600991286",
+    "goodsList": "{\"listTG\":[],\"listKQDR\":[],\"listTLPT\":[],\"listDG\":[],\"listTTG\":[]}",
+    "contractorList": [
+     {
+      "orgCode": "vn4600991286",
+      "bidWiningPrice": 3797140486,
+      "bidResult": 1,
+      "adjustPrice": 3797140486.167,
+      "lotOpenPrice": 3797140486.167,
+      "lotFinalPrice": 3797140486.167,
+      "discountPercent": 0
+     }
+    ]
+   }
+  ],
+  "lotResultItems": []
+ },
+ "bidpPlanDetailDTO": null
+}

@@ -17,6 +17,35 @@ from santhau_studio.storage.public_deep import task_state
 from santhau_studio.workers.deep_reuse import reusable_capture
 
 
+def fetch_failure_kind(exc) -> str:
+    """Classify a fetch failure for the escalating retry ladder.
+
+    UnsupportedAdapter is a DetailShapeError subclass, so it must be checked
+    first. A non-JSON / malformed answer is deterministic for this package
+    (FETCH); timeouts, host blocks and rate limits may clear on their own
+    (TRANSIENT) and therefore never quarantine.
+    """
+    if isinstance(exc, UnsupportedAdapter):
+        return "UNSUPPORTED"
+    if isinstance(exc, AccessBlocked):
+        return "TRANSIENT"
+    if isinstance(exc, FetchFailed):
+        reason = getattr(getattr(exc, "verdict", None), "reason", None)
+        if reason in ("RATE_LIMIT_429", "SERVER_ERROR"):
+            return "TRANSIENT"
+        if any(
+            marker in str(exc)
+            for marker in ("persisted over", "REQUEST_BUDGET_EXHAUSTED", "REQUEST_DEADLINE_EXHAUSTED")
+        ):
+            return "TRANSIENT"
+        return "FETCH"
+    if isinstance(exc, OSError):
+        return "TRANSIENT"
+    if isinstance(exc, DetailShapeError):
+        return "PARSE"
+    return "FETCH"
+
+
 def collect_public(writer, run_id, lane, scope, fetcher, spec, records, clock, stop_requested):
     from santhau_studio.workers.deep_run import DeepBatchResult
 
@@ -83,6 +112,7 @@ def collect_public(writer, run_id, lane, scope, fetcher, spec, records, clock, s
                 error=scrub_exception(exc),
                 provenance=receipt,
                 listing_sha=record["current_record_object_sha"],
+                failure_kind=fetch_failure_kind(exc),
             )
             write_task(conn, rid, lane, parser_version=spec.parser_version, adapter_version=ADAPTER_VERSION,
                        capability=exc.capability if unsupported else ("ACCESS_DENIED" if isinstance(exc, AccessBlocked) else "UNKNOWN"))
@@ -120,6 +150,7 @@ def collect_public(writer, run_id, lane, scope, fetcher, spec, records, clock, s
                 error=issue,
                 provenance=receipt,
                 listing_sha=record["current_record_object_sha"],
+                failure_kind="PARSE",
             )
             write_task(conn, rid, lane, parser_version=spec.parser_version, adapter_version=ADAPTER_VERSION,
                        capability="IDENTITY_QUARANTINE")
@@ -151,6 +182,15 @@ def collect_public(writer, run_id, lane, scope, fetcher, spec, records, clock, s
                 "goods": sum(len(lot.goods) for lot in parsed.lots) + len(parsed.unallotted_goods),
                 "offerors": len(parsed.members),
                 "document_references": len(parsed.documents),
+                # RC3-12: money rows are lane-owned derivations like lots/goods
+                # (write_projection re-cuts them on every capture). The new
+                # DETAIL lanes are money-only by design (TBMT BID_PRICE,
+                # HOP_DONG CONTRACT_VALUE) — without this a capture that stored
+                # its price was mislabelled SOURCE_EMPTY. Relations are NOT
+                # counted: an edge is only written when its target record is
+                # in the store, so a parsed-but-unresolved relation is not
+                # stored content.
+                "money": len(parsed.money),
             }
             receipt["parsed"] = amounts
             receipt["projected"] = amounts if capture.projection_applied else dict.fromkeys(amounts, 0)
@@ -170,6 +210,7 @@ def collect_public(writer, run_id, lane, scope, fetcher, spec, records, clock, s
             capture_id=capture.capture_id,
             error=json.dumps(problems or capture.problems) if problems or capture.problems else capture.stale_reason,
             provenance=receipt,
+            failure_kind="PARSE" if state == "PARSE_ERROR" else None,
         )
         write_task(conn, rid, lane, parser_version=spec.parser_version, adapter_version=ADAPTER_VERSION,
                    capability=parsed.capability if parsed else "UNKNOWN", warnings=parsed.warnings if parsed else ())

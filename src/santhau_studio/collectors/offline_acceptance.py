@@ -45,7 +45,7 @@ def builder(_writer, request):
         from santhau_studio.collectors.source_registry import binding_for
         spec = binding_for(family).spec
         key_fields = {'TBMT':('notifyNo','notifyVersion'),'KQLCNT':('notifyNo','notifyVersion'),
-            'HOP_DONG':('contractCode','contractVersion'),'KHLCNT':('planNo','planVersion'),'DU_AN':('pno','pversion'),'YCBG':('notifyNo','notifyVersion')}
+            'HOP_DONG':('contractCode','contractVersion'),'KHLCNT':('planNo','planVersion'),'DU_AN':('pno','pversion'),'YCBG':('notifyNo','notifyVersion'),'ESHOP':('bidNo','orderNo')}
         key, version = key_fields[family]
         for page in range(12):
             time.sleep(.18)

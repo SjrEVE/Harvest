@@ -52,7 +52,7 @@ from santhau_studio.workers.runner import IntervalOutcome, PageSource, RunLimits
 
 JOB_KINDS = (
     "INDEX", "BACKFILL", "INCREMENTAL", "RECONCILE",
-    "DETAIL", "HSMT", "REOFFER", "VERIFY", "IMPORT", "EXPORT", "BACKUP",
+    "DETAIL", "HSMT", "REOFFER", "M1", "VERIFY", "IMPORT", "EXPORT", "BACKUP",
 )
 COMMANDS = ("START", "PAUSE", "RESUME", "STOP_GRACEFUL", "FORCE_TERMINATE", "GET_STATUS")
 JOB_ID_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,64}")

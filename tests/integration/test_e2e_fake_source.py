@@ -5,7 +5,7 @@ classification), `EgpHomeLane` pagination, `extract_page`/`verify_extraction`, t
 `WarehouseWriter`, coverage proofs, reconcile, serving snapshot and the desktop backend. Only
 `httpx.MockTransport` replaces the network, so retry/429/403/timeout are the real code paths.
 
-Six families run through the same envelope, exactly as the portal does it.
+Seven families run through the same envelope, exactly as the portal does it.
 """
 
 from __future__ import annotations
@@ -81,7 +81,7 @@ def run_family(root: Path, family: str, portal: FakePortal, run_id: str = "run-e
 
 
 @pytest.mark.parametrize("family", FAMILY_ORDER)
-def test_six_families_reach_a_complete_proof(tmp_path: Path, family: str) -> None:
+def test_seven_families_reach_a_complete_proof(tmp_path: Path, family: str) -> None:
     root = tmp_path / "data"
     writer = make_writer(root)
     try:
@@ -133,6 +133,11 @@ def test_six_families_reach_a_complete_proof(tmp_path: Path, family: str) -> Non
         by_state = {(row["version_state"], row["version_raw"]): row["n"] for row in states}
         if family == "YCBG":
             assert by_state == {("MISSING", None): EXPECTED_ROWS}
+        elif family == "ESHOP":
+            # orderNo arrives as a singleton list on the list row; version_of
+            # unwraps it, so every row lands UNPARSABLE with its raw 'OR-<seq>'.
+            assert all(state == "UNPARSABLE" and raw.startswith("OR-") for state, raw in by_state)
+            assert sum(by_state.values()) == EXPECTED_ROWS
         elif family == "DU_AN":
             assert by_state[("UNPARSABLE", "abc")] == 1
             assert by_state[("KNOWN", "01")] == EXPECTED_ROWS - 1
@@ -260,7 +265,7 @@ def test_restart_after_collection_leaves_an_intact_store(tmp_path: Path) -> None
         reopened.close()
 
 
-def test_serving_snapshot_and_ui_read_all_six_families(tmp_path: Path) -> None:
+def test_serving_snapshot_and_ui_read_all_seven_families(tmp_path: Path) -> None:
     from santhau_studio.desktop.backend import StudioBackend
 
     root = tmp_path / "data"
@@ -303,7 +308,7 @@ def test_serving_snapshot_and_ui_read_all_six_families(tmp_path: Path) -> None:
     assert detail["record"]["version_raw"] is None
 
     with contextlib.closing(sqlite3.connect(root / "serving.sqlite")) as conn:
-        assert conn.execute("SELECT COUNT(*) FROM search_index").fetchone()[0] == EXPECTED_ROWS * 6
+        assert conn.execute("SELECT COUNT(*) FROM search_index").fetchone()[0] == EXPECTED_ROWS * 7
 
 
 def test_pipeline_over_the_segment_layout(tmp_path: Path) -> None:

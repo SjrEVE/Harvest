@@ -1,0 +1,42 @@
+{
+ "bideContractorInputResultDTO": {
+  "id": "a9795f70-05db-44b2-9f11-3d24be5063d2",
+  "notifyNo": "IB2600572273",
+  "notifyVersion": "00",
+  "resultVersion": "00",
+  "bidPriceUnit": "VND",
+  "lotResultDTO": [
+   {
+    "id": "f8e86dad-27a6-4b58-9225-a912c8ee8a54",
+    "lotNo": "BP2600862635",
+    "lotName": "Gói thầu số 03: Tư vấn khảo sát xây dựng, lập thiết kế bản vẽ thi công và dự toán",
+    "lotPrice": 4087152000,
+    "lotEstimatePrice": null,
+    "winningCode": "vnz000001844,vnz000001844",
+    "goodsList": "{\"listTG\": [], \"listKQDR\": [], \"listTLPT\": [], \"listDG\": [{\"description\": \"KHẢO SÁT ĐỊA HÌNH - HẠNG MỤC: CỐNG TUẦN MÂY TẠI K0+950 ĐÊ TẢ SÔNG VU LAI (XÃ LAI KHÊ)\", \"qty\": null, \"uom\": null, \"bidPrice\": null, \"intoMoney\": 18791448.344, \"orgCode\": \"vnz000001844\", \"pos\": \"1\", \"originQty\": null, \"id\": 11079352887917420, \"parent\": 0}, {\"description\": \"Công tác đo khống chế cao, thủy chuẩn kỹ thuật, cấp địa hình II\", \"qty\": 0.217, \"uom\": \"km\", \"bidPrice\": 1914222, \"intoMoney\": 415386.174, \"orgCode\": \"vnz000001844\", \"pos\": \"1.1\", \"originQty\": 0.217, \"id\": 8269489649248388, \"parent\": 11079352887917420}, {\"description\": \"Công tác đo vẽ mặt cắt địa hình, đo vẽ mặt cắt dọc ở trên cạn; cấp địa hình II\", \"qty\": 1.35, \"uom\": \"100m\", \"bidPrice\": 1342714, \"intoMoney\": 1812663.9000000001, \"orgCode\": \"vnz000001844\", \"pos\": \"1.2\", \"originQty\": 1.35, \"id\": 10027950471787830, \"parent\": 11079352887917420}, {\"description\": \"KHẢO SÁT ĐỊA HÌNH - HẠNG MỤC: CỐNG ĐẦM ĐÌNH TẠI K13+946, ĐÊ HỮU SÔNG KINH MÔN (XÃ PHÚ THÁI)\", \"qty\": null, \"uom\": null, \"bidPrice\": null, \"intoMoney\": 11747121.334, \"orgCode\": \"vnz000001844\", \"pos\": \"2\", \"originQty\": null, \"id\": 12219975926724928, \"parent\": 0}, {\"description\": \"Công tác đo khống chế cao, thủy chuẩn kỹ thuật, cấp địa hình II\", \"qty\": 0.232, \"uom\": \"km\", \"bidPrice\": 1914222, \"intoMoney\": 444099.504, \"orgCode\": \"vnz000001844\", \"pos\": \"2.1\", \"originQty\": 0.232, \"id\": 10042775019883292, \"parent\": 12219975926724928}, {\"description\": \"Công tác đo vẽ mặt cắt địa hình, đo vẽ mặt cắt dọc ở trên cạn; cấp địa hình II\", \"qty\": 1.76, \"uom\": \"100m\", \"bidPrice\": 1342714, \"intoMoney\": 2363176.64, \"orgCode\": \"vnz000001844\", \"pos\": \"2.2\", \"originQty\": 1.76, \"id\": 10307868631004390, \"parent\": 12219975926724928}], \"listTTG\": []}",
+    "contractorList": [
+     {
+      "orgCode": "vnz000001844",
+      "bidWiningPrice": 4007717000,
+      "bidResult": 1,
+      "adjustPrice": 4007717582.5874,
+      "lotOpenPrice": 4027856866.922,
+      "lotFinalPrice": 4007717582.5874,
+      "discountPercent": 0
+     },
+     {
+      "orgCode": "vn0801227933",
+      "bidWiningPrice": 4007717000,
+      "bidResult": 1,
+      "adjustPrice": 4007717582.5874,
+      "lotOpenPrice": 4027856866.922,
+      "lotFinalPrice": 4007717582.5874,
+      "discountPercent": null
+     }
+    ]
+   }
+  ],
+  "lotResultItems": []
+ },
+ "bidpPlanDetailDTO": null
+}

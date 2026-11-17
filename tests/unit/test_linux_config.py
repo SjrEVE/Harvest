@@ -19,12 +19,12 @@ def test_verified_profile_only_creates_rules_not_collection_proof(tmp_path):
             conn.execute(
                 "SELECT COUNT(*) FROM filter_boundary_rules WHERE canary_verified=1"
             ).fetchone()[0]
-            == 6
+            == 7
         )
         assert conn.execute("SELECT COUNT(*) FROM coverage_proofs").fetchone()[0] == 0
         assert conn.execute("SELECT COUNT(*) FROM source_records").fetchone()[0] == 0
     jobs = make_jobs(tmp_path, mode="BACKFILL", family="ALL", first="2026-01-01", last="2026-01-10")
-    assert len(jobs) == 1 and len(jobs[0].sources) == 6 and jobs[0].scope["cadence"] == "WEEK"
+    assert len(jobs) == 1 and len(jobs[0].sources) == 7 and jobs[0].scope["cadence"] == "WEEK"
     assert jobs[0].interval().duration.days == 10
     assert not list(tmp_path.glob("serving*"))
 

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from santhau_studio.collectors.budget import RequestBudget
 from santhau_studio.collectors.deep import DeepLaneSpec, parse_detail
-from santhau_studio.collectors.http_client import FetchLane
+from santhau_studio.collectors.http_client import FetchLane, validate_query
 from santhau_studio.collectors.source_registry import FAMILY_ORDER
 from santhau_studio.domain.redaction import redact_payload
 from santhau_studio.storage.warehouse import WarehouseWriter
@@ -20,10 +20,16 @@ from santhau_studio.storage.warehouse import WarehouseWriter
 
 def prepare(path):
     value = json.loads(path.read_text(encoding='utf-8'))
-    if value.get('family') not in FAMILY_ORDER or value.get('lane') not in ('DETAIL','HSMT','REOFFER','KQLCNT_FULL','BOQ'):
+    if value.get('family') not in FAMILY_ORDER or value.get('lane') not in ('DETAIL','HSMT','REOFFER','KQLCNT_FULL','BOQ','M1'):
         raise ValueError('Unsupported family/lane')
     FetchLane._check_url(value['endpoint'])
-    if redact_payload(value) != value:
+    # The sanctioned query string (e.g. the portal's presence-only `token=`)
+    # is validated by its own strict pattern, not by the credential scrubber:
+    # scrub_url would redact any `token=` value, which is exactly the point
+    # here — the value is empty and carries no credential material.
+    query = validate_query(value.get('query'))
+    rest = {k: v for k, v in value.items() if k != 'query'}
+    if redact_payload(rest) != rest:
         raise ValueError('Manifest must not contain credentials or credential URLs')
     spec = DeepLaneSpec(family=value['family'],lane=value['lane'],**value['spec'])
     if spec.requires_session:
@@ -32,6 +38,7 @@ def prepare(path):
         raise ValueError('Explicit request_body is required')
     if len(json.dumps(value)) > 65536:
         raise ValueError('Manifest exceeds 64 KiB')
+    value['query'] = query
     return value,spec
 
 
@@ -52,7 +59,7 @@ def main(argv=None):
             return 0
         if not args.execute or not os.environ.get('SANTHAU_CANARY_APPROVED') or args.data_root is None:
             raise ValueError('BLOCKED: explicit owner approval, --execute and --data-root required')
-        with FetchLane(url=value['endpoint'],source_key='egp_home',budget=RequestBudget(3,90)) as lane:
+        with FetchLane(url=value['endpoint'],source_key='egp_home',budget=RequestBudget(3,90),query=value.get('query')) as lane:
             result=lane.post(value['request_body'])
         parsed=parse_detail(spec,result.payload)
         with closing(WarehouseWriter.open(args.data_root,create_schema=True,role='deep-canary')) as writer:

@@ -38,13 +38,14 @@ DeepFetcher = Callable[[str, str], dict | DeepResponse]  # (family, natural_key)
 SpecProvider = Callable[[str, str], DeepLaneSpec | None]  # (family, lane) -> spec
 Clock = Callable[[], datetime]
 
-LANE_KINDS = {"DETAIL": "DETAIL", "HSMT": "HSMT", "REOFFER": "REOFFER"}
+LANE_KINDS = {"DETAIL": "DETAIL", "HSMT": "HSMT", "REOFFER": "REOFFER", "M1": "M1"}
 DEFAULT_BATCH_LIMIT = 200
 
 LANE_READINESS = {
     "DETAIL": "TESTED_OFFLINE",
     "HSMT": "TESTED_OFFLINE",
     "REOFFER": "TESTED_OFFLINE",
+    "M1": "TESTED_OFFLINE",
     "KQLCNT_FULL": "BLOCKED",
     "BOQ": "BLOCKED",
 }
@@ -59,7 +60,11 @@ class DeepBatchResult:
 
 def _default_spec(family: str, lane: str) -> DeepLaneSpec | None:
     """The shipped specs carry `paths=None` until a canary proves the shape (D-3)."""
-    spec = {"DETAIL": detail_spec, "HSMT": hsmt_spec, "REOFFER": reoffer_spec}[lane](family)
+    factory = {"DETAIL": detail_spec, "HSMT": hsmt_spec, "REOFFER": reoffer_spec}.get(lane)
+    if factory is None:
+        # Lanes served by collectors.public_spec (e.g. M1) have no default spec here.
+        return None
+    spec = factory(family)
     declared = bool(spec.members_path or spec.lots_path or spec.goods_path or spec.hsmt_columns)
     return spec if declared else None
 

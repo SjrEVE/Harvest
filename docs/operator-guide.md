@@ -11,21 +11,21 @@ Kho thử nghiệm có cảnh báo rõ. Không dùng kho thử hoặc quy tắc 
 
 ## Thu thập theo tuần
 
-Trong **Thu thập dữ liệu**, chọn **Thu thập theo khoảng ngày**, **Tất cả 6 loại hồ sơ**,
-hai ngày đầu/cuối và **Theo tuần — đủ 6 loại rồi chuyển tuần tiếp**. Khoảng ngày bao gồm
+Trong **Thu thập dữ liệu**, chọn **Thu thập theo khoảng ngày**, **Tất cả 7 loại hồ sơ**,
+hai ngày đầu/cuối và **Theo tuần — đủ 7 loại rồi chuyển tuần tiếp**. Khoảng ngày bao gồm
 cả hai ngày, theo giờ Việt Nam. Tuần ở đây là 7 ngày liên tiếp từ ngày bắt đầu, xử lý
 từ tuần mới nhất lùi dần về trước; tuần cuối có thể ngắn hơn 7 ngày và được xử lý đầu tiên.
 
-Nếu chọn đến hôm nay, bộ thu thập lấy dữ liệu hiện có của hôm nay cho cả sáu loại,
+Nếu chọn đến hôm nay, bộ thu thập lấy dữ liệu hiện có của hôm nay cho cả bảy loại,
 giữ trạng thái chưa chốt đủ ngày rồi tiếp tục các ngày đã kết thúc. Hôm nay có thể
 còn phát sinh hồ sơ, nên tác vụ vẫn ghi Chưa đầy đủ cùng lý do rõ ràng; chạy cập nhật
 hoặc chạy lại sau khi hết ngày để đối chiếu và chốt bằng chứng. Lỗi mạng, CAPTCHA
 và giới hạn không được bỏ qua theo cơ chế này.
 
-Một tác vụ tự xử lý sáu loại trong từng tuần. Ngày đã được xác nhận đủ bằng chứng được
+Một tác vụ tự xử lý bảy loại trong từng tuần. Ngày đã được xác nhận đủ bằng chứng được
 bỏ qua. Chạm giới hạn thời gian hoặc số yêu cầu mà vẫn hoàn thành thêm khoảng thời gian
 thì tác vụ tiếp tục phần thiếu trong cùng tuần. Nếu nguồn bị chặn, có lỗi chưa xử lý được
-hoặc không tiến triển, tác vụ dừng và giữ tiến độ. Không chuyển tuần khi chưa đủ sáu loại.
+hoặc không tiến triển, tác vụ dừng và giữ tiến độ. Không chuyển tuần khi chưa đủ bảy loại.
 
 Phần đã lưu không bị xóa khi chạy lại. Ngày đang dở có thể được đọc lại để đối chiếu
 với nguồn thay đổi; điều này khác với cào lại ngày đã hoàn thành. Tác vụ tuần mới không
@@ -47,8 +47,8 @@ không được coi là số chính xác. Bảng dùng dữ liệu hiển thị 
 có thời điểm cập nhật; số lượng đạt 100% không thay thế bằng chứng thu thập đầy đủ.
 
 Ngày thống kê theo từng loại phải khớp ngày nguồn dùng để lọc. Kết quả lựa chọn nhà thầu
-dùng ngày công bố kết quả, không cộng vào tháng công bố thông báo mời thầu. Tổng sáu loại
-là số hồ sơ thuộc sáu tập dữ liệu, không phải số gói thầu riêng biệt.
+dùng ngày công bố kết quả, không cộng vào tháng công bố thông báo mời thầu. Tổng bảy loại
+là số hồ sơ thuộc bảy tập dữ liệu, không phải số gói thầu riêng biệt.
 
 **Tra cứu hồ sơ** có tìm kiếm tiếng Việt, bộ lọc, sắp xếp và phân trang. **Chi tiết hồ sơ**
 giữ dữ liệu gốc và lịch sử; trường thiếu được giữ là chưa biết. Thông tin HSMT, hàng hóa

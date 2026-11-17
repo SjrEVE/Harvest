@@ -72,7 +72,7 @@ def choose(window, name, day):
     assert not popup.property("visible")
 
 
-@pytest.mark.parametrize(("family", "days", "expected_jobs", "weekly"), [("TBMT", 3, 1, False), ("ALL", 1, 6, False), ("ALL", 1, 1, False), ("ALL", 1, 1, True)])
+@pytest.mark.parametrize(("family", "days", "expected_jobs", "weekly"), [("TBMT", 3, 1, False), ("ALL", 1, 7, False), ("ALL", 1, 1, False), ("ALL", 1, 1, True)])
 def test_calendar_click_starts_real_worker_for_all_selected_days(tmp_path, monkeypatch, family, days, expected_jobs, weekly):
     app = _qt_app()
     data = tmp_path / "native-calendar"
@@ -141,12 +141,12 @@ def test_calendar_click_starts_real_worker_for_all_selected_days(tmp_path, monke
         spin(app,lambda:not page.property("submitting"))
         assert "Đã xếp hàng" in page.property("enqueueResult"),page.property("enqueueResult")
         if family == "ALL" and expected_jobs == 1 and not weekly:
-            assert "1/6 loại" in page.property("enqueueResult")
+            assert "1/7 loại" in page.property("enqueueResult")
             assert "nguồn chưa được xác minh" in page.property("enqueueResult")
         spin(app,lambda:len(list((data/"jobs/done").glob("*.json")))==expected_jobs,seconds=60)
         job = JobRequest.from_json(next((data/"jobs/done").glob("*.json")).read_text())
         if weekly:
-            assert job.scope["cadence"] == "WEEK" and len(job.sources) == 6
+            assert job.scope["cadence"] == "WEEK" and len(job.sources) == 7
         assert job.interval().duration == timedelta(days=days)
         assert job.interval().from_utc.astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).date()==first
         assert job.interval().to_utc.astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).date()==last+timedelta(days=1)
@@ -154,10 +154,10 @@ def test_calendar_click_starts_real_worker_for_all_selected_days(tmp_path, monke
             status = conn.execute("SELECT lifecycle,status FROM runs WHERE job_id=?",(job.job_id,)).fetchone()
             records = conn.execute("SELECT count(*) FROM source_records").fetchone()[0]
         assert status == ("FINISHED","COMPLETED"),status
-        expected_families = 6 if weekly else expected_jobs
+        expected_families = 7 if weekly else expected_jobs
         assert records==36*days*expected_families,records
         with sqlite3.connect(data/"warehouse.sqlite") as conn:
-            assert conn.execute("SELECT count(*) FROM runs WHERE lifecycle='FINISHED' AND status='COMPLETED'").fetchone()[0] == (7 if weekly else expected_jobs)
+            assert conn.execute("SELECT count(*) FROM runs WHERE lifecycle='FINISHED' AND status='COMPLETED'").fetchone()[0] == (8 if weekly else expected_jobs)
             assert conn.execute("SELECT count(DISTINCT family) FROM source_records").fetchone()[0] == expected_families
         QMetaObject.invokeMethod(page, "reload")
         def ui_finished():

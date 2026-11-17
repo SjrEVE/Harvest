@@ -73,6 +73,7 @@ def builder(_writer, request):
         "KHLCNT": ("planNo", "planVersion"),
         "DU_AN": ("pno", "pversion"),
         "YCBG": ("notifyNo", "notifyVersion"),
+        "ESHOP": ("bidNo", "orderNo"),
     }[family]
 
     def pages(interval, _granularity, _window):

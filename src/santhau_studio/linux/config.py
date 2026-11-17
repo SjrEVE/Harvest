@@ -62,11 +62,11 @@ def read_profile(path):
     rows = value.get("rules")
     if (
         not isinstance(rows, list)
-        or len(rows) != 6
+        or len(rows) != 7
         or not all(isinstance(r, dict) for r in rows)
         or {r.get("family") for r in rows} != set(FAMILY_ORDER)
     ):
-        raise ValueError("Cấu hình cần đủ sáu loại hồ sơ.")
+        raise ValueError("Cấu hình cần đủ bảy loại hồ sơ.")
     for r in rows:
         if (
             set(r) != set(PROFILE_COLUMNS)
