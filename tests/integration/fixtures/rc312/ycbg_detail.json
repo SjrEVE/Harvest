@@ -1,0 +1,59 @@
+{
+  "bidoRequestQuote": {
+    "bidName": null,
+    "cancelBy": null,
+    "cancelDate": null,
+    "cancelDecisionAgency": null,
+    "cancelDecisionDate": null,
+    "cancelDecisionNo": null,
+    "cancelFileAttachId": null,
+    "cancelFileAttachName": null,
+    "cancelReason": null,
+    "historyDelay": null,
+    "id": "79e481d8-f6e9-4c2b-9283-f0de6aa1abb7",
+    "investorCode": "vnz000019747",
+    "investorName": "Trung tâm Nước sạch và Vệ sinh môi trường nông thôn tỉnh Quảng Trị",
+    "location": "[{\"districtCode\":\"18880\",\"districtName\":\"Phường Đồng Hới\",\"provCode\":\"44\",\"provName\":\"Tỉnh Quảng Trị\",\"wardCode\":null,\"wardName\":null}]",
+    "originalPublicDate": "2026-11-17T11:41:46.942",
+    "pName": null,
+    "publicDate": "2026-11-17T11:41:46.942",
+    "receptionDateFrom": "2026-11-17T11:41:46.942",
+    "receptionDateTo": "2026-11-20T23:59:00",
+    "requestQuoteContent": null,
+    "requestQuoteFile": {
+      "briefFileId": null,
+      "briefFileName": null,
+      "decisionAgency": null,
+      "decisionDate": "2026-11-17T04:41:16.000+0000",
+      "decisionFileId": "3ddee891-ac18-4678-97f3-6c2d186f0539",
+      "decisionFileName": "Thư mời báo giá BHLĐ 2026 đợt 2.pdf",
+      "decisionNo": "963/TM-TTN",
+      "fileId": null,
+      "fileName": null,
+      "id": "79e481d8-f6e9-4c2b-9283-f0de6aa1abb7",
+      "otherFileId": "3a53ab71-8ee4-4240-bae9-09ac709aab13",
+      "otherFileName": "Thư mời báo giá BHLĐ 2026 đợt 2.pdf",
+      "requestQuoteId": "79e481d8-f6e9-4c2b-9283-f0de6aa1abb7",
+      "requestQuoteNo": "RQ2600103987",
+      "requestQuoteVersion": "00"
+    },
+    "requestQuoteForm": "ONLINE",
+    "requestQuoteName": "Báo giá Mua sắm trang thiết bị bảo hộ lao động, phương tiện bảo vệ cá nhân và dụng cụ an toàn năm 2026 (đợt 2).",
+    "requestQuoteNo": "RQ2600103987",
+    "requestQuoteType": "HHDVK",
+    "requestQuoteVersion": "00",
+    "rqValidityPeriod": 60,
+    "rqValidityPeriodUnit": "D",
+    "status": "01"
+  },
+  "versionsList": [
+    {
+      "id": "79e481d8-f6e9-4c2b-9283-f0de6aa1abb7",
+      "no": null,
+      "publicBy": null,
+      "publicDate": null,
+      "status": null,
+      "version": "00"
+    }
+  ]
+}

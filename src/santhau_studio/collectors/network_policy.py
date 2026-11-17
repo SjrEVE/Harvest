@@ -2,8 +2,8 @@
 
 Two defects in the source repo are fixed structurally here rather than by convention:
 
-* the old adapters kept a rate limiter **per adapter instance**, so six families on one
-  host could issue six concurrent 3 s-paced lanes and effectively run at 0.5 s/request.
+* the old adapters kept a rate limiter **per adapter instance**, so seven families on one
+  host could issue seven concurrent 3 s-paced lanes and effectively run at 0.5 s/request.
   The limiter is keyed by host and shared across lanes and processes.
 * the old code wrote token-bearing URLs into `coverage_windows.reason` and passed the
   VNEPS token in a query string. Scrubbing happens at the exception boundary, so a URL

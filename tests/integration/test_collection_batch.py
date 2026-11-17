@@ -35,17 +35,17 @@ def keep_tbmt_only(backend):
     build_serving_db(backend.data_root / "warehouse.sqlite", backend.serving_path)
 
 
-def test_all_queues_six_independent_jobs_with_same_exact_scope(backend):
+def test_all_queues_seven_independent_jobs_with_same_exact_scope(backend):
     result = backend.enqueue_collection(payload())
     assert result["ok"], result
     jobs = requests(backend)
-    assert len(jobs) == 6
+    assert len(jobs) == 7
     assert {j.sources[0]["family"] for j in jobs} == set(FAMILY_ORDER)
     assert all(len(j.sources) == 1 and j.interval().duration.days == 3 for j in jobs)
-    assert len(result["jobs"]) == 6 and not result["blocked"]
+    assert len(result["jobs"]) == 7 and not result["blocked"]
 
 
-def test_all_reports_five_blockers_without_claiming_six_started(backend):
+def test_all_reports_six_blockers_without_claiming_seven_started(backend):
     keep_tbmt_only(backend)
     result = backend.enqueue_collection(payload())
     assert result["ok"] and len(result["jobs"]) == 1, result
@@ -80,18 +80,18 @@ def test_start_batch_starts_worker_once_and_retains_diagnostics(backend, monkeyp
     starts = []
     monkeypatch.setattr(WorkerSupervisor, "ensure_running", lambda _: starts.append(1) or {"ok": True})
     result = backend.start_collection(payload())
-    assert result["ok"] and len(requests(backend)) == 6
+    assert result["ok"] and len(requests(backend)) == 7
     assert starts == [1]
     report = json.loads((backend.data_root / "logs/collection-last-result.json").read_text(encoding="utf-8"))
     assert report["input"]["date_from"] == "01/11/2026"
-    assert len(report["result"]["jobs"]) == 6
+    assert len(report["result"]["jobs"]) == 7
 
 
 def test_overview_keeps_readiness_and_missing_coverage_separate(backend):
     keep_tbmt_only(backend)
     result = backend.collection_overview()
     rows = {r["family"]: r for r in result["families"]}
-    assert len(rows) == 6
+    assert len(rows) == 7
     assert rows["TBMT"]["readiness"] == "RULE_VERIFIED"
     assert rows["TBMT"]["yesterday_status"] == "NOT_ACCESSED"
     assert rows["KHLCNT"]["readiness"] == "BLOCKED"

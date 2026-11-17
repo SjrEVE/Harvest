@@ -28,6 +28,74 @@ ENDPOINTS = {
     "M1": "expose/contractor-input-result/get",
 }
 
+# RC3-12 public detail lanes (method A, verified live 2026-11-17 — see
+# ~/workspace/msc-evidence-verification-2026-11-17.md): plain HTTP on Linux,
+# no browser, no session. Endpoints carrying `?token=` take the parameter with
+# an EMPTY value — the portal checks its presence, not its value (the M1
+# canary proved this on 2026-11-13; the 17/11 probes proved it again for
+# TBMT/KHLCNT/DU_AN/contract detail). YCBG and eShop take no token at all.
+# (family, lane) -> (endpoint path, query or None)
+DETAIL_ENDPOINTS = {
+    ("TBMT", "DETAIL"): ("lcnt_tbmt_ttc_ldt", "token="),
+    ("TBMT", "HSMT"): ("lcnt_tbmt_hsmt", "token="),
+    ("YCBG", "DETAIL"): ("get-request-quote", None),
+    ("ESHOP", "DETAIL"): ("eshop/shopping-result/detail-public-by-bidNo", None),
+    ("KHLCNT", "DETAIL"): ("expose/lcnt/bid-po-bidp-plan-project-view/get-by-id", "token="),
+    ("DU_AN", "DETAIL"): ("expose/lcnt/bid-po-bidp-project-view/get-by-id", "token="),
+    ("HOP_DONG", "DETAIL"): ("econsign/contract-info/detail-by-id-for-po", "token="),
+}
+
+# Parser kind per new (family, lane). The CGTTRG DETAIL/REOFFER/HSMT lanes keep
+# parser_kind == lane (their _reoffer/_hsmt parsers); the new lanes get their
+# own kinds so parse_public never confuses a TBMT metadata payload with a
+# CGTTRG reoffer payload. TBMT DETAIL/HSMT are deliberately NOT here: one spec
+# serves both bidForms of the TBMT lanes (the spec is keyed by family+lane,
+# while the endpoint differs by bidForm), so they keep parser_kind == lane and
+# parse_public dispatches on the payload shape instead. Their endpoint_kind
+# likewise stays the CGTTRG one — the fetcher receipt records the true
+# endpoint URL, and reuse is safe because REOFFER only runs on CGTTRG records
+# and reuse requires the same listing version.
+DETAIL_PARSER_KINDS = {
+    ("YCBG", "DETAIL"): "YCBG_DETAIL",
+    ("ESHOP", "DETAIL"): "ESHOP_DETAIL",
+    ("KHLCNT", "DETAIL"): "KHLCNT_DETAIL",
+    ("DU_AN", "DETAIL"): "DUAN_DETAIL",
+    ("HOP_DONG", "DETAIL"): "CONTRACT_DETAIL",
+}
+
+# Listing-side natural-key field per detail family — the pre-fetch check that
+# the listing row belongs to this record (the detail payload uses a different
+# field name for YCBG: requestQuoteNo vs the listing's notifyNo).
+_DETAIL_LISTING_FIELD = {
+    "TBMT": "notifyNo",
+    "YCBG": "notifyNo",
+    "ESHOP": "bidNo",
+    "KHLCNT": "planNo",
+    "DU_AN": "pno",
+    "HOP_DONG": "contractCode",
+}
+# Identity key the detail payload carries, per family — the identity check
+# compares it against the listing's natural key.
+_DETAIL_KEY_FIELD = {
+    "TBMT": "notifyNo",
+    "YCBG": "requestQuoteNo",
+    "ESHOP": "bidNo",
+    "KHLCNT": "planNo",
+    "DU_AN": "pno",
+    "HOP_DONG": "contractCode",
+}
+
+# Version field the detail payload itself carries, per family — the identity
+# check compares it against the listing's version_raw.
+_DETAIL_VERSION_FIELD = {
+    "TBMT": "notifyVersion",
+    "YCBG": "requestQuoteVersion",
+    "ESHOP": "orderNo",
+    "KHLCNT": "planVersion",
+    "DU_AN": "pversion",
+    "HOP_DONG": "contractVersion",
+}
+
 # Currency for lot/goods prices. HSMT payloads declare no currency, but the same
 # package's REOFFER payload declares bidPriceUnit=VND on 1,679/1,679 live captures
 # and its package bidPrice equals the sum of the HSMT lotPrices, so the lot prices
@@ -38,12 +106,38 @@ TAX_UNKNOWN = "UNKNOWN"
 
 
 def public_spec(family, lane):
-    if lane not in ENDPOINTS:
-        return None
     if lane == "M1":
         if family != "KQLCNT":
             return None
-    elif family != "TBMT":
+        return DeepLaneSpec(
+            family,
+            lane,
+            "public-cgttrg-" + ENDPOINTS[lane],
+            ("notifyVersion",),
+            requires_session=False,
+            parser_kind=lane,
+            parser_version=PARSER_VERSION,
+        )
+    if (family, lane) in DETAIL_PARSER_KINDS:
+        # RC3-12: the public detail lanes for the non-TBMT families. Each has
+        # its own endpoint, so each gets its own endpoint_kind (reuse is
+        # keyed on endpoint_kind — see workers/deep_reuse.py). TBMT
+        # DETAIL/HSMT fall through to the legacy spec below: their endpoint
+        # differs by bidForm (CGTTRG vs the rest), and the spec is keyed by
+        # family+lane only, so one spec must serve both forms.
+        path, _query = DETAIL_ENDPOINTS[(family, lane)]
+        return DeepLaneSpec(
+            family,
+            lane,
+            "public-" + family.lower() + "-" + path.replace("/", "-"),
+            (_DETAIL_VERSION_FIELD[family],),
+            requires_session=False,
+            parser_kind=DETAIL_PARSER_KINDS[(family, lane)],
+            parser_version=PARSER_VERSION,
+        )
+    if lane not in ENDPOINTS:
+        return None
+    if family != "TBMT":
         return None
     return DeepLaneSpec(
         family,
@@ -944,11 +1038,293 @@ def _m1(payload):
     )
 
 
+def _currency_unit(record, field):
+    """A 3-letter currency code the record itself declares, else None.
+
+    Same rule as _payload_currency, applied to a flat record: the code must be
+    attested by the payload — never guessed, never defaulted to VND.
+    """
+    unit = record.get(field)
+    if isinstance(unit, str) and len(unit.strip()) == 3:
+        return unit.strip().upper()
+    return None
+
+
+def _reference_document(kind, file_id, file_name, *, owner_kind, owner_key, owner_version, source_path):
+    """A REFERENCE_ONLY document row — the portal exposes the file id and
+    name, but no verified download endpoint (the server-side download route
+    returns 404; per-package binaries need the VNeGP Client Agent on
+    Windows). Both id and name must be present, like the CGTTRG path."""
+    if not isinstance(file_id, str) or not file_id.strip():
+        return None
+    if not isinstance(file_name, str) or not file_name.strip():
+        return None
+    return {
+        "document_kind": kind,
+        "source_file_id": file_id,
+        "name": file_name,
+        "owner_kind": owner_kind,
+        "owner_key": owner_key,
+        "owner_version": owner_version,
+        "source_path": source_path,
+        "download_status": "REFERENCE_ONLY",
+        "download_reason": "DOWNLOAD_ENDPOINT_UNVERIFIED",
+    }
+
+
+def _detail(payload, family):
+    """RC3-12 public detail payloads: metadata + attested money/documents only.
+
+    v1 deliberately derives no goods rows and no lots — the detail payloads
+    carry no per-item structure that can be projected without double-counting
+    (the eShop contractorList repeats product tables per contractor, the
+    YCBG formValue is a JSON string of forms). The raw payload is stored with
+    the capture, so a later parser version can replay it.
+    """
+    documents, relations, money = [], [], []
+    problems = []
+    if family == "TBMT":
+        notice = payload.get("bidoNotifyContractorM")
+        if not isinstance(notice, dict):
+            raise DetailShapeError("TBMT_DETAIL_ENVELOPE_INVALID")
+        version = {
+            k: notice.get(k)
+            for k in ("notifyNo", "notifyVersion", "bidForm", "processApply")
+        }
+        plan = payload.get("bidpPlanDetail")
+        plan = {} if plan is None else plan
+        if not isinstance(plan, dict):
+            raise DetailShapeError("TBMT_PLAN_DETAIL_NOT_OBJECT")
+        plan_no = plan.get("planNo")
+        if plan_no:
+            relations.append(
+                {
+                    "family": "KHLCNT",
+                    "key": plan_no,
+                    "version": plan.get("planVersion"),
+                    "relation": "PLAN_HAS_NOTICE",
+                    "path": "bidpPlanDetail.planNo",
+                }
+            )
+        amount = _money_amount(
+            plan, "bidPrice", role="BID_PRICE", owner_kind="PACKAGE",
+            owner_ref="", source_path="bidpPlanDetail.bidPrice",
+            currency_code=_currency_unit(plan, "bidPriceUnit"),
+        )
+        if amount is not None:
+            money.append(amount)
+    elif family == "YCBG":
+        quote = payload.get("bidoRequestQuote")
+        if not isinstance(quote, dict):
+            raise DetailShapeError("YCBG_DETAIL_ENVELOPE_INVALID")
+        key = quote.get("requestQuoteNo")
+        version = {
+            k: quote.get(k) for k in ("requestQuoteNo", "requestQuoteVersion")
+        }
+        files = quote.get("requestQuoteFile")
+        files = {} if files is None else files
+        if not isinstance(files, dict):
+            raise DetailShapeError("YCBG_REQUEST_QUOTE_FILE_NOT_OBJECT")
+        for kind, id_field, name_field in (
+            ("REQUEST_QUOTE_DECISION", "decisionFileId", "decisionFileName"),
+            ("REQUEST_QUOTE_ATTACHMENT", "otherFileId", "otherFileName"),
+            ("REQUEST_QUOTE_BRIEF", "briefFileId", "briefFileName"),
+        ):
+            doc = _reference_document(
+                kind, files.get(id_field), files.get(name_field),
+                owner_kind="PACKAGE", owner_key=key,
+                owner_version=quote.get("requestQuoteVersion"),
+                source_path=f"bidoRequestQuote.requestQuoteFile.{id_field}",
+            )
+            if doc is not None:
+                documents.append(doc)
+    elif family == "ESHOP":
+        if not isinstance(payload.get("bidNo"), str) or not payload["bidNo"].strip():
+            raise DetailShapeError("ESHOP_DETAIL_ENVELOPE_INVALID")
+        version = {k: payload.get(k) for k in ("bidNo", "orderNo")}
+        for field, role in (("bidPrice", "BID_PRICE"), ("orderPrice", "WIN_PRICE")):
+            amount = _money_amount(
+                payload, field, role=role, owner_kind="PACKAGE",
+                owner_ref="", source_path=field,
+                currency_code=_currency_unit(payload, field + "Unit"),
+            )
+            if amount is not None:
+                money.append(amount)
+        contractors = payload.get("contractorList")
+        contractors = [] if contractors is None else contractors
+        if not isinstance(contractors, list):
+            raise DetailShapeError("ESHOP_CONTRACTOR_LIST_NOT_LIST")
+        members = _members_from_contractor_list(contractors, problems)
+        return ParsedDetail(
+            _json(version), {}, (), tuple(members), tuple(problems), (),
+            tuple(documents), tuple(relations),
+            capability="NOTICE_METADATA", parser_version=PARSER_VERSION,
+            money=tuple(money),
+        )
+    elif family == "KHLCNT":
+        view = payload.get("bidPoBidpPlanProjectDetailView")
+        if not isinstance(view, dict):
+            raise DetailShapeError("KHLCNT_DETAIL_ENVELOPE_INVALID")
+        version = {k: view.get(k) for k in ("planNo", "planVersion")}
+    elif family == "DU_AN":
+        key = payload.get("pno")
+        if not isinstance(key, str) or not key.strip():
+            raise DetailShapeError("DUAN_DETAIL_ENVELOPE_INVALID")
+        version = {k: payload.get(k) for k in ("pno", "pversion")}
+        doc = _reference_document(
+            "PROJECT_DECISION", payload.get("decisionFileId"),
+            payload.get("decisionFileName"),
+            owner_kind="PACKAGE", owner_key=key,
+            owner_version=payload.get("pversion"),
+            source_path="decisionFileId",
+        )
+        if doc is not None:
+            documents.append(doc)
+        amount = _money_amount(
+            payload, "investTotal", role="BUDGET", owner_kind="PACKAGE",
+            owner_ref="", source_path="investTotal",
+            currency_code=_currency_unit(payload, "investTotalUnit"),
+        )
+        if amount is not None:
+            money.append(amount)
+    elif family == "HOP_DONG":
+        contract = payload.get("contract")
+        if not isinstance(contract, dict):
+            raise DetailShapeError("CONTRACT_DETAIL_ENVELOPE_INVALID")
+        version = {
+            k: contract.get(k) for k in ("contractCode", "contractVersion")
+        }
+        # CONTRACT_VALUE is a PACKAGE-role amount: the money writer resolves
+        # PACKAGE owners to the record itself, and there is no CONTRACT
+        # owner_kind in the schema — so the contract's price lands on the
+        # record, with the source path naming the contract field.
+        amount = _money_amount(
+            contract, "priceAfter", role="CONTRACT_VALUE",
+            owner_kind="PACKAGE", owner_ref="",
+            source_path="contract.priceAfter",
+            currency_code=_currency_unit(contract, "priceAfterUnit"),
+        )
+        if amount is not None:
+            money.append(amount)
+    else:  # pragma: no cover - public_spec only routes known families here.
+        raise DetailShapeError("DETAIL_FAMILY_UNKNOWN")
+    return ParsedDetail(
+        _json(version), {}, (), (), tuple(problems), (),
+        tuple(documents), tuple(relations),
+        capability="NOTICE_METADATA", parser_version=PARSER_VERSION,
+        money=tuple(money),
+    )
+
+
+def _members_from_contractor_list(contractors, problems):
+    """OFFEROR members from an eShop contractorList — the _reoffer shape.
+
+    Rows group by contractorCode (one row per contractor in the canaried
+    payloads, but the grouping is the same guard _reoffer uses); the member
+    raw keeps the source rows, the tax id is MISSING (the endpoint carries
+    no tax code), and the ranking is 1-based like _reoffer. The
+    per-contractor productList (a JSON string, repeated per contractor) is
+    NOT projected in v1: goods rows would double-count.
+    """
+    grouped = {}
+    for i, row in enumerate(contractors):
+        if not isinstance(row, dict):
+            problems.append(f"OFFEROR_{i}_INVALID")
+            continue
+        code = row.get("contractorCode") or "unnamed-row-" + str(i)
+        grouped.setdefault(code, []).append(row)
+    members = []
+    for code, originals in grouped.items():
+        raw = {"contractorCode": code, "source_rows": originals}
+        name = _text(originals[0], ("contractorName",))
+        if not name:
+            problems.append("OFFEROR_NAME_MISSING")
+        members.append(
+            ParsedMember(
+                record_object_sha(raw),
+                raw,
+                name or str(code),
+                "MISSING",
+                None,
+                "OFFEROR",
+                "MISSING",
+                None,
+                len(members) + 1,
+            )
+        )
+    return members
+
+
+def _tbmt_hsmt(payload):
+    """HSMT chapters for a non-CGTTRG TBMT package (lcnt_tbmt_hsmt).
+
+    Unlike the CGTTRG path, the chapters carry no Table-form lots: formValue
+    is a JSON string of field codes (C3/C4/P2/BD_DATA_TABLE), so v1 stores the
+    chapter schemas and the envelope version only — no lots, no money. The
+    CGTTRG path (_hsmt) is untouched: it still requires bidForm == "CGTTRG"
+    on every form and parses the Table rows.
+    """
+    forms = payload.get("bidoInvBiddingDTO")
+    if "bidoInvBiddingDTO" not in payload or not isinstance(forms, list):
+        raise DetailShapeError("HSMT_FORMS_MISSING_OR_INVALID")
+    chapters = []
+    for form in forms:
+        if not isinstance(form, dict) or form.get("bidForm") == "CGTTRG":
+            raise DetailShapeError("UNVERIFIED_HSMT_FORM")
+        chapters.append(
+            {
+                k: form.get(k)
+                for k in ("notifyId", "notifyNo", "notifyVersion", "bidForm",
+                          "processApply", "chapterCode", "formCode",
+                          "lastModifiedDate")
+            }
+        )
+    version = {}
+    if chapters:
+        first = chapters[0]
+        version = {
+            k: first.get(k)
+            for k in ("notifyId", "notifyNo", "notifyVersion", "bidForm",
+                      "processApply")
+        }
+    return ParsedDetail(
+        _json(version),
+        {"chapters": chapters},
+        (), (), (), (),
+        (), (),
+        capability="NOTICE_METADATA", parser_version=PARSER_VERSION,
+    )
+
+
 def parse_public(spec, payload):
     if not isinstance(payload, dict):
         raise DetailShapeError("DEEP_RESPONSE_NOT_OBJECT")
     if spec.parser_kind == "HSMT":
+        # One spec serves both TBMT HSMT endpoints: the CGTTRG endpoint
+        # (lcnt_tbmcgtt_hsmt, Table-form lots) and the generic endpoint
+        # (lcnt_tbmt_hsmt, field-code chapters). The payload's bidForm
+        # decides — a non-empty list of all non-CGTTRG forms is the generic
+        # shape; anything else keeps the CGTTRG parser byte-identical.
+        forms = payload.get("bidoInvBiddingDTO")
+        if (
+            isinstance(forms, list)
+            and forms
+            and all(
+                isinstance(form, dict) and form.get("bidForm") != "CGTTRG"
+                for form in forms
+            )
+        ):
+            return _tbmt_hsmt(payload)
         return _hsmt(payload)
     if spec.parser_kind == "M1":
         return _m1(payload)
+    if spec.parser_kind == "DETAIL":
+        # TBMT DETAIL shares this kind across bidForms: a payload carrying
+        # bidoNotifyContractorM is the generic endpoint's metadata shape;
+        # a CGTTRG payload has no such envelope and keeps the reoffer parser.
+        if isinstance(payload.get("bidoNotifyContractorM"), dict):
+            return _detail(payload, "TBMT")
+        return _reoffer(payload, spec.parser_kind)
+    if spec.parser_kind in DETAIL_PARSER_KINDS.values():
+        return _detail(payload, spec.family)
     return _reoffer(payload, spec.parser_kind)

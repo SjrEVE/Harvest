@@ -27,6 +27,7 @@ ES_TYPE_TO_FAMILY = {
     "es-plan-project-p": "KHLCNT",
     "es-bidp-project-p": "DU_AN",
     "es-ycbg": "YCBG",
+    "es-shopping-result": "ESHOP",
 }
 
 
@@ -73,11 +74,20 @@ def documents(family: str, page_no: int, per_page: int) -> list[dict]:
                 "investorName": f"Ban QLDA {seq % 3}", "investTotal": 8_000_000_000 + seq,
                 "decisionDate": "2026-10-29T00:00:00Z", "pgroup": "A", "location": "Hà Nội",
             })
-        else:  # YCBG — no notifyVersion on purpose
+        elif family == "YCBG":  # no notifyVersion on purpose
             out.append({
                 "notifyNo": f"IB-YC-{seq}", "bidName": f"Yêu cầu báo giá {seq}",
                 "investorName": f"Ban QLDA {seq % 2}", "decisionDate": "2026-10-28T00:00:00Z",
                 "bidOpenDate": "2026-11-02T00:00:00Z",
+            })
+        else:  # ESHOP — orderNo is a singleton list on the list row, like the real portal.
+            out.append({
+                "bidNo": f"BP-ESHOP-{seq}", "orderNo": [f"OR-{seq}"],
+                "planNo": f"PL-{seq}", "bidName": f"Mua sắm trực tuyến {seq}",
+                "pname": f"Mua sắm trực tuyến {seq}", "investorName": f"Ban QLDA {seq % 2}",
+                "bidPrice": 100_000_000 + seq, "winningContractorName": f"Công ty {seq}",
+                "contractorName": f"Công ty {seq}", "winningCode": f"MN-{seq}",
+                "status": "01", "publicDate": "2026-11-01T06:00:00Z",
             })
     return out
 

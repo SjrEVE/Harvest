@@ -47,7 +47,7 @@ from santhau_studio.workers.jobs import JOB_KINDS, JobError, JobRequest, enqueue
 
 DISK_SCAN_LIMIT = 50_000
 SEARCH_LIMIT_MAX = 200
-APP_VERSION = "0.0.1-RC3-11.2"
+APP_VERSION = "0.0.1-RC3-12"
 _PROBE_LOCK = threading.Lock()
 
 _TITLE_KEYS = ("title", "bidName", "planName", "projectName", "contractName", "name")
@@ -294,7 +294,7 @@ class StudioBackend:
             weekly = payload.get("cadence") == "WEEK"
             if weekly:
                 if kind != "BACKFILL" or family != "ALL":
-                    return {"ok": False, "error": "Thu thập theo tuần cần chọn khoảng ngày và tất cả sáu loại hồ sơ."}
+                    return {"ok": False, "error": "Thu thập theo tuần cần chọn khoảng ngày và tất cả bảy loại hồ sơ."}
                 from santhau_studio.workers.weekly import CAPABILITY
                 worker = self.worker_status()
                 if worker.get("running") and CAPABILITY not in worker.get("capabilities", []):
@@ -316,7 +316,7 @@ class StudioBackend:
             )
             template.interval()
             # Validate the entire input before publishing anything. The worker processes
-            # exactly one family per job; six sources in one document would drop five.
+            # exactly one family per job; seven sources in one document would drop six.
             from dataclasses import replace
             planned, blocked = [], []
             for selected in FAMILY_ORDER if family == "ALL" else (family,):

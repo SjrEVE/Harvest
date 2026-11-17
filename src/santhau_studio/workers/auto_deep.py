@@ -88,7 +88,9 @@ def candidates(conn, limit):
       LEFT JOIN deep_capture_parse_metadata pm ON pm.deep_capture_id=c.id AND pm.capture_seq=c.latest_capture_seq
       WHERE r.source_key='egp_home'
       AND ((lane.lane='M1' AND r.family='KQLCNT' AND json_extract(v.normalized_json,'$.inputResultId') IS NOT NULL)
-           OR (lane.lane<>'M1' AND r.family='TBMT' AND json_extract(v.normalized_json,'$.bidForm')='CGTTRG'))
+           OR (lane.lane='HSMT' AND r.family='TBMT' AND json_extract(v.normalized_json,'$.bidForm') IS NOT NULL)
+           OR (lane.lane='REOFFER' AND r.family='TBMT' AND json_extract(v.normalized_json,'$.bidForm')='CGTTRG')
+           OR (lane.lane='DETAIL' AND ((r.family='TBMT' AND json_extract(v.normalized_json,'$.bidForm') IS NOT NULL) OR r.family IN ('YCBG','KHLCNT','DU_AN','HOP_DONG','ESHOP'))))
       AND COALESCE(m.capability,'') NOT IN ('IDENTITY_QUARANTINE','UNVERIFIED_LISTING')
       AND NOT (COALESCE(m.capability,'') LIKE 'UNSUPPORTED%' AND COALESCE(m.adapter_version,0)=? AND COALESCE(m.parser_version,0)=?
                AND COALESCE(t.listing_object_sha,'')=r.current_record_object_sha)
@@ -136,19 +138,23 @@ def candidates(conn, limit):
 def _lane_groups(selected):
     """Group selected (package, lane) targets into batched lane jobs.
 
-    Returns [(lane, [targets...]), ...] in HSMT/REOFFER/DETAIL order, with at
-    most MAX_RECORDS_PER_DEEP_JOB records per job. Grouping by lane keeps one
-    fetcher/spec per job; chunking keeps each job inside the fetcher's
-    30-request budget.
+    Returns [(lane, family, [targets...]), ...] in HSMT/REOFFER/DETAIL order,
+    with at most MAX_RECORDS_PER_DEEP_JOB records per job. Grouping by lane
+    keeps one fetcher/spec per job; grouping by family as well is required
+    because a deep job dispatches one family (run_deep_batch resolves one
+    spec per (family, lane) and _targets filters by that family) — a mixed
+    job would silently drop the records of the other families. Chunking
+    keeps each job inside the fetcher's 30-request budget.
     """
     grouped = {}
     for target in selected:
-        grouped.setdefault(target["lane"], []).append(target)
+        grouped.setdefault((target["lane"], target["family"]), []).append(target)
     jobs = []
     for lane in LANES:
-        targets = grouped.get(lane, [])
-        for start in range(0, len(targets), MAX_RECORDS_PER_DEEP_JOB):
-            jobs.append((lane, targets[start:start + MAX_RECORDS_PER_DEEP_JOB]))
+        for family in sorted({fam for (ln, fam) in grouped if ln == lane}):
+            targets = grouped[(lane, family)]
+            for start in range(0, len(targets), MAX_RECORDS_PER_DEEP_JOB):
+                jobs.append((lane, family, targets[start:start + MAX_RECORDS_PER_DEEP_JOB]))
     return jobs
 
 
@@ -166,11 +172,10 @@ def run_batch(loop, parent_run=None):
     completed = 0
     requests_used = 0
     try:
-        for lane, chunk in _lane_groups(selected):
+        for lane, family, chunk in _lane_groups(selected):
             if loop.flag.interrupt_requested or requests_used >= config["batch_requests"]:
                 break
             record_ids = [target["id"] for target in chunk]
-            family = "KQLCNT" if lane == "M1" else "TBMT"
             request = JobRequest(
                 job_id="auto-deep-" + uuid.uuid4().hex[:16],
                 job_kind=lane,

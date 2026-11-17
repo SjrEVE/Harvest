@@ -117,7 +117,7 @@ Item {
                         StudioComboBox {
                             id:cadence;objectName:"collectionCadence";Layout.fillWidth:true
                             textRole:"label";valueRole:"value"
-                            model:[{label:"Theo tuần — đủ 6 loại rồi chuyển tuần tiếp",value:"WEEK"},{label:"Theo từng loại — toàn bộ khoảng ngày",value:"RANGE"}]
+                            model:[{label:"Theo tuần — đủ 7 loại rồi chuyển tuần tiếp",value:"WEEK"},{label:"Theo từng loại — toàn bộ khoảng ngày",value:"RANGE"}]
                             Accessible.name:"Chọn thu thập theo tuần hoặc theo từng loại"
                         }
                     }
@@ -146,7 +146,7 @@ Item {
                         StudioSpinBox { id:pacing;from:3;to:300;value:3;editable:true;Accessible.name:"Khoảng cách giữa hai yêu cầu, tính bằng giây" }
                     }
                     Label { Layout.fillWidth:true;wrapMode:Text.Wrap;color:"#526477";text:mode.currentValue==="BACKFILL" && family.currentValue==="ALL" && cadence.currentValue==="WEEK"
-                        ? "Ưu tiên tuần mới nhất rồi lùi dần, đủ 6 loại trong mỗi tuần. Nếu chọn hôm nay, lấy dữ liệu hiện có của cả 6 loại rồi tiếp tục ngày cũ; hôm nay chỉ chốt đầy đủ sau khi hết ngày. Ngày đã có bằng chứng đầy đủ được bỏ qua. Mỗi lượt tối đa "+Math.round(seconds.value/60)+" phút / "+requests.value+" yêu cầu: nếu đã hoàn thành thêm ngày, tự lấy tiếp phần thiếu. Lỗi mạng hoặc bị chặn sẽ dừng và báo rõ."
+                        ? "Ưu tiên tuần mới nhất rồi lùi dần, đủ 7 loại trong mỗi tuần. Nếu chọn hôm nay, lấy dữ liệu hiện có của cả 7 loại rồi tiếp tục ngày cũ; hôm nay chỉ chốt đầy đủ sau khi hết ngày. Ngày đã có bằng chứng đầy đủ được bỏ qua. Mỗi lượt tối đa "+Math.round(seconds.value/60)+" phút / "+requests.value+" yêu cầu: nếu đã hoàn thành thêm ngày, tự lấy tiếp phần thiếu. Lỗi mạng hoặc bị chặn sẽ dừng và báo rõ."
                         : "Mỗi loại tối đa "+Math.round(seconds.value/60)+" phút / "+requests.value+" yêu cầu mỗi lượt. Chạm giới hạn sẽ ghi Chưa đầy đủ; chạy lại cùng khoảng ngày để lấy tiếp phần thiếu." }
                     Label { objectName:"collectionResult"; visible:!!page.enqueueResult; Layout.fillWidth:true;wrapMode:Text.Wrap;text:page.enqueueResult;color:"#965a08" }
                     Label { visible:!!page.state.collection_blocked_reason; Layout.fillWidth:true;wrapMode:Text.Wrap;text:page.state.collection_blocked_reason||"";color:"#b42336" }
@@ -161,7 +161,7 @@ Item {
                     Layout.fillWidth:true;implicitHeight:60;color:"#ffffff";radius:5
                     RowLayout {
                         anchors.fill:parent;anchors.margins:12;spacing:16
-                        Label { text:(modelData.scope||{}).cadence==="WEEK"?"Theo tuần · 6 loại":(modelData.families||[]).map(T.familyShort).join(", ");Layout.preferredWidth:120;font.weight:Font.DemiBold;color:"#172b3a" }
+                        Label { text:(modelData.scope||{}).cadence==="WEEK"?"Theo tuần · 7 loại":(modelData.families||[]).map(T.familyShort).join(", ");Layout.preferredWidth:120;font.weight:Font.DemiBold;color:"#172b3a" }
                         ColumnLayout {
                             Layout.fillWidth:true;spacing:3
                             Label { Layout.fillWidth:true;elide:Text.ElideRight;text:T.collectionSpan((modelData.scope||{}).from,(modelData.scope||{}).to,modelData.job_kind);color:"#172b3a" }

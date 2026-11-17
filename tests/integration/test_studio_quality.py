@@ -48,7 +48,7 @@ def test_coverage_range_is_not_limited_to_seven_days(tmp_path):
     assert len(result["periods"]) == 58
     assert result["periods"][0]["label"] == "10/2026"
     assert result["periods"][-1]["label"] == "01/2022"
-    assert all(len(p["families"]) == 6 for p in result["periods"])
+    assert all(len(p["families"]) == 7 for p in result["periods"])
     assert all(f["status"] == "NOT_ACCESSED" for p in result["periods"] for f in p["families"])
 
 

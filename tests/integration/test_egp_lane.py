@@ -48,6 +48,7 @@ def filters_of(body: list[dict]) -> dict[str, dict]:
         ("KHLCNT", "es-plan-project-p", None),
         ("DU_AN", "es-bidp-project-p", None),
         ("YCBG", "es-ycbg", None),
+        ("ESHOP", "es-shopping-result", None),
     ],
 )
 def test_each_family_selects_its_own_slice_of_the_shared_index(family: str, es_type: str, case_khkq: str | None) -> None:

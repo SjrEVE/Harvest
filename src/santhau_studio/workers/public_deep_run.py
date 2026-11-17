@@ -182,6 +182,15 @@ def collect_public(writer, run_id, lane, scope, fetcher, spec, records, clock, s
                 "goods": sum(len(lot.goods) for lot in parsed.lots) + len(parsed.unallotted_goods),
                 "offerors": len(parsed.members),
                 "document_references": len(parsed.documents),
+                # RC3-12: money rows are lane-owned derivations like lots/goods
+                # (write_projection re-cuts them on every capture). The new
+                # DETAIL lanes are money-only by design (TBMT BID_PRICE,
+                # HOP_DONG CONTRACT_VALUE) — without this a capture that stored
+                # its price was mislabelled SOURCE_EMPTY. Relations are NOT
+                # counted: an edge is only written when its target record is
+                # in the store, so a parsed-but-unresolved relation is not
+                # stored content.
+                "money": len(parsed.money),
             }
             receipt["parsed"] = amounts
             receipt["projected"] = amounts if capture.projection_applied else dict.fromkeys(amounts, 0)

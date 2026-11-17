@@ -3,6 +3,104 @@
 Chỉ ghi thay đổi quan trọng tới hợp đồng kỹ thuật. Spec nền: **Master Spec Consolidated v1.3**
 (không đổi; mọi mục dưới là cụ thể hoá hoặc sửa đổi cần owner phê chuẩn).
 
+## RC3-12 — Một bản duy nhất cào toàn bộ: 7 loại hồ sơ + 6 lane chi tiết (17/11/2026)
+
+- **Một bản thay cho các bản phân mảnh**: bản này cào toàn bộ 7 loại hồ sơ và mọi lane
+  chi tiết trong một lần chạy, theo quyết định 17/11/2026 ("1 bản thôi cào toàn bộ
+  1 lúc chứ ko phân mảnh như trước nữa"). Không đổi hành vi lane M1, pacing, hay
+  floor 3s.
+- **Loại hồ sơ thứ 7 — ESHOP** (`es-shopping-result`, khóa `bidNo`, version
+  `orderNo`): rule profile mới `OWNER-SEVEN-20261117-ESHOP`
+  (`canary_verified: 1`, đã kiểm chứng date-filter trên index
+  `es-shopping-result` ngày 17/11: cửa sổ 23/10/2026 trả đúng 1 dòng
+  BP2600926605, cửa sổ 12/10/2026 trả đúng 2 dòng, các cửa sổ khác rỗng đúng).
+  `orderNo` trên dòng list là singleton list `['OR…']` nên `version_of` unwrap
+  rồi mới so version (không unwrap sẽ UNPARSABLE sai).
+- **7 lane chi tiết mới trên 6 loại hồ sơ** (TBMT có 2 lane DETAIL + HSMT)
+  (mẫu lane M1 trong `public_deep.py`: POST JSON, `token=`
+  rỗng ở các endpoint có token, YCBG/eShop không token, header portal, pacing
+  3s, kiểm identity bằng khóa tự nhiên): YCBG `get-request-quote` theo ES id;
+  eShop `eshop/shopping-result/detail-public-by-bidNo` theo `bidNo`; TBMT DETAIL
+  `lcnt_tbmt_ttc_ldt` theo `notifyId`-hoặc-`id`; TBMT HSMT `lcnt_tbmt_hsmt` theo
+  `id` + `processApply` từ dòng list (bắt buộc — thiếu thì HTTP 500; gate
+  {None, "LDT"}, fallback "LDT", chỉ TBMT không phải CGTTRG; CGTTRG giữ lane
+  HSMT cũ); KHLCNT `get-by-id`; DU_AN `get-by-id`; HOP_DONG
+  `detail-by-id-for-po`. Tất cả đã canary live 17/11 (HTTP 200, đúng byte).
+  Parser mới chỉ chiếu các role đã có trong enum post-008: TBMT DETAIL
+  `BID_PRICE` + quan hệ `PLAN_HAS_NOTICE`; YCBG tài liệu `REFERENCE_ONLY`;
+  eShop `BID_PRICE` + `WIN_PRICE` + thành viên theo `contractorCode`; KHLCNT
+  envelope + version; DU_AN `BUDGET` + quyết định `REFERENCE_ONLY`; HOP_DONG
+  `CONTRACT_VALUE` (owner PACKAGE); TBMT HSMT chỉ schema 14 chương, không
+  lots/money. Tài liệu nhị phân theo gói vẫn `REFERENCE_ONLY` (cần Windows
+  Agent, ngoài phạm vi bản này).
+- **Lane quét thống nhất**: `deep-sweep --lane ALL` chạy mọi cặp (family, lane)
+  áp dụng được trong một lần; chế độ từng lane giữ nguyên. `ADAPTER_VERSION`
+  2→3 (mở lại các task UNSUPPORTED cũ để thử lại). Ứng viên auto-deep mirror
+  đúng gate của fetcher: TBMT phải có `bidForm`; `processApply` khác
+  None/"LDT" không bao giờ tạo HTTP (kể cả DETAIL TBMT) — test KHAC giữ nguyên
+  ý nghĩa: 1 gói, 3 lane, không HTTP; chọn lại sau bump adapter vẫn đủ 3 lane.
+- **Không đổi**: không có migration mới (enum lane của migration 009 đã có
+  DETAIL/HSMT/REOFFER/M1); **M2/M3 dời sang RC3-13** (đổi số theo quyết định
+  gộp RC3-12 này). Version: pyproject `0.0.1rc3.post14`; Linux
+  `0.0.1~rc3-12` / `0.0.1-RC3-12` (file Inno + build_standalone.ps1 đổi chuỗi
+  version theo, bản thân công việc installer Windows vẫn dừng theo lệnh trước).
+- **Sửa nhãn SOURCE_EMPTY (canary live 17/11 phát hiện)**: điều kiện rỗng
+  trong `public_deep_run.py` chỉ đếm lots/goods/members/documents nên capture
+  chỉ-có-tiền (TBMT DETAIL `BID_PRICE`, HOP_DONG DETAIL `CONTRACT_VALUE`) bị
+  gắn nhầm `SOURCE_EMPTY` dù giá đã lưu vào `money_amounts`. Nay đếm thêm
+  `money` — capture nào lưu được tiền là `FETCHED`. Relations KHÔNG đếm:
+  edge chỉ ghi khi record đích có trong store nên relation parse được mà chưa
+  resolve không phải nội dung đã lưu. HSMT TBMT (chapters chỉ nằm trong raw
+  payload, không có derived row) và KHLCNT DETAIL (envelope + version) vẫn
+  `SOURCE_EMPTY` đúng định nghĩa — payload vẫn lưu đủ trong store. Thêm 2
+  regression test money-only (`test_money_only_capture_is_fetched_not_source_empty`).
+- **Sửa routing CGTTRG-bidForm (canary live #2, 17/11 phát hiện)**: dòng
+  HOP_DONG kế thừa `bidForm` của gói thầu nên hợp đồng trúng từ gói CGTTRG
+  mang `bidForm` CGTTRG; dispatch cũ đẩy mọi record CGTTRG sang lane legacy
+  của TBMT (đòi `notifyNo` mà dòng hợp đồng không có) nên BLOCKED với
+  `LISTING_IDENTITY_MISMATCH`. Nay carve-out CGTTRG chỉ áp cho TBMT — các
+  loại khác chạy lane DETAIL bất kể `bidForm`. Thêm regression test
+  (`test_fetcher_routes_contract_detail_despite_cgtttrg_bid_form`, đã kiểm
+  chứng fail khi thiếu fix). Canary #2 (binary `eeaa008`, 18 hồ sơ): FETCHED
+  11 (DU_AN 3, ESHOP 3, TBMT DETAIL 3, YCBG 1, HOP_DONG 1), SOURCE_EMPTY 8
+  (KHLCNT 3, HSMT TBMT 3, YCBG 2), BLOCKED 2 (2 HOP_DONG CGTTRG — chính bug
+  này). Canary #3 (18 hồ sơ mới, binary build từ code bản này — amend sau
+  canary chỉ sửa CHANGELOG.md, code không đổi): FETCHED 13
+  (DU_AN 3, ESHOP 3, HOP_DONG 3 — gồm cả 2 CGTTRG, TBMT DETAIL 3, YCBG 2),
+  SOURCE_EMPTY 8 (KHLCNT 3, HSMT TBMT 3, YCBG 1), BLOCKED 0, FAILED 0;
+  15 dòng tiền (BID_PRICE 6, BUDGET 3, CONTRACT_VALUE 3, WIN_PRICE 3),
+  21 captures, HTTP 200 toàn bộ, identity khớp từng hồ sơ.
+- **Giới hạn đã biết**: docstring `egp_home.py` vẫn ghi "six families" — file bị
+  pin sha trong profile (`adapter_code_sha256`) nên sửa docstring sẽ phá
+  attestation đã phê chuẩn; sửa + pin lại là việc follow-up riêng, không làm
+  trong bản này. Ngoài ra `test_deep_retry.py` có 2 test hỏng do RC3-12 đã
+  sửa trong bản này: `test_quarantined_unsupported_task_returns_on_adapter_bump`
+  hardcode `adapter_version=2` (nay là 3, task cũ đúng ra được release — test
+  viết lại theo version hiện tại) và `test_lane_groups_chunk_within_fetcher_budget`
+  (nhóm theo `(lane, family)` từ khi sweep chạy 1 job mỗi cặp, test cập nhật
+  theo contract mới).
+- **Kiểm chứng**: CI pytest subset + file test mới 595 passed, 4 skipped,
+  1 failed (`test_budget_windowing::test_early_split...` — fail sẵn y hệt trên
+  baseline RC3-11.2 sạch trong môi trường này, do httpx parse proxy env,
+  không liên quan RC3-12); 60 test mới cho 7 lane chi tiết (57 + 2 regression
+  money-only + 1 regression CGTTRG-bidForm; spec, parser trên
+  fixture rút gọn từ 17 payload live, identity accept/reject, routing fetcher,
+  auto-deep + sweep ALL); e2e fake-source chỉ còn 1 fail sẵn
+  (`workers.ipc` Windows-only, y hệt trên baseline sạch); các test desktop/
+  Windows đã cập nhật số lượng nhưng chỉ kiểm tra biên dịch trên Linux (chúng
+  vốn không collect được ở đây do import Windows-only có sẵn từ trước).
+  Full test suite (`pytest tests/`, `--continue-on-collection-errors`,
+  TMPDIR trên RAM): 799 passed, 14 skipped, 22 failed, 30 collection errors —
+  đối chiếu baseline RC3-11.2 sạch (worktree fac1e04): cùng 22 failed (21 trùng
+  tên + 1 test đổi tên six→seven families) và cùng 30 file lỗi collection
+  (Windows/desktop-only, import Windows-only, có sẵn từ trước) — KHÔNG có
+  regression mới. 22 failed đều là lỗi môi trường Linux VM đã biết:
+  `test_budget_windowing` (httpx parse proxy env), 16 test
+  `test_desktop_backend`, 3 test `test_serving_no_audit_tables`,
+  `test_console_encoding` (Vietnamese console), và 1 test e2e serving
+  snapshot (`workers.ipc` Windows-only). Self-test offline: 384 → 448 records (8 ngày × 7 loại × 8 dòng); CLI
+  crash-recovery: 672 → 784 records, 84 → 98 proofs.
+
 ## RC3-11.2 — Parser v7, sửa lỗi M1 INVALID_JSON / NO_TABLE / INVALID_FIELDS (13/11/2026)
 
 - **Parser v7** (`PARSER_VERSION` 6→7): `goodsList` có thêm 3 dạng phát hiện trong

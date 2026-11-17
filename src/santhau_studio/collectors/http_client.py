@@ -5,7 +5,7 @@ are in one place so a lane cannot accidentally invent its own retry or pacing ru
 
 Structural differences from the source behaviour, each with a reason:
 
-* **one limiter per host, not per adapter instance.** Six families share `muasamcong.mof.gov.vn`;
+* **one limiter per host, not per adapter instance.** Seven families share `muasamcong.mof.gov.vn`;
   a per-instance 3 s floor is effectively 0.5 s/request and that is what gets an operator's IP
   pinned by the WAF.
 * **redirects are never followed.** The check that matters is "did we send our credentials to a

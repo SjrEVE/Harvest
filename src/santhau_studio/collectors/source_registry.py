@@ -6,7 +6,7 @@ cannot disagree about the same endpoint.
 
 Natural keys follow O-3 method A: the version field is declared separately and never
 folded into natural_key. The source adapter did `doc.get("notifyVersion") or "00"` on a
-path shared by all six families (egp_home.py:158, :341); that coercion is the bug this
+path shared by all seven families (egp_home.py:158, :341); that coercion is the bug this
 registry exists to make impossible.
 """
 
@@ -63,7 +63,7 @@ def _project(title_from: tuple[str, ...], keep: tuple[str, ...]):
     The names come from the source adapter's own normalizers, verified at
     `harvester/adapters/egp_home.py` @ aa65f0a, not from the spec's prose. `title` is
     synthesised because the serving FTS (UI-06) and the record list read one title column
-    across six families whose source fields differ (`bidName` / `name` / `pname` / `ctName`).
+    across seven families whose source fields differ (`bidName` / `name` / `pname` / `ctName`).
     """
 
     def normalize(record: dict) -> dict:
@@ -85,7 +85,7 @@ def _project(title_from: tuple[str, ...], keep: tuple[str, ...]):
 
 
 # (es_type, case_khkq, title fields, kept fields) per family — the request filter and the
-# readable projection for each of the six families that share one ES envelope.
+# readable projection for each of the seven families that share one ES envelope.
 _FAMILY_SHAPE: dict[str, tuple[str, str | None, tuple[str, ...], tuple[str, ...]]] = {
     "TBMT": (
         "es-notify-contractor",
@@ -128,6 +128,18 @@ _FAMILY_SHAPE: dict[str, tuple[str, str | None, tuple[str, ...], tuple[str, ...]
         ("bidName", "name", "pname"),
         ("notifyNo", "notifyVersion", "investorName", "decisionDate", "bidOpenDate"),
     ),
+    "ESHOP": (
+        # Mua sắm trực tuyến (RC3-12): es-shopping-result rows carry no notifyNo;
+        # the order is keyed by bidNo with the order number as its version. The
+        # list row's orderNo is a singleton array (canaried 2026-11-17:
+        # BP2600926605 / ['OR2600000023']); version_of unwraps it, so the
+        # version lands UNPARSABLE 'OR…' rather than a list repr.
+        "es-shopping-result",
+        None,
+        ("bidName", "pname"),
+        ("bidNo", "orderNo", "planNo", "investorName", "bidPrice", "bidWinningPrice",
+         "winningContractorName", "contractorName", "winningCode", "status", "publicDate"),
+    ),
 }
 
 _VERSION_FIELDS = {
@@ -137,6 +149,7 @@ _VERSION_FIELDS = {
     "KHLCNT": ("planNo", "planVersion"),
     "DU_AN": ("pno", "pversion"),
     "YCBG": ("notifyNo", "notifyVersion"),
+    "ESHOP": ("bidNo", "orderNo"),
 }
 
 
@@ -197,7 +210,7 @@ SOURCES: dict[str, SourceSpec] = {
         display_name="Mua sắm công — trang tìm kiếm công khai",
         endpoint="/o/egp-portal-home/services/smart/search",
         host="muasamcong.mof.gov.vn",
-        notes="Read-only public home search. Six families share this envelope.",
+        notes="Read-only public home search. Seven families share this envelope.",
     ),
     SOURCE_EGP_V2: SourceSpec(
         key=SOURCE_EGP_V2,
@@ -228,7 +241,7 @@ SOURCES: dict[str, SourceSpec] = {
 
 DEFAULT_PACING_SECONDS = 3.0  # §6: host-scoped minimum for EGP, retries included
 
-FAMILY_ORDER = ("TBMT", "KQLCNT", "HOP_DONG", "KHLCNT", "DU_AN", "YCBG")
+FAMILY_ORDER = ("TBMT", "KQLCNT", "HOP_DONG", "KHLCNT", "DU_AN", "YCBG", "ESHOP")
 
 BINDINGS: dict[str, FamilyBinding] = {}
 

@@ -41,7 +41,7 @@ def test_setup_archives_duplicate_jobs_without_losing_documents_or_proof(tmp_pat
     request = JobRequest.from_json(
         next((tmp_path / "jobs" / "queued").glob("*.json")).read_text(encoding="utf-8")
     )
-    assert len(request.sources) == 6 and request.scope["cadence"] == "WEEK"
+    assert len(request.sources) == 7 and request.scope["cadence"] == "WEEK"
     c = connect_read_only(tmp_path / "warehouse.sqlite")
     assert [
         c.execute("SELECT COUNT(*) FROM " + t).fetchone()[0]

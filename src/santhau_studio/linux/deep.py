@@ -74,6 +74,28 @@ def reset_deep_retry(root, *, record_id, lane):
         }
 
 
+# (lane, family, extra WHERE fragment) — which records a sweep lane may
+# enqueue. Mirrors auto_deep.candidates' applicability: M1 needs an
+# inputResultId; REOFFER only runs on CGTTRG packages; DETAIL/HSMT run on
+# every record of their families (the fetcher routes each record to its
+# endpoint by bidForm). The missing-capture condition is the auto queue's:
+# no FETCHED/SOURCE_EMPTY task against the current listing.
+_SWEEP_TARGETS = {
+    "M1": (("KQLCNT", " AND json_extract(v.normalized_json,'$.inputResultId') IS NOT NULL"),),
+    "DETAIL": (
+        ("TBMT", ""),
+        ("YCBG", ""),
+        ("KHLCNT", ""),
+        ("DU_AN", ""),
+        ("HOP_DONG", ""),
+        ("ESHOP", ""),
+    ),
+    "HSMT": (("TBMT", ""),),
+    "REOFFER": (("TBMT", " AND json_extract(v.normalized_json,'$.bidForm')='CGTTRG'"),),
+}
+_SWEEP_LANES = ("M1", "DETAIL", "HSMT", "REOFFER")
+
+
 def sweep_deep(root, *, lane="M1", limit=100, execute=False):
     """One-off deep sweep: enqueue batched jobs for records the lane has not
     yet captured (no FETCHED/SOURCE_EMPTY task against the current listing).
@@ -84,9 +106,13 @@ def sweep_deep(root, *, lane="M1", limit=100, execute=False):
     them up; a later sweep only sees what is still missing, because
     collect_public skips fresh FETCHED/SOURCE_EMPTY captures itself. Stop the
     worker before enqueueing, as with deep-config.
+
+    lane="ALL" sweeps every lane at once (RC3-12: one version scraping
+    everything): one job per applicable (family, lane) pair, because a deep
+    job dispatches a single family. limit applies per (lane, family) pair.
     """
-    if lane != "M1":
-        raise ValueError("only the M1 lane has a sweep path today")
+    if lane not in (*_SWEEP_LANES, "ALL"):
+        raise ValueError(f"lane must be one of {[*list(_SWEEP_LANES), 'ALL']}")
     if type(limit) is not int or limit < 1:
         raise ValueError("limit must be a positive integer")
     if not (root / "warehouse.sqlite").is_file():
@@ -95,55 +121,68 @@ def sweep_deep(root, *, lane="M1", limit=100, execute=False):
     from santhau_studio.workers.auto_deep import MAX_RECORDS_PER_DEEP_JOB
     from santhau_studio.workers.jobs import JobRequest, enqueue_job
 
+    lanes = _SWEEP_LANES if lane == "ALL" else (lane,)
+    pairs = []
     with closing(connect_read_only(root / "warehouse.sqlite")) as conn:
-        rows = conn.execute(
-            "SELECT r.id FROM source_records r"
-            " JOIN source_record_versions v ON v.source_record_id=r.id AND v.content_version_seq=r.current_content_version"
-            " LEFT JOIN deep_tasks t ON t.source_record_id=r.id AND t.lane=?"
-            " WHERE r.source_key='egp_home' AND r.family='KQLCNT'"
-            " AND json_extract(v.normalized_json,'$.inputResultId') IS NOT NULL"
-            " AND (t.source_record_id IS NULL"
-            " OR NOT (t.state IN ('FETCHED','SOURCE_EMPTY') AND t.listing_object_sha=r.current_record_object_sha))"
-            " ORDER BY r.id LIMIT ?",
-            (lane, limit),
-        ).fetchall()
-    record_ids = [int(r[0]) for r in rows]
-    chunks = [
-        record_ids[start:start + MAX_RECORDS_PER_DEEP_JOB]
-        for start in range(0, len(record_ids), MAX_RECORDS_PER_DEEP_JOB)
-    ]
+        for target_lane in lanes:
+            for family, extra in _SWEEP_TARGETS[target_lane]:
+                rows = conn.execute(
+                    "SELECT r.id FROM source_records r"
+                    " JOIN source_record_versions v ON v.source_record_id=r.id AND v.content_version_seq=r.current_content_version"
+                    " LEFT JOIN deep_tasks t ON t.source_record_id=r.id AND t.lane=?"
+                    " WHERE r.source_key='egp_home' AND r.family=?" + extra +
+                    " AND (t.source_record_id IS NULL"
+                    " OR NOT (t.state IN ('FETCHED','SOURCE_EMPTY') AND t.listing_object_sha=r.current_record_object_sha))"
+                    " ORDER BY r.id LIMIT ?",
+                    (target_lane, family, limit),
+                ).fetchall()
+                pairs.append((target_lane, family, [int(r[0]) for r in rows]))
     job_ids = []
     if execute:
         import uuid
         from datetime import UTC, datetime
 
-        for chunk in chunks:
-            request = JobRequest(
-                job_id="deep-sweep-" + uuid.uuid4().hex[:16],
-                job_kind=lane,
-                requested_by="deep-sweep",
-                sources=({"source_key": "egp_home", "family": "KQLCNT"},),
-                scope={"record_ids": chunk},
-                request_limits={
-                    "max_requests": min(2 * len(chunk), 30),
-                    "max_attempts": 4,
-                    "max_seconds": min(900, 120 + 30 * len(chunk)),
-                    "pacing_seconds": 3,
-                },
-                created_at=datetime.now(UTC).isoformat(),
-            )
-            enqueue_job(root, request)
-            job_ids.append(request.job_id)
+        for target_lane, family, record_ids in pairs:
+            for start in range(0, len(record_ids), MAX_RECORDS_PER_DEEP_JOB):
+                chunk = record_ids[start:start + MAX_RECORDS_PER_DEEP_JOB]
+                request = JobRequest(
+                    job_id="deep-sweep-" + uuid.uuid4().hex[:16],
+                    job_kind=target_lane,
+                    requested_by="deep-sweep",
+                    sources=({"source_key": "egp_home", "family": family},),
+                    scope={"record_ids": chunk},
+                    request_limits={
+                        "max_requests": min(2 * len(chunk), 30),
+                        "max_attempts": 4,
+                        "max_seconds": min(900, 120 + 30 * len(chunk)),
+                        "pacing_seconds": 3,
+                    },
+                    created_at=datetime.now(UTC).isoformat(),
+                )
+                enqueue_job(root, request)
+                job_ids.append(request.job_id)
+    all_ids = [rid for _lane, _family, ids in pairs for rid in ids]
+    breakdown = [
+        {
+            "lane": target_lane,
+            "family": family,
+            "records_matched": len(record_ids),
+            "jobs": (len(record_ids) + MAX_RECORDS_PER_DEEP_JOB - 1) // MAX_RECORDS_PER_DEEP_JOB,
+            "first_record_ids": record_ids[:10],
+        }
+        for target_lane, family, record_ids in pairs
+    ]
     return {
         "ok": True,
         "lane": lane,
         "parser_version": PARSER_VERSION,
-        "records_matched": len(record_ids),
-        "jobs": len(chunks),
+        "records_matched": len(all_ids),
+        "jobs": sum(entry["jobs"] for entry in breakdown),
         "records_per_job": MAX_RECORDS_PER_DEEP_JOB,
         "executed": execute,
         "job_ids": job_ids,
-        "first_record_ids": record_ids[:10],
+        "first_record_ids": all_ids[:10],
+        "lanes": breakdown,
         "network_requests": 0,
     }
 
@@ -188,5 +227,5 @@ def deep_status(root):
             ]
             if present
             else [],
-            "scope": "TBMT/CGTTRG + KQLCNT/M1; document references are not downloaded files",
+            "scope": "TBMT + KQLCNT/M1 + YCBG/KHLCNT/DU_AN/HOP_DONG/ESHOP detail; document references are not downloaded files",
         }

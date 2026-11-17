@@ -1,4 +1,4 @@
-"""An unfinished calendar day must not stall six-family historical collection."""
+"""An unfinished calendar day must not stall seven-family historical collection."""
 import json
 from contextlib import closing
 from datetime import UTC, date, datetime
@@ -34,7 +34,7 @@ def collect(root, calls, *, first=date(2026, 10, 27), now=NOW, fault=None, drift
         family = child.sources[0]["family"]
         key, version = {"TBMT":("notifyNo","notifyVersion"), "KQLCNT":("notifyNo","notifyVersion"),
             "KHLCNT":("planNo","planVersion"), "HOP_DONG":("contractCode","contractVersion"),
-            "DU_AN":("pno","pversion"), "YCBG":("notifyNo","notifyVersion")}[family]
+            "DU_AN":("pno","pversion"), "YCBG":("notifyNo","notifyVersion"), "ESHOP":("bidNo","orderNo")}[family]
 
         def pages(interval, _granularity, _window):
             calls.append((family, interval))
@@ -67,35 +67,35 @@ def collect(root, calls, *, first=date(2026, 10, 27), now=NOW, fault=None, drift
 def test_current_day_collects_all_families_and_history_without_false_complete(tmp_path):
     calls = []
     status, detail, counts, open_rows = collect(tmp_path, calls)
-    assert counts == (54,54,54,48)
-    assert status == "PARTIAL" and len(detail["pending_current_day"]) == 6
+    assert counts == (63,63,63,56)
+    assert status == "PARTIAL" and len(detail["pending_current_day"]) == 7
     assert detail["weeks_completed"] == 1
     assert "chưa kết thúc" in detail["reason"] and "bị chặn" not in detail["reason"]
-    assert [family for family,_ in calls[:6]] == list(FAMILY_ORDER)
-    assert all(span == TODAY for _,span in calls[:6])
-    assert len(open_rows) == 6 and all(row[:] == ("PARTIAL",None) for row in open_rows)
+    assert [family for family,_ in calls[:7]] == list(FAMILY_ORDER)
+    assert all(span == TODAY for _,span in calls[:7])
+    assert len(open_rows) == 7 and all(row[:] == ("PARTIAL",None) for row in open_rows)
     calls.clear()
     status, _, again, _ = collect(tmp_path, calls, now=datetime(2026,11,5,12,tzinfo=UTC))
-    # Six new observations describe the later verification; records/versions stay unique.
-    assert status == "COMPLETED" and again == (54,54,60,54)
-    assert len(calls) == 6 and all(span == TODAY for _,span in calls)
+    # Seven new observations describe the later verification; records/versions stay unique.
+    assert status == "COMPLETED" and again == (63,63,70,63)
+    assert len(calls) == 7 and all(span == TODAY for _,span in calls)
     calls.clear()
     status, _, third, _ = collect(tmp_path, calls, now=datetime(2026,11,5,13,tzinfo=UTC))
     assert status == "COMPLETED" and third == again and calls == []
 
 
-def test_today_only_is_a_snapshot_for_all_six_families(tmp_path):
+def test_today_only_is_a_snapshot_for_all_seven_families(tmp_path):
     calls = []
     status, detail, counts, _ = collect(tmp_path, calls, first=date(2026,11,4))
-    assert counts == (6,6,6,0) and status == "PARTIAL"
-    assert detail["weeks_completed"] == 0 and len(detail["pending_current_day"]) == 6
+    assert counts == (7,7,7,0) and status == "PARTIAL"
+    assert detail["weeks_completed"] == 0 and len(detail["pending_current_day"]) == 7
 
 
 def test_changing_total_today_does_not_block_closed_days(tmp_path):
     calls = []
     status, detail, counts, _ = collect(tmp_path, calls, drift=True)
-    assert counts == (60,60,60,48) and status == "PARTIAL"
-    assert len(detail["pending_current_day"]) == 6
+    assert counts == (70,70,70,56) and status == "PARTIAL"
+    assert len(detail["pending_current_day"]) == 7
 
 
 @pytest.mark.parametrize("kind", ["network", "captcha", "budget"])
@@ -117,10 +117,10 @@ def test_pending_today_cannot_hide_a_fault_on_a_closed_day(tmp_path):
         if interval != TODAY:
             raise FetchFailed("NETWORK_UNAVAILABLE")
     status, detail, counts, _ = collect(tmp_path, calls, fault=fault)
-    assert status == "PARTIAL" and counts == (6,6,6,0)
+    assert status == "PARTIAL" and counts == (7,7,7,0)
     assert detail["weeks_completed"] == 0
     assert "NETWORK_UNAVAILABLE" in str(detail["last_attempt"])
-    assert len(calls) == 7
+    assert len(calls) == 8
 
 
 def test_crossing_midnight_rechecks_only_pending_day(tmp_path):
@@ -132,8 +132,8 @@ def test_crossing_midnight_rechecks_only_pending_day(tmp_path):
     status, detail, counts, _ = collect(tmp_path, calls, fault=rollover, clock=lambda: current[0])
     assert status == "COMPLETED"
     assert detail["weeks_completed"] == 2
-    assert counts == (54, 54, 60, 54)
-    assert len(calls) == 60 and all(span == TODAY for _, span in calls[-6:])
+    assert counts == (63, 63, 70, 63)
+    assert len(calls) == 70 and all(span == TODAY for _, span in calls[-7:])
     calls.clear()
     assert collect(tmp_path, calls, now=current[0])[2] == counts
     assert calls == []
@@ -148,8 +148,8 @@ def test_day_closing_during_fetch_requires_a_fresh_fetch(tmp_path):
         fault=rollover, clock=lambda: current[0])
     assert status == "COMPLETED"
     # Only the first family began before midnight; it must be observed again.
-    assert counts == (6, 6, 7, 6)
-    assert len(calls) == 7 and calls[-1][0] == FAMILY_ORDER[0]
+    assert counts == (7, 7, 8, 7)
+    assert len(calls) == 8 and calls[-1][0] == FAMILY_ORDER[0]
 
 
 def test_closing_day_failure_remains_partial_without_false_proof(tmp_path):
@@ -161,7 +161,7 @@ def test_closing_day_failure_remains_partial_without_false_proof(tmp_path):
         elif current[0] != NOW:
             raise FetchFailed("NETWORK_UNAVAILABLE")
     status, detail, counts, _ = collect(tmp_path, calls, fault=fault, clock=lambda: current[0])
-    assert status == "PARTIAL" and counts == (54, 54, 54, 48)
+    assert status == "PARTIAL" and counts == (63, 63, 63, 56)
     assert "NETWORK_UNAVAILABLE" in str(detail.get("last_attempt"))
     assert "04/11/2026" in detail["reason"]
     assert "Hôm nay chưa kết thúc" not in detail["reason"]

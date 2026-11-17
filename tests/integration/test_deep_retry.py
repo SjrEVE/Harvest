@@ -181,7 +181,7 @@ def test_quarantined_unsupported_task_returns_on_adapter_bump(tmp_path, monkeypa
             )
         write_task(
             writer.conn, rid, "HSMT",
-            parser_version=cgttrg.PARSER_VERSION, adapter_version=2, capability="UNSUPPORTED_PROCESS_APPLY",
+            parser_version=cgttrg.PARSER_VERSION, adapter_version=public_deep.ADAPTER_VERSION, capability="UNSUPPORTED_PROCESS_APPLY",
         )
         assert retry_state(writer, rid, "HSMT")["quarantined"] is True
         writer.conn.execute(
@@ -222,6 +222,7 @@ def test_quarantined_task_returns_when_listing_changes(tmp_path):
 def test_quarantined_parse_error_returns_on_parser_bump(tmp_path, monkeypatch):
     """Form-1960 PARSE_ERROR analogue: replay/fix comes from a parser bump, not refetch."""
     import santhau_studio.collectors.cgttrg as cgttrg
+    from santhau_studio.collectors import public_deep
 
     writer = seed_records(tmp_path)
     try:
@@ -244,7 +245,7 @@ def test_quarantined_parse_error_returns_on_parser_bump(tmp_path, monkeypatch):
             )
         write_task(
             writer.conn, rid, "HSMT",
-            parser_version=cgttrg.PARSER_VERSION, adapter_version=2, capability="STRUCTURED_ITEMS",
+            parser_version=cgttrg.PARSER_VERSION, adapter_version=public_deep.ADAPTER_VERSION, capability="STRUCTURED_ITEMS",
         )
         assert retry_state(writer, rid, "HSMT")["quarantined"] is True
         backdate(writer, rid, "HSMT", 60 * 24 * 30)
@@ -309,16 +310,20 @@ def test_fetched_refresh_after_30_days_is_unchanged(tmp_path):
 
 
 def test_lane_groups_chunk_within_fetcher_budget():
+    # RC3-12: _lane_groups groups by (lane, family) — one job per pair, since
+    # a deep job dispatches one family — and chunks at 10 records per job.
     targets = [
-        {"id": i, "lane": lane}
+        {"id": n, "lane": lane, "family": family}
         for lane in ("HSMT", "REOFFER", "DETAIL")
-        for i in range(25)
+        for family in ("TBMT", "KHLCNT")
+        for n in range(25)
     ]
     groups = _lane_groups(targets)
-    assert [(lane, len(chunk)) for lane, chunk in groups] == [
-        ("HSMT", 10), ("HSMT", 10), ("HSMT", 5),
-        ("REOFFER", 10), ("REOFFER", 10), ("REOFFER", 5),
-        ("DETAIL", 10), ("DETAIL", 10), ("DETAIL", 5),
+    assert [(lane, family, len(chunk)) for lane, family, chunk in groups] == [
+        (lane, family, n)
+        for lane in ("HSMT", "REOFFER", "DETAIL")
+        for family in ("KHLCNT", "TBMT")  # sorted within each lane
+        for n in (10, 10, 5)
     ]
 
 

@@ -37,7 +37,7 @@ def fast_builder(calls, *, fail=None, pause=None):
                 fail(family, interval, used)
             key, version = {"TBMT": ("notifyNo", "notifyVersion"), "KQLCNT": ("notifyNo", "notifyVersion"),
                 "KHLCNT": ("planNo", "planVersion"), "HOP_DONG": ("contractCode", "contractVersion"),
-                "DU_AN": ("pno", "pversion"), "YCBG": ("notifyNo", "notifyVersion")}[family]
+                "DU_AN": ("pno", "pversion"), "YCBG": ("notifyNo", "notifyVersion"), "ESHOP": ("bidNo", "orderNo")}[family]
             row = {key: f"SYNTH-{family}-{interval.from_utc:%Y%m%d}", version: "00",
                 "publicDate": interval.from_utc.isoformat(), "publicDateKqlcnt": interval.from_utc.isoformat(),
                 "bidName": "Hồ sơ thử ngoại tuyến", "pname": "Dự án thử", "ctName": "Hợp đồng thử"}
@@ -68,16 +68,16 @@ def test_one_durable_job_week_order_and_rerun_skips_all_saved_days(studio):
     assert result["ok"] and len(result["jobs"]) == 1
     files = list((studio.data_root / "jobs/queued").glob("*.json"))
     request = JobRequest.from_json(files[0].read_text())
-    assert len(request.sources) == 6 and request.scope["cadence"] == "WEEK"
+    assert len(request.sources) == 7 and request.scope["cadence"] == "WEEK"
     calls = []
     run(studio, fast_builder(calls))
-    assert len(calls) == 48
-    assert [f for f, _ in calls[:6]] == list(FAMILY_ORDER)
+    assert len(calls) == 56
+    assert [f for f, _ in calls[:7]] == list(FAMILY_ORDER)
     assert all(span.from_utc >= datetime(2026, 10, 7, 17, tzinfo=UTC) for _, span in calls[:6])
-    assert all(span.from_utc < datetime(2026, 10, 7, 17, tzinfo=UTC) for _, span in calls[6:])
-    assert calls[6][1].from_utc == datetime(2026, 10, 6, 17, tzinfo=UTC)
+    assert all(span.from_utc < datetime(2026, 10, 7, 17, tzinfo=UTC) for _, span in calls[7:])
+    assert calls[7][1].from_utc == datetime(2026, 10, 6, 17, tzinfo=UTC)
     before = counts(studio)
-    assert before == (48, 48, 48)
+    assert before == (56, 56, 56)
     assert queue(studio)["ok"]
     calls.clear()
     run(studio, fast_builder(calls))
@@ -87,13 +87,13 @@ def test_one_durable_job_week_order_and_rerun_skips_all_saved_days(studio):
 def test_newest_first_reuses_days_already_collected_by_oldest_first_job(studio):
     assert queue(studio, date_to="07/10/2026")["ok"]
     run(studio, fast_builder([]))
-    assert counts(studio) == (42, 42, 42)
+    assert counts(studio) == (49, 49, 49)
     assert queue(studio)["ok"]
     calls = []
     run(studio, fast_builder(calls))
-    assert len(calls) == 6
+    assert len(calls) == 7
     assert all(span.from_utc == datetime(2026, 10, 7, 17, tzinfo=UTC) for _, span in calls)
-    assert counts(studio) == (48, 48, 48)
+    assert counts(studio) == (56, 56, 56)
 
 
 def test_budget_continues_only_missing_days_before_next_week(studio):
@@ -103,7 +103,7 @@ def test_budget_continues_only_missing_days_before_next_week(studio):
         if used > 2:
             raise FetchFailed("REQUEST_BUDGET_EXHAUSTED")
     run(studio, fast_builder(calls, fail=cap))
-    assert counts(studio) == (48, 48, 48)
+    assert counts(studio) == (56, 56, 56)
     with closing(connect_read_only(studio.data_root / "warehouse.sqlite")) as conn:
         parent = conn.execute("SELECT status FROM runs WHERE job_id NOT LIKE '%.w%' ORDER BY rowid DESC LIMIT 1").fetchone()
         assert parent[0] == "COMPLETED"
@@ -166,7 +166,7 @@ def test_totals_match_each_family_date_and_do_not_sum_overlapping_proofs(studio)
     assert studio.enqueue_collection({"family": "ALL", "job_kind": "RECONCILE", "date_from": "01/10/2026", "date_to": "08/10/2026"})["ok"]
     run(studio, fast_builder([]))
     again = studio.coverage_range({"date_from": "01/10/2026", "date_to": "08/10/2026", "resolution": "WEEK"})
-    assert [c["source_total"] for p in again["periods"] for c in p["families"]] == [1]*6 + [7]*6
+    assert [c["source_total"] for p in again["periods"] for c in p["families"]] == [1]*7 + [7]*7
     unknown = studio.coverage_range({"date_from": "01/09/2026", "date_to": "30/09/2026"})
     assert all(c["source_total"] is None and c["missing"] is None and c["percent"] is None
                for c in unknown["periods"][0]["families"])
@@ -203,8 +203,8 @@ def test_weekly_controls_keep_records_and_do_not_advance_week(studio, command):
         assert queue(studio)["ok"]
     calls.clear()
     run(studio, fast_builder(calls))
-    assert counts(studio) == (48, 48, 48)
-    assert len(calls) == 48 - before[0]
+    assert counts(studio) == (56, 56, 56)
+    assert len(calls) == 56 - before[0]
 
 
 def test_real_process_crash_recovers_parent_and_keeps_proven_days(studio, tmp_path):
@@ -231,7 +231,7 @@ def test_real_process_crash_recovers_parent_and_keeps_proven_days(studio, tmp_pa
     assert counts(studio) == (2, 2, 2)
     calls = []
     run(studio, fast_builder(calls))
-    assert counts(studio) == (48, 48, 48) and len(calls) == 46
+    assert counts(studio) == (56, 56, 56) and len(calls) == 54
     with closing(connect_read_only(studio.data_root / "warehouse.sqlite")) as conn:
         states = [row[0] for row in conn.execute("SELECT status FROM runs WHERE job_id=? ORDER BY rowid", (result["job_id"],))]
         assert states == ["INTERRUPTED", "COMPLETED"]
@@ -259,7 +259,7 @@ def test_snapshot_is_marked_stale_for_each_family_after_previous_publish(studio)
         stale_states.append(serving_state(studio.serving_path)["stale"])
         return normal(writer, request)
     run(studio, checked)
-    assert stale_states == [True] * 6
+    assert stale_states == [True] * 7
     assert not serving_state(studio.serving_path)["stale"]
 
 
@@ -275,8 +275,8 @@ def test_weekly_coalesces_snapshots_and_publishes_terminal_parent(studio, monkey
     monkeypatch.setattr(snapshot_store, "build_serving_db", measured)
     request = queue(studio)
     run(studio, fast_builder([]))
-    # 12 child runs: one batch of six, then a final snapshot with parent outcome.
-    assert published == [6, 48]
+    # 14 child runs: one batch of seven, then a final snapshot with parent outcome.
+    assert published == [7, 56]
     from santhau_studio.desktop.warehouse_reader import WarehouseReader
 
     with WarehouseReader(studio.data_root) as reader:

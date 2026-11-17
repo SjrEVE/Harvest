@@ -299,7 +299,7 @@ def test_ping_roundtrip_over_named_pipe(harness) -> None:
     try:
         reply = client.request({"op": "ping"})
         assert reply["ok"] and reply["worker"]
-        assert set(reply["capabilities"]) == {"weekly-six-open-day-v3", "runtime-status-v1"}
+        assert set(reply["capabilities"]) == {"weekly-seven-open-day-v3", "runtime-status-v1"}
         assert reply["runtime"]["current_job_id"] is None
     finally:
         client.close()

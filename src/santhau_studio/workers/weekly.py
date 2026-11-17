@@ -1,4 +1,4 @@
-"""A resumable six-family weekly job, using existing queue and coverage proofs."""
+"""A resumable seven-family weekly job, using existing queue and coverage proofs."""
 import json
 import uuid
 from dataclasses import replace
@@ -16,7 +16,7 @@ def resolve_source(conn, source, span):
     return coverage.resolve(conn, source["source_key"], source["family"], span.from_utc, span.to_utc,
                             context=context or {"signature": "INVALID"})
 
-CAPABILITY = "weekly-six-open-day-v3"
+CAPABILITY = "weekly-seven-open-day-v3"
 
 
 def weeks(span):
@@ -44,8 +44,8 @@ def work_periods(periods, now):
 
 def dispatch(loop, request, parent_run):
     sources = {s.get("family"): s for s in request.sources}
-    if request.job_kind != "BACKFILL" or set(sources) != set(FAMILY_ORDER) or len(request.sources) != 6:
-        return "BLOCKED", {"reason": "Thu thập theo tuần cần đủ sáu loại hồ sơ và chế độ thu thập theo khoảng ngày."}
+    if request.job_kind != "BACKFILL" or set(sources) != set(FAMILY_ORDER) or len(request.sources) != 7:
+        return "BLOCKED", {"reason": "Thu thập theo tuần cần đủ bảy loại hồ sơ và chế độ thu thập theo khoảng ngày."}
     writer = loop._writer
     conn = writer.conn
     periods = list(weeks(request.interval()))

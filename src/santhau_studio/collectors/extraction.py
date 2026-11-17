@@ -65,7 +65,7 @@ class FamilySpec:
     `version_field` feeds version_state/version_raw and must NOT be folded into
     natural_key (O-3 method A). `missing_is_zero` is the bug this contract forbids:
     the source adapter did `doc.get("notifyVersion") or "00"` on a path shared by all
-    six families, which silently turns MISSING into a real-looking version.
+    seven families, which silently turns MISSING into a real-looking version.
     """
 
     family: str
@@ -97,8 +97,17 @@ class FamilySpec:
         return None
 
     def version_of(self, record: dict[str, Any]) -> tuple[str, str | None]:
-        """Map the source version field to (version_state, version_raw). Never coerces."""
+        """Map the source version field to (version_state, version_raw). Never coerces.
+
+        The portal returns some scalars as singleton arrays (the same convention
+        `_scalar` and `accepts_record` already unwrap); a one-element list is
+        the value, not a different value. RC3-12 needs this for ESHOP, whose
+        list rows carry orderNo as ['OR…'] — without the unwrap the raw would
+        be the Python repr "['OR…']" instead of the clean UNPARSABLE 'OR…'.
+        """
         raw = record.get(self.version_field)
+        if isinstance(raw, list) and len(raw) == 1:
+            raw = raw[0]
         if raw is None or (isinstance(raw, str) and not raw.strip()):
             return "MISSING", None
         if not isinstance(raw, str):

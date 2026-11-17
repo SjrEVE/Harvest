@@ -9,7 +9,8 @@
     "bbd4c3d7696bf6344aad5333d4b8004b08164c86088e0a25e72f321f72b98eb3",
     "b1bb47d9a7476901312b8c98d14b51b8a13a568900bf3cf3d2cee42101036640",
     "860ed7061582a72e1e40a44dfcdabaa9b2e9d390dddb58927052419047316706",
-    "86786e50ee1b31138d94a8a0b5ec6714578f2ffcef5ada9a492ed66651906d1a"
+    "86786e50ee1b31138d94a8a0b5ec6714578f2ffcef5ada9a492ed66651906d1a",
+    "11378c49bf19d801d7b9f066e217bacc9179b46186847046260f231134e13606"
   ],
   "rules": [
     {
@@ -101,6 +102,21 @@
       "conversion_params": "{\"date_field\": \"publicDate\", \"query_contract\": null, \"to_minus\": \"1ms\", \"wire_format\": \"ISO_LOCAL_T\"}",
       "canary_verified": 1,
       "verified_at_utc": "2026-11-04T01:36:21.316Z"
+    },
+    {
+      "rule_key": "OWNER-SEVEN-20261117-ESHOP",
+      "rule_version": 1,
+      "source_key": "egp_home",
+      "family": "ESHOP",
+      "endpoint": "/o/egp-portal-home/services/smart/search",
+      "adapter_sha": "45651b36f1c81cf2b91da4ebedf37bb094c300ef83706e4ae385f066f2444f49",
+      "boundary_kind": "CLOSED_LOCAL",
+      "precision": "MILLISECOND",
+      "source_timezone": "Asia/Ho_Chi_Minh",
+      "offset_minutes": 420,
+      "conversion_params": "{\"date_field\": \"publicDate\", \"query_contract\": null, \"to_minus\": \"1ms\", \"wire_format\": \"ISO_LOCAL_T\"}",
+      "canary_verified": 1,
+      "verified_at_utc": "2026-11-17T04:52:09Z"
     }
   ]
 }

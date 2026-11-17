@@ -174,7 +174,7 @@ def self_test(root):
     ]
     if (
         first != second
-        or first["source_records"] != 384
+        or first["source_records"] != 448
         or list(root.glob("serving*"))
         or forbidden
     ):
@@ -196,9 +196,9 @@ def self_test(root):
 def parser():
     cli = argparse.ArgumentParser(
         prog="santhau-collector",
-        description="Bộ thu thập Linux: sáu loại, theo tuần, không giao diện/thống kê.",
+        description="Bộ thu thập Linux: bảy loại, theo tuần, không giao diện/thống kê.",
     )
-    cli.add_argument("--version", action="version", version="Săn Thầu Collector 0.0.1-RC3-11.2 (Linux x86-64)")
+    cli.add_argument("--version", action="version", version="Săn Thầu Collector 0.0.1-RC3-12 (Linux x86-64)")
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "--data-root",
@@ -223,8 +223,8 @@ def parser():
     retry = sub.add_parser("deep-retry", parents=[common], help="Mở lại một deep task đã quarantine/backoff để lần quét sau thử lại; dừng worker trước khi đổi")
     retry.add_argument("--record", type=int, required=True, help="ID source_records của gói thầu")
     retry.add_argument("--lane", choices=("HSMT", "REOFFER", "DETAIL", "M1"), required=True)
-    sweep = sub.add_parser("deep-sweep", parents=[common], help="Xếp hàng quét bù một lane (mặc định chỉ xem trước); dừng worker trước khi xếp hàng")
-    sweep.add_argument("--lane", choices=("M1",), required=True)
+    sweep = sub.add_parser("deep-sweep", parents=[common], help="Xếp hàng quét bù một lane hoặc tất cả các lane (mặc định chỉ xem trước); dừng worker trước khi xếp hàng")
+    sweep.add_argument("--lane", choices=("M1", "DETAIL", "HSMT", "REOFFER", "ALL"), required=True)
     sweep.add_argument("--limit", type=int, default=100, help="Số record tối đa đưa vào hàng đợi")
     sweep_choice = sweep.add_mutually_exclusive_group()
     sweep_choice.add_argument("--execute", action="store_true")
@@ -250,7 +250,7 @@ def parser():
     mode.add_argument("--dry-run", action="store_true")
     mode.add_argument("--execute", action="store_true")
     enqueue = sub.add_parser(
-        "enqueue", parents=[common], help="Xếp hàng; tất cả sáu loại mặc định chia theo tuần"
+        "enqueue", parents=[common], help="Xếp hàng; tất cả bảy loại mặc định chia theo tuần"
     )
     enqueue.add_argument("--from", dest="first", help="Ngày đầu YYYY-MM-DD")
     enqueue.add_argument("--to", dest="last", help="Ngày cuối YYYY-MM-DD, bao gồm ngày này")
