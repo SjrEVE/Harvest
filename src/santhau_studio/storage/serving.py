@@ -14,11 +14,13 @@ import json
 import os
 import sqlite3
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 from santhau_studio.domain.text import fold_vietnamese
+from santhau_studio.platform_win.os_lock import DataRootBusy, DataRootLock
 from santhau_studio.storage.migrations import MIGRATIONS
 
 try:
@@ -150,21 +152,45 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def _discard_rejected_candidate(
+    _candidate: Path, reason: str, *, checkpoint_failed: bool = False,
+    checkpoint_in_progress: bool = False,
+) -> str:
+    """Retain rejected temp files; unlinking can orphan SQLite sidecars on POSIX."""
+    if checkpoint_in_progress:
+        return f"{reason}; candidate retained after SQLite checkpoint interruption: {_candidate.name}"
+    if checkpoint_failed:
+        return f"{reason}; candidate retained after SQLite checkpoint failure: {_candidate.name}"
+    return f"{reason}; rejected candidate retained for reader-safe cleanup: {_candidate.name}"
+
+
+def _candidate_path(target: Path) -> Path:
+    """Return a unique same-directory SQLite candidate path for this build."""
+    return target.with_suffix(f"{target.suffix}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+
+
 def build_serving_db(warehouse: Path, target: Path) -> PublishResult:
     """Publish a verified snapshot, reporting the rebuild to the AI control lane.
 
     The observation wraps the real implementation in try/finally so the lane sees
     the end of a rebuild even when a gate rejects the candidate.
     """
-    _ai("PUBLISHING_SNAPSHOT", serving={"rebuilding": True})
+    # Hold the destination lock before opening the warehouse read transaction.
+    lock = DataRootLock(target.parent.resolve(), role="serving-build", lock_name=f"{target.name}.build")
     try:
-        return _build_serving_db_impl(warehouse, target)
-    finally:
-        _ai("IDLE", serving={"rebuilding": False})
+        lock.acquire()
+    except DataRootBusy:
+        return PublishResult(False, {}, reason=f"already building snapshot {target.name}")
+    with lock:
+        _ai("PUBLISHING_SNAPSHOT", serving={"rebuilding": True})
+        try:
+            return _build_serving_db_impl(warehouse, target)
+        finally:
+            _ai("IDLE", serving={"rebuilding": False})
 
 
 def _build_serving_db_impl(warehouse: Path, target: Path) -> PublishResult:
-    """Build a candidate snapshot at `target.<pid>.tmp`, verify, then atomically swap.
+    """Build a unique same-directory candidate, verify it, then atomically swap.
 
     `target` is only replaced when every gate passes. Callers can therefore treat the
     existing serving file as always-readable.
@@ -173,12 +199,11 @@ def _build_serving_db_impl(warehouse: Path, target: Path) -> PublishResult:
     source = sqlite3.connect(warehouse.resolve().as_uri() + "?mode=ro", uri=True)
     source.row_factory = sqlite3.Row
     source.execute("BEGIN")  # every table and reconciliation count sees the same snapshot
-    candidate = target.with_suffix(target.suffix + ".tmp")
-    if candidate.exists():
-        candidate.unlink()
-
+    candidate = _candidate_path(target)
     dest = sqlite3.connect(candidate)
     dest.row_factory = sqlite3.Row
+    checkpoint_failed = False
+    checkpoint_in_progress = False
     try:
         dest.execute("PRAGMA journal_mode=WAL")
         _copy_schema_and_rows(source, dest)
@@ -235,6 +260,16 @@ def _build_serving_db_impl(warehouse: Path, target: Path) -> PublishResult:
             " source_warehouse_sha TEXT NOT NULL, row_counts_json TEXT NOT NULL,"
             " stale INTEGER NOT NULL DEFAULT 0 CHECK (stale IN (0,1)), stale_reason TEXT)"
         )
+        # Flush the completed projection transaction before full-file validation.
+        # Otherwise a multi-GB candidate is validated through WAL page lookups.
+        checkpoint_failed = True
+        checkpoint_in_progress = True
+        dest.commit()
+        checkpoint = dest.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        checkpoint_in_progress = False
+        if tuple(checkpoint) != (0, 0, 0):
+            raise SnapshotRejected("candidate WAL checkpoint did not complete")
+        checkpoint_failed = False
         counts = {t: _count(dest, t) for t in SNAPSHOT_TABLES if _exists(dest, t)}
         source_counts = {t: _count(source, t) for t in counts}
         if counts != source_counts:
@@ -273,18 +308,25 @@ def _build_serving_db_impl(warehouse: Path, target: Path) -> PublishResult:
             "INSERT INTO serving_projection_meta (id, projection_version, snapshot_built_at_utc) VALUES (1,?,?)",
             (PROJECTION_VERSION, built_at),
         )
+        checkpoint_failed = True
+        checkpoint_in_progress = True
         dest.commit()
+        final_checkpoint = dest.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        checkpoint_in_progress = False
+        if tuple(final_checkpoint) != (0, 0, 0):
+            raise SnapshotRejected("final candidate WAL checkpoint did not complete")
+        checkpoint_failed = False
     except SnapshotRejected as exc:
         dest.close()
-        candidate.unlink(missing_ok=True)
-        _mark_stale(warehouse, str(exc))
-        mark_stale(target, str(exc))
-        return PublishResult(published=False, snapshot_rows={}, reason=str(exc), stale=True)
+        reason = _discard_rejected_candidate(candidate, str(exc), checkpoint_failed=checkpoint_failed, checkpoint_in_progress=checkpoint_in_progress)
+        _mark_stale(warehouse, reason)
+        mark_stale(target, reason)
+        return PublishResult(published=False, snapshot_rows={}, reason=reason, stale=True)
     except (sqlite3.Error, OSError) as exc:
         dest.close()
-        candidate.unlink(missing_ok=True)
-        mark_stale(target, str(exc))
-        return PublishResult(published=False, snapshot_rows={}, reason=f"sqlite error: {exc}", stale=True)
+        reason = _discard_rejected_candidate(candidate, f"sqlite error: {exc}", checkpoint_failed=checkpoint_failed, checkpoint_in_progress=checkpoint_in_progress)
+        mark_stale(target, reason)
+        return PublishResult(published=False, snapshot_rows={}, reason=reason, stale=True)
     else:
         dest.close()
         target.parent.mkdir(parents=True, exist_ok=True)

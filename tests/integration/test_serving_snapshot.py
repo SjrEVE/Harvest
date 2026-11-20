@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -132,6 +135,342 @@ def test_rebuild_replaces_the_snapshot_and_meta_records_both_builds(env, tmp_pat
 
 # ------------------------------------------------------------------ gate behaviour
 
+def test_overlapping_build_cannot_publish_the_same_target(env, tmp_path: Path, monkeypatch) -> None:
+    writer, _, _, data_root = env
+    warehouse = data_root / "warehouse.sqlite"
+    target = tmp_path / "serving.sqlite"
+    commit_page(writer, [{"notifyNo": "SV-SERIAL-OLD", "notifyVersion": "00", "bidName": "old"}])
+    snapshot_captured = threading.Event()
+    release = threading.Event()
+    copy = serving._copy_schema_and_rows
+
+    def copy_then_pause(source, dest):
+        copy(source, dest)
+        if not snapshot_captured.is_set():
+            snapshot_captured.set()
+            assert release.wait(timeout=10)
+
+    monkeypatch.setattr(serving, "_copy_schema_and_rows", copy_then_pause)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        older = executor.submit(serving.build_serving_db, warehouse, target)
+        try:
+            assert snapshot_captured.wait(timeout=5)
+            commit_page(
+                writer, [{"notifyNo": "SV-SERIAL-NEW", "notifyVersion": "00", "bidName": "new"}], page_no=1
+            )
+            overlap = serving.build_serving_db(warehouse, target)
+            assert not overlap.published
+            assert "already building" in overlap.reason
+        finally:
+            release.set()
+        assert older.result(timeout=10).published
+
+    assert serving.build_serving_db(warehouse, target).published
+    with closing(sqlite3.connect(target)) as snapshot:
+        assert snapshot.execute("SELECT COUNT(*) FROM source_records").fetchone()[0] == 2
+
+
+def test_full_integrity_reads_checkpointed_candidate(env, tmp_path: Path, monkeypatch) -> None:
+    """Validate the standalone candidate, not pages trapped in the build transaction."""
+    writer, _, _, data_root = env
+    commit_page(writer, [{"notifyNo": "SV-CKPT", "notifyVersion": "00", "bidName": "checkpoint"}])
+    target = tmp_path / "serving.sqlite"
+    candidate = target.with_suffix(".sqlite.tmp")
+    monkeypatch.setattr(serving, "_candidate_path", lambda _target: candidate)
+    connect = sqlite3.connect
+    observed = []
+
+    def trace(statement: str) -> None:
+        if statement.strip().lower() != "pragma integrity_check":
+            return
+        observer = connect(candidate.as_uri() + "?mode=ro&immutable=1", uri=True)
+        try:
+            rows = observer.execute("SELECT count(*) FROM record_fields").fetchone()
+            observed.append((rows[0], Path(str(candidate) + "-wal").stat().st_size))
+        except (sqlite3.Error, OSError) as exc:
+            observed.append(type(exc).__name__)
+        finally:
+            observer.close()
+
+    def connect_with_trace(database, *args, **kwargs):
+        conn = connect(database, *args, **kwargs)
+        if database == candidate:
+            conn.set_trace_callback(trace)
+        return conn
+
+    monkeypatch.setattr(sqlite3, "connect", connect_with_trace)
+    result = serving.build_serving_db(data_root / "warehouse.sqlite", target)
+    assert result.published, result.reason
+    assert observed == [(1, 0)]
+
+
+def test_busy_candidate_checkpoint_preserves_previous_snapshot(env, tmp_path: Path, monkeypatch) -> None:
+    writer, _, _, data_root = env
+    target = tmp_path / "serving.sqlite"
+    commit_page(writer, [{"notifyNo": "SV-OLD", "notifyVersion": "00", "bidName": "old"}])
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", target).published
+    previous_bytes = target.read_bytes()
+    commit_page(writer, [{"notifyNo": "SV-NEW", "notifyVersion": "00", "bidName": "new"}], page_no=1)
+    candidate = target.with_suffix(".sqlite.tmp")
+    monkeypatch.setattr(serving, "_candidate_path", lambda _target: candidate)
+    connect = sqlite3.connect
+
+    class BusyCheckpointConnection(sqlite3.Connection):
+        def execute(self, sql, *args, **kwargs):
+            if sql == "PRAGMA wal_checkpoint(TRUNCATE)":
+                return super().execute("SELECT 1, 0, 0")
+            return super().execute(sql, *args, **kwargs)
+
+    def connect_with_busy_checkpoint(database, *args, **kwargs):
+        if database == candidate:
+            kwargs["factory"] = BusyCheckpointConnection
+        return connect(database, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", connect_with_busy_checkpoint)
+    result = serving.build_serving_db(data_root / "warehouse.sqlite", target)
+    assert not result.published
+    assert "candidate WAL checkpoint did not complete" in result.reason
+    assert target.read_bytes() == previous_bytes
+    assert candidate.exists()
+    with closing(connect(candidate)) as rejected:
+        assert rejected.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0] == 0
+        assert rejected.execute("PRAGMA journal_mode=DELETE").fetchone()[0].lower() == "delete"
+    candidate.unlink(missing_ok=True)
+    assert not candidate.exists()
+
+
+def test_live_reader_checkpoint_rejection_survives_cleanup_failure(env, tmp_path: Path, monkeypatch) -> None:
+    writer, _, _, data_root = env
+    target = tmp_path / "serving.sqlite"
+    commit_page(writer, [{"notifyNo": "SV-LIVE-OLD", "notifyVersion": "00", "bidName": "old"}])
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", target).published
+    previous_bytes = target.read_bytes()
+    commit_page(writer, [{"notifyNo": "SV-LIVE-NEW", "notifyVersion": "00", "bidName": "new"}], page_no=1)
+    candidate = target.with_suffix(".sqlite.tmp")
+    monkeypatch.setattr(serving, "_candidate_path", lambda _target: candidate)
+    connect = sqlite3.connect
+    readers = []
+    checkpoints = []
+
+    class LiveReaderConnection(sqlite3.Connection):
+        def execute(self, sql, *args, **kwargs):
+            if sql == "PRAGMA wal_checkpoint(TRUNCATE)":
+                reader = connect(candidate.as_uri() + "?mode=ro", uri=True)
+                readers.append(reader)
+                reader.execute("BEGIN")
+                reader.execute("SELECT COUNT(*) FROM record_fields").fetchone()
+                super().execute("PRAGMA busy_timeout=0")
+                checkpoint = tuple(super().execute(sql, *args, **kwargs).fetchone())
+                checkpoints.append(checkpoint)
+                return super().execute("SELECT ?,?,?", checkpoint)
+            return super().execute(sql, *args, **kwargs)
+
+    def connect_with_live_reader(database, *args, **kwargs):
+        if database == candidate:
+            kwargs["factory"] = LiveReaderConnection
+        return connect(database, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", connect_with_live_reader)
+    try:
+        result = serving.build_serving_db(data_root / "warehouse.sqlite", target)
+        assert checkpoints and checkpoints[0][0] == 1
+        assert not result.published and result.stale
+        assert "candidate WAL checkpoint did not complete" in result.reason
+        assert "candidate retained after SQLite checkpoint failure" in result.reason
+        assert target.read_bytes() == previous_bytes
+        assert target.with_suffix(".stale.json").exists()
+        assert candidate.exists()
+    finally:
+        for reader in readers:
+            reader.close()
+
+
+def test_post_metadata_checkpoint_blocks_publish_when_reader_opens_after_projection_check(
+    env, tmp_path: Path, monkeypatch
+) -> None:
+    writer, _, _, data_root = env
+    target = tmp_path / "serving.sqlite"
+    commit_page(writer, [{"notifyNo": "SV-FINAL-OLD", "notifyVersion": "00", "bidName": "old"}])
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", target).published
+    previous_bytes = target.read_bytes()
+    commit_page(writer, [{"notifyNo": "SV-FINAL-NEW", "notifyVersion": "00", "bidName": "new"}], page_no=1)
+    real_candidate_path = serving._candidate_path
+    candidate = real_candidate_path(target)
+    monkeypatch.setattr(serving, "_candidate_path", lambda _target: candidate)
+    connect = sqlite3.connect
+    replace = Path.replace
+    reader = None
+    checkpoints = []
+
+    class ReaderAfterFirstCheckpoint(sqlite3.Connection):
+        def execute(self, sql, *args, **kwargs):
+            nonlocal reader
+            if not checkpoints:
+                if sql == "PRAGMA wal_checkpoint(TRUNCATE)":
+                    result = tuple(super().execute(sql, *args, **kwargs).fetchone())
+                    reader = connect(candidate.as_uri() + "?mode=ro", uri=True)
+                    reader.execute("BEGIN")
+                    reader.execute("SELECT COUNT(*) FROM record_fields").fetchone()
+                    checkpoints.append(result)
+                    return super().execute("SELECT ?,?,?", result)
+                return super().execute(sql, *args, **kwargs)
+            if sql == "PRAGMA wal_checkpoint(TRUNCATE)":
+                super().execute("PRAGMA busy_timeout=0")
+                result = tuple(super().execute(sql, *args, **kwargs).fetchone())
+                checkpoints.append(result)
+                return super().execute("SELECT ?,?,?", result)
+            return super().execute(sql, *args, **kwargs)
+
+    def connect_with_reader(database, *args, **kwargs):
+        if database == candidate:
+            kwargs["factory"] = ReaderAfterFirstCheckpoint
+        return connect(database, *args, **kwargs)
+
+    def close_before_rename(path, target_path, *args, **kwargs):
+        return replace(path, target_path, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", connect_with_reader)
+    monkeypatch.setattr(Path, "replace", close_before_rename)
+    result = serving.build_serving_db(data_root / "warehouse.sqlite", target)
+    assert len(checkpoints) == 2
+    assert checkpoints[0] == (0, 0, 0)
+    assert checkpoints[1][0] != 0
+    assert not result.published and result.stale
+    assert "candidate WAL checkpoint did not complete" in result.reason
+    assert "candidate retained after SQLite checkpoint failure" in result.reason
+    assert candidate.exists()
+    assert target.read_bytes() == previous_bytes
+    make_candidate = real_candidate_path
+    next_candidates = []
+
+    def unique_candidate(target_path):
+        path = make_candidate(target_path)
+        next_candidates.append(path)
+        return path
+
+    monkeypatch.setattr(serving, "_candidate_path", unique_candidate)
+    try:
+        next_result = serving.build_serving_db(data_root / "warehouse.sqlite", target)
+        assert next_candidates and next_candidates[0] != candidate
+        assert next_candidates[0].parent == candidate.parent and next_candidates[0].name.endswith(".tmp")
+        assert next_result.published, next_result.reason
+        with sqlite3.connect(target) as verify:
+            assert verify.execute("SELECT COUNT(*) FROM source_records").fetchone()[0] == 2
+        assert reader is not None
+        assert reader.execute("SELECT COUNT(*) FROM record_fields").fetchone()[0] == 2
+        assert target.read_bytes() != previous_bytes
+    finally:
+        if reader is not None:
+            reader.close()
+            reader = None
+        if candidate.exists():
+            with closing(connect(candidate)) as rejected:
+                assert rejected.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0] == 0
+                assert rejected.execute("PRAGMA journal_mode=DELETE").fetchone()[0].lower() == "delete"
+            candidate.unlink(missing_ok=True)
+        for path in next_candidates:
+            path.unlink(missing_ok=True)
+    assert not candidate.exists()
+    assert all(not path.exists() for path in next_candidates)
+    assert not [Path(str(candidate) + suffix) for suffix in ("-wal", "-shm", "-journal") if Path(str(candidate) + suffix).exists()]
+    assert target.with_suffix(".stale.json").exists() is False
+
+
+def test_projection_commit_exception_retains_candidate_and_previous_snapshot(env, tmp_path: Path, monkeypatch) -> None:
+    writer, _, _, data_root = env
+    target = tmp_path / "serving.sqlite"
+    commit_page(writer, [{"notifyNo": "SV-COMMIT-OLD", "notifyVersion": "00", "bidName": "old"}])
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", target).published
+    previous_bytes = target.read_bytes()
+    commit_page(writer, [{"notifyNo": "SV-COMMIT-NEW", "notifyVersion": "00", "bidName": "new"}], page_no=1)
+    real_candidate_path = serving._candidate_path
+    candidate = real_candidate_path(target)
+    monkeypatch.setattr(serving, "_candidate_path", lambda _target: candidate)
+    connect = sqlite3.connect
+
+    class CommitFailureConnection(sqlite3.Connection):
+        def commit(self):
+            raise sqlite3.OperationalError("simulated projection commit failure")
+
+    def connect_with_commit_failure(database, *args, **kwargs):
+        if database == candidate:
+            kwargs["factory"] = CommitFailureConnection
+        return connect(database, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", connect_with_commit_failure)
+    result = serving.build_serving_db(data_root / "warehouse.sqlite", target)
+    assert not result.published and result.stale
+    assert "simulated projection commit failure" in result.reason
+    assert "candidate retained after SQLite checkpoint interruption" in result.reason
+    assert candidate.exists()
+    assert target.read_bytes() == previous_bytes
+
+
+def test_checkpoint_exception_with_reader_retains_candidate_and_sidecars(env, tmp_path: Path, monkeypatch) -> None:
+    writer, _, _, data_root = env
+    target = tmp_path / "serving.sqlite"
+    commit_page(writer, [{"notifyNo": "SV-EXCEPTION-OLD", "notifyVersion": "00", "bidName": "old"}])
+    assert serving.build_serving_db(data_root / "warehouse.sqlite", target).published
+    previous_bytes = target.read_bytes()
+    commit_page(writer, [{"notifyNo": "SV-EXCEPTION-NEW", "notifyVersion": "00", "bidName": "new"}], page_no=1)
+    real_candidate_path = serving._candidate_path
+    candidate = real_candidate_path(target)
+    monkeypatch.setattr(serving, "_candidate_path", lambda _target: candidate)
+    connect = sqlite3.connect
+    readers = []
+
+    class CheckpointExceptionConnection(sqlite3.Connection):
+        def execute(self, sql, *args, **kwargs):
+            if sql == "PRAGMA wal_checkpoint(TRUNCATE)":
+                reader = connect(candidate.as_uri() + "?mode=ro", uri=True)
+                readers.append(reader)
+                reader.execute("BEGIN")
+                reader.execute("SELECT COUNT(*) FROM record_fields").fetchone()
+                raise sqlite3.OperationalError("simulated checkpoint I/O failure")
+            return super().execute(sql, *args, **kwargs)
+
+    def connect_with_reader(database, *args, **kwargs):
+        if database == candidate:
+            kwargs["factory"] = CheckpointExceptionConnection
+        return connect(database, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", connect_with_reader)
+    try:
+        result = serving.build_serving_db(data_root / "warehouse.sqlite", target)
+        assert not result.published and result.stale
+        assert "simulated checkpoint I/O failure" in result.reason
+        assert "candidate retained after SQLite checkpoint interruption" in result.reason
+        assert target.read_bytes() == previous_bytes
+        assert candidate.exists()
+        assert Path(str(candidate) + "-wal").exists()
+    finally:
+        for reader in readers:
+            reader.close()
+        if candidate.exists():
+            with closing(connect(candidate)) as rejected:
+                assert rejected.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0] == 0
+                assert rejected.execute("PRAGMA journal_mode=DELETE").fetchone()[0].lower() == "delete"
+            candidate.unlink(missing_ok=True)
+    assert not candidate.exists()
+    assert not [Path(str(candidate) + suffix) for suffix in ("-wal", "-shm", "-journal") if Path(str(candidate) + suffix).exists()]
+
+
+def test_rejected_candidate_cleanup_permission_error_is_reported(tmp_path: Path, monkeypatch) -> None:
+    candidate = tmp_path / "serving.sqlite.unique.tmp"
+    candidate.write_bytes(b"candidate")
+    original_unlink = Path.unlink
+
+    def deny_candidate_unlink(path, *args, **kwargs):
+        if path == candidate:
+            raise PermissionError("candidate is locked")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", deny_candidate_unlink)
+    reason = serving._discard_rejected_candidate(candidate, "injected snapshot rejection")
+    assert reason == f"injected snapshot rejection; rejected candidate retained for reader-safe cleanup: {candidate.name}"
+    assert candidate.exists()
+
+
 def test_failed_gate_leaves_the_previous_snapshot_serving(env, tmp_path: Path, monkeypatch) -> None:
     """§5.5: a rejected build must not touch what is already published."""
     writer, conn, _, data_root = env
@@ -149,7 +488,6 @@ def test_failed_gate_leaves_the_previous_snapshot_serving(env, tmp_path: Path, m
     assert not result.published and result.stale
     assert "injected gate failure" in result.reason
     assert serving.serving_state(target)["row_counts"] == good_counts, "old snapshot still serves"
-    assert list(target.parent.glob("*.tmp")) == [], "candidate cleaned up after rejection"
     stale = conn.execute("SELECT value_json FROM settings WHERE key='serving_stale'").fetchone()
     assert stale is not None and "injected gate failure" in stale[0]
 
@@ -181,7 +519,9 @@ def test_row_count_drift_is_rejected(env, tmp_path: Path, monkeypatch) -> None:
     assert not result.published
     assert "row count drift" in result.reason
     assert not (tmp_path / "serving.sqlite").exists()
-    assert list(tmp_path.glob("*.tmp")) == []
+    rejected = list(tmp_path.glob("serving.sqlite.*.tmp"))
+    assert len(rejected) == 1 and rejected[0].exists()
+    assert "rejected candidate retained for reader-safe cleanup" in result.reason
 
 
 def test_build_never_blocks_the_writer(env, tmp_path: Path) -> None:
@@ -233,7 +573,9 @@ def test_crash_mid_build_leaves_the_previous_snapshot_and_no_temp(env, tmp_path:
     result = serving.build_serving_db(data_root / "warehouse.sqlite", target)
     assert result.published is False
     assert target.read_bytes() == good_bytes, "old snapshot must keep serving"
-    assert not target.with_suffix(target.suffix + ".tmp").exists(), "no half-built temp file"
+    rejected = list(tmp_path.glob("serving.sqlite.*.tmp"))
+    assert len(rejected) == 1 and rejected[0].exists(), "rejected SQLite candidate is retained safely"
+    assert "rejected candidate retained for reader-safe cleanup" in result.reason
 def test_publish_retries_transient_windows_reader_lock(tmp_path, monkeypatch):
     from pathlib import Path
 
@@ -243,7 +585,7 @@ def test_publish_retries_transient_windows_reader_lock(tmp_path, monkeypatch):
     original = Path.replace
     attempts = []
     def temporarily_locked(path, target):
-        if path.name == "serving.sqlite.tmp":
+        if path.name.startswith("serving.sqlite.") and path.name.endswith(".tmp"):
             attempts.append(1)
             if len(attempts) < 3:
                 raise PermissionError("Reader briefly holds the Windows snapshot")

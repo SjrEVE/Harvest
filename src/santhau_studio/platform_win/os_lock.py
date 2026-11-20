@@ -74,12 +74,12 @@ class LockHolder:
 
 
 class DataRootLock:
-    """Owns the writer lock for one data root for the lifetime of one process."""
+    """Owns an exclusive lock file within a data root."""
 
-    def __init__(self, data_root: Path, *, role: str = "worker") -> None:
+    def __init__(self, data_root: Path, *, role: str = "worker", lock_name: str = "writer") -> None:
         self.root = Path(data_root)
         self.role = role
-        self.path = self.root / f"writer{LOCK_SUFFIX}"
+        self.path = self.root / f"{lock_name}{LOCK_SUFFIX}"
         self._fd: int | None = None
         self.holder: LockHolder | None = None
 
